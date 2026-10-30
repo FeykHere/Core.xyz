@@ -89,7 +89,7 @@ export function validateAccessKey(input: string): KeyValidationResult {
   };
 }
 
-export const LIVE_RAW_SCRIPT_URL = 'https://dpaste.com/2KSR3DBX2.txt';
+export const LIVE_RAW_SCRIPT_URL = 'https://dpaste.com/9G8W9DR8K.txt';
 export const LIVE_LOADSTRING_SNIPPET = `loadstring(game:HttpGet("${LIVE_RAW_SCRIPT_URL}"))()`;
 export const GITHUB_CACHE_BUST_LOADSTRING =
   'loadstring(game:HttpGet("https://raw.githubusercontent.com/FeykHere/Core.xyz/main/Core.xyz.lua?t=" .. tostring(os.time())))()';

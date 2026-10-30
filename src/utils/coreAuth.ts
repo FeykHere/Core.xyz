@@ -52,10 +52,10 @@ export const DEFAULT_CORE_CONFIG: CoreConfigState = {
 };
 
 export const DEFAULT_GITHUB_CONFIG: GithubRepoConfig = {
-  owner: 'feykhere',
+  owner: 'FeykHere',
   repo: 'Core.xyz',
   branch: 'main',
-  filePath: 'loader.lua',
+  filePath: 'Core.xyz.lua',
 };
 
 export interface KeyValidationResult {
@@ -89,11 +89,13 @@ export function validateAccessKey(input: string): KeyValidationResult {
   };
 }
 
-export const LIVE_RAW_SCRIPT_URL = 'https://dpaste.com/9S683CAG2.txt';
+export const LIVE_RAW_SCRIPT_URL = 'https://dpaste.com/2KSR3DBX2.txt';
 export const LIVE_LOADSTRING_SNIPPET = `loadstring(game:HttpGet("${LIVE_RAW_SCRIPT_URL}"))()`;
+export const GITHUB_CACHE_BUST_LOADSTRING =
+  'loadstring(game:HttpGet("https://raw.githubusercontent.com/FeykHere/Core.xyz/main/Core.xyz.lua?t=" .. tostring(os.time())))()';
 
 export function buildGithubRawUrl(config: GithubRepoConfig): string {
-  const owner = (config.owner || 'feykhere').trim().replace(/^\/+|\/+$/g, '');
+  const owner = (config.owner || 'FeykHere').trim().replace(/^\/+|\/+$/g, '');
   const repo = (config.repo || 'Core.xyz').trim().replace(/^\/+|\/+$/g, '');
   const branch = (config.branch || 'main').trim().replace(/^\/+|\/+$/g, '');
   const filePath = (config.filePath || 'Core.xyz.lua').trim().replace(/^\/+/, '');

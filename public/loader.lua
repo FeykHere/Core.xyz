@@ -1,19 +1,36 @@
 --[=[
-    CORE.XYZ | UNIVERSAL ROBLOX LUA SCRIPT
-    Theme: Pure Black & White Monochrome (Live Animated)
-    Features:
-      1. Live-Animated Start-to-End Loading Screen (Core.xyz)
-      2. Animated Key System / Authorization Gate (Key: FEYKSECURED)
-      3. Full Custom Animated UI (Home, Combat, Visuals, Movement, Misc)
-      4. All Engine Fixes Applied:
-         - DeltaTime frame-rate independent Aimbot Lerp
-         - R6 & R15 automatic body-part fallback
-         - 31-Highlight engine limit protection + Drawing/GUI fallback
-         - RunService.Stepped NoClip with CanCollide restoration
-         - Enum.RaycastFilterType.Exclude & reused RaycastParams
+    CORE.XYZ | UNIVERSAL ROBLOX LUA SCRIPT (V2.5 ULTRA-STABLE LIVE-ANIMATED EDITION)
+    Theme: Pure Black & White Monochrome (Live 60FPS Animated UI)
+    Key System Authorization Key: FEYKSECURED
+
+    Architecture & Fixes:
+      1. Live-Animated Start-to-End Loading Screen ("Core.xyz")
+         - Sweeping UIGradient border beam, floating monochrome particle field,
+           dual counter-rotating geometric rings, smooth progress interpolation.
+      2. Live-Animated Key System / Authorization Gate (Key: FEYKSECURED)
+         - Rotating white-beam border, live particle canvas, focus-glow input,
+           1-tap "GET KEY" auto-fill + clipboard copy, error shake, cinematic unlock morph.
+      3. High-Craft Live-Animated Main Hub + Draggable Mobile/PC Floating Pill
+         - Auto-scales to Mobile (Delta Executor) & PC viewports cleanly.
+         - Locks ScrollingFrame while dragging sliders on mobile touchscreens.
+         - Sliding sidebar tab indicator, touch/click ripple effects, expandable
+           animated dropdowns, glowing thumb sliders, and spring toggles.
+      4. All Gameplay & Engine Fixes Applied:
+         - Safe game:IsLoaded() & LocalPlayer wait for Delta autoexec support
+         - DisplayOrder = 999999 so UI always renders above game HUDs
+         - Frame-rate independent DeltaTime Aimbot Lerp
+         - Automatic R6 & R15 body-part fallback
+         - 30-Highlight Roblox engine limit guard + Billboard/Tracer ESP
+         - RunService.Stepped NoClip with full CanCollide restoration on toggle off
+         - Reused RaycastParams with Enum.RaycastFilterType.Exclude
          - Humanoid.UseJumpPower = true compatibility
-         - PlayerRemoving cleanup & properly scoped local variables
 ]=]
+
+if not game:IsLoaded() then
+    pcall(function()
+        game.Loaded:Wait()
+    end)
+end
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -24,11 +41,15 @@ local VirtualUser = game:GetService("VirtualUser")
 local CoreGui = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then
+    LocalPlayer = Players.PlayerAdded:Wait()
+end
+
 local setclipboard = setclipboard or toclipboard
 local REQUIRED_KEY = "FEYKSECURED"
 
 --------------------------------------------------------------------------------
--- SAFE GUI PARENT & CLEANUP PREVIOUS INSTANCE
+-- 1. SAFE GUI PARENT & PREVIOUS INSTANCE CLEANUP
 --------------------------------------------------------------------------------
 local function getSafeGuiParent()
     local ok, res = pcall(function()
@@ -41,13 +62,15 @@ local function getSafeGuiParent()
 end
 
 local guiParent = getSafeGuiParent()
-local oldGui = guiParent:FindFirstChild("CoreXYZ_Universal")
-if oldGui then
-    oldGui:Destroy()
+local existingGui = guiParent:FindFirstChild("CoreXYZ_Universal")
+if existingGui then
+    pcall(function()
+        existingGui:Destroy()
+    end)
 end
 
 --------------------------------------------------------------------------------
--- CORE VARIABLES & STATE
+-- 2. CORE STATE & GAMEPLAY VARIABLES (ALL PROPERLY SCOPED)
 --------------------------------------------------------------------------------
 local enabled = false
 local showFOV = false
@@ -82,40 +105,62 @@ local targetPart = "Head"
 local antiAFKConnection = nil
 local isAuthorized = false
 local uiVisible = true
+local isAuthorizing = false
 
--- Reusable RaycastParams (Modern Exclude Filter)
 local rayParams = RaycastParams.new()
 rayParams.FilterType = Enum.RaycastFilterType.Exclude
 rayParams.IgnoreWater = true
 
 --------------------------------------------------------------------------------
--- BLACK & WHITE MONOCHROME THEME & TWEEN HELPERS
+-- 3. MONOCHROME DESIGN SYSTEM & LIVE ANIMATION REGISTRIES
 --------------------------------------------------------------------------------
 local Theme = {
-    Black = Color3.fromRGB(6, 6, 6),
-    Surface = Color3.fromRGB(14, 14, 14),
-    Elevated = Color3.fromRGB(22, 22, 22),
-    Hover = Color3.fromRGB(30, 30, 30),
+    Black = Color3.fromRGB(5, 5, 7),
+    Deep = Color3.fromRGB(10, 10, 13),
+    Surface = Color3.fromRGB(15, 15, 19),
+    Elevated = Color3.fromRGB(23, 23, 29),
+    Hover = Color3.fromRGB(32, 32, 40),
     White = Color3.fromRGB(255, 255, 255),
-    Silver = Color3.fromRGB(185, 185, 185),
-    Muted = Color3.fromRGB(130, 130, 130),
-    Border = Color3.fromRGB(42, 42, 42),
-    Error = Color3.fromRGB(235, 65, 65),
+    Silver = Color3.fromRGB(200, 200, 210),
+    Muted = Color3.fromRGB(125, 125, 138),
+    Dim = Color3.fromRGB(65, 65, 75),
+    Border = Color3.fromRGB(38, 38, 46),
+    Error = Color3.fromRGB(255, 75, 75),
 }
 
 local FastTween = TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 local SmoothTween = TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+local SpringTween = TweenInfo.new(0.42, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 local SlowTween = TweenInfo.new(0.55, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out)
 
+local liveGradients = {}
+local liveParticles = {}
+local liveRotators = {}
+
 local function tween(obj, info, goals)
-    local t = TweenService:Create(obj, info, goals)
-    t:Play()
-    return t
+    if not obj then
+        return nil
+    end
+    local ok, t = pcall(function()
+        local tw = TweenService:Create(obj, info, goals)
+        tw:Play()
+        return tw
+    end)
+    if ok then
+        return t
+    end
+    -- Fallback direct property assignment if TweenService rejects a property
+    for k, v in pairs(goals) do
+        pcall(function()
+            obj[k] = v
+        end)
+    end
+    return nil
 end
 
 local function addCorner(parent, radius)
     local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, radius or 6)
+    c.CornerRadius = UDim.new(0, radius or 8)
     c.Parent = parent
     return c
 end
@@ -130,11 +175,182 @@ local function addStroke(parent, color, thickness, transparency)
     return s
 end
 
+-- Creates a live-rotating monochrome shimmer border (White -> Obsidian -> Silver -> White)
+local function addLiveBorder(parent, thickness, speed, baseTransparency)
+    local s = Instance.new("UIStroke")
+    s.Color = Theme.White
+    s.Thickness = thickness or 1.4
+    s.Transparency = baseTransparency or 0.1
+    s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    s.Parent = parent
+
+    local grad = Instance.new("UIGradient")
+    grad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(0.28, Color3.fromRGB(45, 45, 55)),
+        ColorSequenceKeypoint.new(0.50, Color3.fromRGB(190, 190, 205)),
+        ColorSequenceKeypoint.new(0.75, Color3.fromRGB(35, 35, 45)),
+        ColorSequenceKeypoint.new(1.00, Color3.fromRGB(255, 255, 255)),
+    })
+    grad.Rotation = 0
+    grad.Parent = s
+
+    table.insert(liveGradients, {
+        Gradient = grad,
+        Speed = speed or 65,
+        Offset = math.random(0, 360),
+    })
+
+    return s, grad
+end
+
+-- Spawns an expanding white ripple animation inside any button/frame
+local function spawnRipple(button, inputPos)
+    pcall(function()
+        local holder = Instance.new("Frame")
+        holder.Size = UDim2.fromScale(1, 1)
+        holder.BackgroundTransparency = 1
+        holder.ClipsDescendants = true
+        holder.ZIndex = button.ZIndex + 1
+        holder.Parent = button
+        addCorner(holder, 8)
+
+        local relX = 0.5
+        local relY = 0.5
+        if inputPos and button.AbsoluteSize.X > 0 and button.AbsoluteSize.Y > 0 then
+            relX = math.clamp((inputPos.X - button.AbsolutePosition.X) / button.AbsoluteSize.X, 0, 1)
+            relY = math.clamp((inputPos.Y - button.AbsolutePosition.Y) / button.AbsoluteSize.Y, 0, 1)
+        end
+
+        local circle = Instance.new("Frame")
+        circle.AnchorPoint = Vector2.new(0.5, 0.5)
+        circle.Position = UDim2.fromScale(relX, relY)
+        circle.Size = UDim2.fromOffset(0, 0)
+        circle.BackgroundColor3 = Theme.White
+        circle.BackgroundTransparency = 0.72
+        circle.BorderSizePixel = 0
+        circle.Parent = holder
+        addCorner(circle, 999)
+
+        local maxDim = math.max(button.AbsoluteSize.X, button.AbsoluteSize.Y)
+        if maxDim <= 0 then
+            maxDim = 160
+        end
+        local targetDiameter = maxDim * 2.2
+        tween(circle, TweenInfo.new(0.45, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+            Size = UDim2.fromOffset(targetDiameter, targetDiameter),
+            BackgroundTransparency = 1,
+        })
+        task.delay(0.46, function()
+            if holder and holder.Parent then
+                holder:Destroy()
+            end
+        end)
+    end)
+end
+
+-- Spawns live-drifting monochrome star/particle dots inside a container
+local function createParticleCanvas(parent, count)
+    local canvas = Instance.new("Frame")
+    canvas.Name = "ParticleCanvas"
+    canvas.Size = UDim2.fromScale(1, 1)
+    canvas.BackgroundTransparency = 1
+    canvas.ClipsDescendants = true
+    canvas.ZIndex = 1
+    canvas.Parent = parent
+
+    for i = 1, (count or 18) do
+        local dot = Instance.new("Frame")
+        local sz = (i % 3 == 0) and 3 or 2
+        dot.AnchorPoint = Vector2.new(0.5, 0.5)
+        dot.Size = UDim2.fromOffset(sz, sz)
+        dot.BackgroundColor3 = Theme.White
+        dot.BackgroundTransparency = 0.65
+        dot.BorderSizePixel = 0
+        dot.ZIndex = 1
+        dot.Parent = canvas
+        addCorner(dot, 99)
+
+        local startX = (math.random(5, 95) / 100)
+        local startY = (math.random(5, 95) / 100)
+        dot.Position = UDim2.fromScale(startX, startY)
+
+        table.insert(liveParticles, {
+            Instance = dot,
+            Container = parent,
+            X = startX,
+            Y = startY,
+            SpeedY = math.random(4, 11) / 100,
+            DriftX = (math.random(-3, 3) / 100),
+            Phase = math.random() * 6.28,
+        })
+    end
+
+    return canvas
+end
+
+-- Smooth Dragging Helper for Mobile Touch & PC Mouse
+local function makeDraggable(dragHandle, targetFrame)
+    local dragging = false
+    local dragInput = nil
+    local dragStart = nil
+    local startPos = nil
+
+    dragHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = targetFrame.Position
+            if input.Changed then
+                input.Changed:Connect(function()
+                    if input.UserInputState == Enum.UserInputState.End then
+                        dragging = false
+                    end
+                end)
+            end
+        end
+    end)
+
+    dragHandle.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging and dragStart and startPos then
+            local delta = input.Position - dragStart
+            tween(targetFrame, TweenInfo.new(0.07, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {
+                Position = UDim2.new(
+                    startPos.X.Scale,
+                    startPos.X.Offset + delta.X,
+                    startPos.Y.Scale,
+                    startPos.Y.Offset + delta.Y
+                ),
+            })
+        end
+    end)
+end
+
+-- Responsive Viewport Scale Calculator (prevents clipping on Delta Mobile)
+local function getResponsiveScale()
+    local cam = workspace.CurrentCamera
+    if not cam then
+        return 1
+    end
+    local vp = cam.ViewportSize
+    if vp.Y < 430 or vp.X < 620 then
+        return math.clamp(math.min(vp.X / 620, vp.Y / 420), 0.72, 0.95)
+    end
+    return 1
+end
+
 --------------------------------------------------------------------------------
--- ROOT SCREENGUI & OVERLAY ELEMENTS (FOV, CROSSHAIR, ESP, NOTIFICATIONS)
+-- 4. ROOT SCREENGUI, OVERLAYS & ANIMATED TOAST NOTIFICATIONS
 --------------------------------------------------------------------------------
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "CoreXYZ_Universal"
+ScreenGui.DisplayOrder = 999999
 ScreenGui.IgnoreGuiInset = true
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -148,7 +364,7 @@ local HighlightContainer = Instance.new("Folder")
 HighlightContainer.Name = "Highlights"
 HighlightContainer.Parent = ScreenGui
 
--- FOV Circle (Native UI so it works on every executor)
+-- FOV Circle (Live Animated Stroke)
 local FovCircle = Instance.new("Frame")
 FovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
 FovCircle.Position = UDim2.fromScale(0.5, 0.5)
@@ -157,9 +373,9 @@ FovCircle.BackgroundTransparency = 1
 FovCircle.Visible = false
 FovCircle.Parent = OverlayContainer
 addCorner(FovCircle, 999)
-local FovStroke = addStroke(FovCircle, Theme.White, 1.5, 0.1)
+addLiveBorder(FovCircle, 1.5, 90, 0.08)
 
--- Custom Crosshair Lines
+-- Custom Crosshair
 local CrosshairV = Instance.new("Frame")
 CrosshairV.AnchorPoint = Vector2.new(0.5, 0.5)
 CrosshairV.Position = UDim2.fromScale(0.5, 0.5)
@@ -178,12 +394,13 @@ CrosshairH.BorderSizePixel = 0
 CrosshairH.Visible = false
 CrosshairH.Parent = OverlayContainer
 
--- Toast Notification System
+-- Toast Notifications
 local NotifyHolder = Instance.new("Frame")
 NotifyHolder.AnchorPoint = Vector2.new(1, 1)
-NotifyHolder.Position = UDim2.new(1, -20, 1, -20)
-NotifyHolder.Size = UDim2.fromOffset(290, 320)
+NotifyHolder.Position = UDim2.new(1, -18, 1, -18)
+NotifyHolder.Size = UDim2.fromOffset(290, 300)
 NotifyHolder.BackgroundTransparency = 1
+NotifyHolder.ZIndex = 50
 NotifyHolder.Parent = ScreenGui
 
 local NotifyLayout = Instance.new("UIListLayout")
@@ -193,63 +410,86 @@ NotifyLayout.Padding = UDim.new(0, 8)
 NotifyLayout.Parent = NotifyHolder
 
 local function notify(title, content, duration)
-    duration = duration or 4.5
+    duration = duration or 4
     local card = Instance.new("Frame")
-    card.Size = UDim2.fromOffset(280, 60)
+    card.Size = UDim2.fromOffset(280, 58)
     card.BackgroundColor3 = Theme.Black
     card.BackgroundTransparency = 1
+    card.ClipsDescendants = true
+    card.ZIndex = 51
     card.Parent = NotifyHolder
-    addCorner(card, 6)
-    local st = addStroke(card, Theme.White, 1, 1)
+    addCorner(card, 8)
+    local st = addLiveBorder(card, 1.2, 110, 1)
 
-    local bar = Instance.new("Frame")
-    bar.Position = UDim2.fromOffset(6, 8)
-    bar.Size = UDim2.new(0, 3, 1, -16)
-    bar.BackgroundColor3 = Theme.White
-    bar.BackgroundTransparency = 1
-    bar.BorderSizePixel = 0
-    bar.Parent = card
-    addCorner(bar, 2)
+    local cardScale = Instance.new("UIScale")
+    cardScale.Scale = 0.9
+    cardScale.Parent = card
+
+    local accentBar = Instance.new("Frame")
+    accentBar.Position = UDim2.fromOffset(8, 10)
+    accentBar.Size = UDim2.new(0, 3, 1, -20)
+    accentBar.BackgroundColor3 = Theme.White
+    accentBar.BackgroundTransparency = 1
+    accentBar.BorderSizePixel = 0
+    accentBar.ZIndex = 52
+    accentBar.Parent = card
+    addCorner(accentBar, 4)
 
     local tLbl = Instance.new("TextLabel")
-    tLbl.Position = UDim2.fromOffset(18, 8)
-    tLbl.Size = UDim2.new(1, -26, 0, 18)
+    tLbl.Position = UDim2.fromOffset(20, 8)
+    tLbl.Size = UDim2.new(1, -28, 0, 18)
     tLbl.BackgroundTransparency = 1
     tLbl.Font = Enum.Font.GothamBlack
     tLbl.Text = string.upper(title)
     tLbl.TextColor3 = Theme.White
     tLbl.TextTransparency = 1
-    tLbl.TextSize = 12
+    tLbl.TextSize = 11
     tLbl.TextXAlignment = Enum.TextXAlignment.Left
+    tLbl.ZIndex = 52
     tLbl.Parent = card
 
     local cLbl = Instance.new("TextLabel")
-    cLbl.Position = UDim2.fromOffset(18, 27)
-    cLbl.Size = UDim2.new(1, -26, 0, 26)
+    cLbl.Position = UDim2.fromOffset(20, 25)
+    cLbl.Size = UDim2.new(1, -28, 0, 26)
     cLbl.BackgroundTransparency = 1
-    cLbl.Font = Enum.Font.Gotham
+    cLbl.Font = Enum.Font.GothamMedium
     cLbl.Text = content
     cLbl.TextColor3 = Theme.Silver
     cLbl.TextTransparency = 1
     cLbl.TextSize = 11
     cLbl.TextWrapped = true
     cLbl.TextXAlignment = Enum.TextXAlignment.Left
+    cLbl.ZIndex = 52
     cLbl.Parent = card
 
-    tween(card, FastTween, { BackgroundTransparency = 0.03 })
-    tween(st, FastTween, { Transparency = 0.2 })
-    tween(bar, FastTween, { BackgroundTransparency = 0 })
+    local progBar = Instance.new("Frame")
+    progBar.AnchorPoint = Vector2.new(0, 1)
+    progBar.Position = UDim2.fromScale(0, 1)
+    progBar.Size = UDim2.new(1, 0, 0, 2)
+    progBar.BackgroundColor3 = Theme.White
+    progBar.BorderSizePixel = 0
+    progBar.ZIndex = 52
+    progBar.Parent = card
+
+    tween(card, FastTween, { BackgroundTransparency = 0.04 })
+    tween(cardScale, SpringTween, { Scale = 1 })
+    tween(st, FastTween, { Transparency = 0.1 })
+    tween(accentBar, FastTween, { BackgroundTransparency = 0 })
     tween(tLbl, FastTween, { TextTransparency = 0 })
     tween(cLbl, FastTween, { TextTransparency = 0 })
+    tween(progBar, TweenInfo.new(duration, Enum.EasingStyle.Linear), { Size = UDim2.new(0, 0, 0, 2) })
 
     task.delay(duration, function()
-        if not card.Parent then return end
+        if not card or not card.Parent then
+            return
+        end
+        tween(cardScale, FastTween, { Scale = 0.9 })
         tween(card, FastTween, { BackgroundTransparency = 1 })
         tween(st, FastTween, { Transparency = 1 })
-        tween(bar, FastTween, { BackgroundTransparency = 1 })
+        tween(accentBar, FastTween, { BackgroundTransparency = 1 })
         tween(tLbl, FastTween, { TextTransparency = 1 })
         tween(cLbl, FastTween, { TextTransparency = 1 })
-        task.wait(0.22)
+        task.wait(0.2)
         if card and card.Parent then
             card:Destroy()
         end
@@ -257,81 +497,93 @@ local function notify(title, content, duration)
 end
 
 --------------------------------------------------------------------------------
--- STAGE 1: LIVE ANIMATED LOADING SCREEN ("Core.xyz")
+-- 5. STAGE 1: LIVE-ANIMATED LOADING SCREEN ("Core.xyz")
 --------------------------------------------------------------------------------
 local LoaderCard = Instance.new("Frame")
 LoaderCard.Name = "CoreLoader"
 LoaderCard.AnchorPoint = Vector2.new(0.5, 0.5)
 LoaderCard.Position = UDim2.fromScale(0.5, 0.5)
-LoaderCard.Size = UDim2.fromOffset(370, 195)
+LoaderCard.Size = UDim2.fromOffset(360, 200)
 LoaderCard.BackgroundColor3 = Theme.Black
 LoaderCard.BackgroundTransparency = 1
+LoaderCard.Active = true
 LoaderCard.ClipsDescendants = true
+LoaderCard.ZIndex = 20
 LoaderCard.Parent = ScreenGui
-addCorner(LoaderCard, 10)
-local LoaderStroke = addStroke(LoaderCard, Theme.White, 1, 1)
+addCorner(LoaderCard, 12)
+local LoaderStroke = addLiveBorder(LoaderCard, 1.5, 75, 1)
 
 local LoaderScale = Instance.new("UIScale")
-LoaderScale.Scale = 0.9
+LoaderScale.Scale = 0.88
 LoaderScale.Parent = LoaderCard
 
--- Live Animated Geometric Emblem inside Loader
-local EmblemRingOuter = Instance.new("Frame")
-EmblemRingOuter.AnchorPoint = Vector2.new(0.5, 0.5)
-EmblemRingOuter.Position = UDim2.new(0.5, 0, 0, 48)
-EmblemRingOuter.Size = UDim2.fromOffset(42, 42)
-EmblemRingOuter.BackgroundTransparency = 1
-EmblemRingOuter.Parent = LoaderCard
-addCorner(EmblemRingOuter, 8)
-local EmblemOuterStroke = addStroke(EmblemRingOuter, Theme.White, 1.5, 1)
+createParticleCanvas(LoaderCard, 16)
 
-local EmblemRingInner = Instance.new("Frame")
-EmblemRingInner.AnchorPoint = Vector2.new(0.5, 0.5)
-EmblemRingInner.Position = UDim2.new(0.5, 0, 0, 48)
-EmblemRingInner.Size = UDim2.fromOffset(22, 22)
-EmblemRingInner.BackgroundTransparency = 1
-EmblemRingInner.Parent = LoaderCard
-addCorner(EmblemRingInner, 4)
-local EmblemInnerStroke = addStroke(EmblemRingInner, Theme.White, 1.2, 1)
+-- Animated Dual Geometric Orbital Emblem
+local EmblemOuter = Instance.new("Frame")
+EmblemOuter.AnchorPoint = Vector2.new(0.5, 0.5)
+EmblemOuter.Position = UDim2.new(0.5, 0, 0, 48)
+EmblemOuter.Size = UDim2.fromOffset(44, 44)
+EmblemOuter.BackgroundTransparency = 1
+EmblemOuter.ZIndex = 22
+EmblemOuter.Parent = LoaderCard
+addCorner(EmblemOuter, 10)
+local EmblemOuterStroke = addLiveBorder(EmblemOuter, 1.5, 120, 1)
+table.insert(liveRotators, { Instance = EmblemOuter, Speed = 55 })
 
-local EmblemCoreDot = Instance.new("Frame")
-EmblemCoreDot.AnchorPoint = Vector2.new(0.5, 0.5)
-EmblemCoreDot.Position = UDim2.new(0.5, 0, 0, 48)
-EmblemCoreDot.Size = UDim2.fromOffset(6, 6)
-EmblemCoreDot.BackgroundColor3 = Theme.White
-EmblemCoreDot.BackgroundTransparency = 1
-EmblemCoreDot.Parent = LoaderCard
-addCorner(EmblemCoreDot, 99)
+local EmblemInner = Instance.new("Frame")
+EmblemInner.AnchorPoint = Vector2.new(0.5, 0.5)
+EmblemInner.Position = UDim2.new(0.5, 0, 0, 48)
+EmblemInner.Size = UDim2.fromOffset(24, 24)
+EmblemInner.BackgroundTransparency = 1
+EmblemInner.ZIndex = 22
+EmblemInner.Parent = LoaderCard
+addCorner(EmblemInner, 6)
+local EmblemInnerStroke = addStroke(EmblemInner, Theme.Silver, 1.2, 1)
+table.insert(liveRotators, { Instance = EmblemInner, Speed = -85 })
+
+local EmblemCore = Instance.new("Frame")
+EmblemCore.AnchorPoint = Vector2.new(0.5, 0.5)
+EmblemCore.Position = UDim2.new(0.5, 0, 0, 48)
+EmblemCore.Size = UDim2.fromOffset(8, 8)
+EmblemCore.BackgroundColor3 = Theme.White
+EmblemCore.BackgroundTransparency = 1
+EmblemCore.ZIndex = 22
+EmblemCore.Parent = LoaderCard
+addCorner(EmblemCore, 99)
 
 local LoaderTitle = Instance.new("TextLabel")
-LoaderTitle.Position = UDim2.fromOffset(0, 80)
+LoaderTitle.Position = UDim2.fromOffset(0, 82)
 LoaderTitle.Size = UDim2.new(1, 0, 0, 26)
 LoaderTitle.BackgroundTransparency = 1
 LoaderTitle.Font = Enum.Font.GothamBlack
-LoaderTitle.Text = "Core.xyz"
+LoaderTitle.Text = "CORE.XYZ"
 LoaderTitle.TextColor3 = Theme.White
 LoaderTitle.TextTransparency = 1
-LoaderTitle.TextSize = 22
+LoaderTitle.TextSize = 21
+LoaderTitle.ZIndex = 22
 LoaderTitle.Parent = LoaderCard
 
 local LoaderStatus = Instance.new("TextLabel")
-LoaderStatus.Position = UDim2.fromOffset(24, 110)
-LoaderStatus.Size = UDim2.new(1, -48, 0, 18)
+LoaderStatus.Position = UDim2.fromOffset(20, 110)
+LoaderStatus.Size = UDim2.new(1, -40, 0, 18)
 LoaderStatus.BackgroundTransparency = 1
 LoaderStatus.Font = Enum.Font.GothamMedium
-LoaderStatus.Text = "Initializing Core.xyz Monochrome Environment..."
-LoaderStatus.TextColor3 = Theme.Muted
+LoaderStatus.Text = "Initializing Core.xyz Live Engine..."
+LoaderStatus.TextColor3 = Theme.Silver
 LoaderStatus.TextTransparency = 1
 LoaderStatus.TextSize = 11
+LoaderStatus.ZIndex = 22
 LoaderStatus.Parent = LoaderCard
 
 local LoaderBarBg = Instance.new("Frame")
 LoaderBarBg.AnchorPoint = Vector2.new(0.5, 0)
 LoaderBarBg.Position = UDim2.new(0.5, 0, 0, 142)
-LoaderBarBg.Size = UDim2.fromOffset(300, 5)
+LoaderBarBg.Size = UDim2.fromOffset(290, 6)
 LoaderBarBg.BackgroundColor3 = Theme.Elevated
 LoaderBarBg.BackgroundTransparency = 1
 LoaderBarBg.BorderSizePixel = 0
+LoaderBarBg.ZIndex = 22
 LoaderBarBg.Parent = LoaderCard
 addCorner(LoaderBarBg, 99)
 
@@ -339,6 +591,7 @@ local LoaderBarFill = Instance.new("Frame")
 LoaderBarFill.Size = UDim2.fromScale(0, 1)
 LoaderBarFill.BackgroundColor3 = Theme.White
 LoaderBarFill.BorderSizePixel = 0
+LoaderBarFill.ZIndex = 23
 LoaderBarFill.Parent = LoaderBarBg
 addCorner(LoaderBarFill, 99)
 
@@ -348,64 +601,111 @@ LoaderPercent.Size = UDim2.new(1, 0, 0, 18)
 LoaderPercent.BackgroundTransparency = 1
 LoaderPercent.Font = Enum.Font.Code
 LoaderPercent.Text = "0%"
-LoaderPercent.TextColor3 = Theme.Silver
+LoaderPercent.TextColor3 = Theme.Muted
 LoaderPercent.TextTransparency = 1
 LoaderPercent.TextSize = 11
+LoaderPercent.ZIndex = 22
 LoaderPercent.Parent = LoaderCard
 
 --------------------------------------------------------------------------------
--- STAGE 2: ANIMATED KEY SYSTEM / AUTHORIZATION ("FEYKSECURED")
+-- 6. STAGE 2: LIVE-ANIMATED KEY SYSTEM GATE ("FEYKSECURED")
 --------------------------------------------------------------------------------
 local KeyCard = Instance.new("Frame")
 KeyCard.Name = "CoreKeySystem"
 KeyCard.AnchorPoint = Vector2.new(0.5, 0.5)
 KeyCard.Position = UDim2.fromScale(0.5, 0.5)
-KeyCard.Size = UDim2.fromOffset(390, 235)
+KeyCard.Size = UDim2.fromOffset(390, 245)
 KeyCard.BackgroundColor3 = Theme.Black
 KeyCard.BackgroundTransparency = 1
+KeyCard.Active = true
 KeyCard.Visible = false
 KeyCard.ClipsDescendants = true
+KeyCard.ZIndex = 20
 KeyCard.Parent = ScreenGui
-addCorner(KeyCard, 10)
-local KeyCardStroke = addStroke(KeyCard, Theme.White, 1, 1)
+addCorner(KeyCard, 12)
+local KeyCardStroke = addLiveBorder(KeyCard, 1.5, 65, 1)
 
 local KeyScale = Instance.new("UIScale")
-KeyScale.Scale = 0.92
+KeyScale.Scale = 0.88
 KeyScale.Parent = KeyCard
 
--- Top Animated Scanline Accent
-local KeyTopAccent = Instance.new("Frame")
-KeyTopAccent.Size = UDim2.new(1, 0, 0, 2)
-KeyTopAccent.BackgroundColor3 = Theme.White
-KeyTopAccent.BorderSizePixel = 0
-KeyTopAccent.Parent = KeyCard
+createParticleCanvas(KeyCard, 18)
+
+-- Animated Top Shimmer Bar
+local KeyTopBar = Instance.new("Frame")
+KeyTopBar.Size = UDim2.new(1, 0, 0, 2)
+KeyTopBar.BackgroundColor3 = Theme.White
+KeyTopBar.BorderSizePixel = 0
+KeyTopBar.ZIndex = 22
+KeyTopBar.Parent = KeyCard
+
+local KeyTopGrad = Instance.new("UIGradient")
+KeyTopGrad.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Theme.Black),
+    ColorSequenceKeypoint.new(0.5, Theme.White),
+    ColorSequenceKeypoint.new(1, Theme.Black),
+})
+KeyTopGrad.Parent = KeyTopBar
+
+-- Rotating Mini Emblem in Key Header
+local KeyOrb = Instance.new("Frame")
+KeyOrb.AnchorPoint = Vector2.new(0, 0.5)
+KeyOrb.Position = UDim2.fromOffset(22, 34)
+KeyOrb.Size = UDim2.fromOffset(18, 18)
+KeyOrb.BackgroundTransparency = 1
+KeyOrb.ZIndex = 22
+KeyOrb.Parent = KeyCard
+addCorner(KeyOrb, 4)
+addStroke(KeyOrb, Theme.White, 1.4, 0.1)
+table.insert(liveRotators, { Instance = KeyOrb, Speed = 50 })
+
+local KeyOrbDot = Instance.new("Frame")
+KeyOrbDot.AnchorPoint = Vector2.new(0.5, 0.5)
+KeyOrbDot.Position = UDim2.fromScale(0.5, 0.5)
+KeyOrbDot.Size = UDim2.fromOffset(5, 5)
+KeyOrbDot.BackgroundColor3 = Theme.White
+KeyOrbDot.BorderSizePixel = 0
+KeyOrbDot.ZIndex = 22
+KeyOrbDot.Parent = KeyOrb
+addCorner(KeyOrbDot, 99)
 
 local KeyHeaderTitle = Instance.new("TextLabel")
-KeyHeaderTitle.Position = UDim2.fromOffset(24, 22)
-KeyHeaderTitle.Size = UDim2.new(1, -48, 0, 24)
+KeyHeaderTitle.Position = UDim2.fromOffset(48, 20)
+KeyHeaderTitle.Size = UDim2.new(1, -68, 0, 24)
 KeyHeaderTitle.BackgroundTransparency = 1
 KeyHeaderTitle.Font = Enum.Font.GothamBlack
-KeyHeaderTitle.Text = "Core.xyz  |  Key System"
+KeyHeaderTitle.Text = "CORE.XYZ  ·  KEY SYSTEM"
 KeyHeaderTitle.TextColor3 = Theme.White
-KeyHeaderTitle.TextSize = 18
+KeyHeaderTitle.TextSize = 16
 KeyHeaderTitle.TextXAlignment = Enum.TextXAlignment.Left
+KeyHeaderTitle.ZIndex = 22
 KeyHeaderTitle.Parent = KeyCard
 
 local KeyHeaderSub = Instance.new("TextLabel")
-KeyHeaderSub.Position = UDim2.fromOffset(24, 46)
-KeyHeaderSub.Size = UDim2.new(1, -48, 0, 18)
+KeyHeaderSub.Position = UDim2.fromOffset(22, 50)
+KeyHeaderSub.Size = UDim2.new(1, -44, 0, 18)
 KeyHeaderSub.BackgroundTransparency = 1
-KeyHeaderSub.Font = Enum.Font.Gotham
-KeyHeaderSub.Text = "Authorization required. Enter your access key below."
+KeyHeaderSub.Font = Enum.Font.GothamMedium
+KeyHeaderSub.Text = "Enter your security key or tap GET KEY to auto-fill."
 KeyHeaderSub.TextColor3 = Theme.Muted
 KeyHeaderSub.TextSize = 11
 KeyHeaderSub.TextXAlignment = Enum.TextXAlignment.Left
+KeyHeaderSub.ZIndex = 22
 KeyHeaderSub.Parent = KeyCard
 
+local KeyInputHolder = Instance.new("Frame")
+KeyInputHolder.Position = UDim2.fromOffset(22, 78)
+KeyInputHolder.Size = UDim2.new(1, -44, 0, 44)
+KeyInputHolder.BackgroundColor3 = Theme.Surface
+KeyInputHolder.ZIndex = 22
+KeyInputHolder.Parent = KeyCard
+addCorner(KeyInputHolder, 8)
+local KeyInputStroke = addStroke(KeyInputHolder, Theme.Border, 1.2, 0)
+
 local KeyInputBox = Instance.new("TextBox")
-KeyInputBox.Position = UDim2.fromOffset(24, 78)
-KeyInputBox.Size = UDim2.new(1, -48, 0, 42)
-KeyInputBox.BackgroundColor3 = Theme.Surface
+KeyInputBox.Position = UDim2.fromOffset(14, 0)
+KeyInputBox.Size = UDim2.new(1, -28, 1, 0)
+KeyInputBox.BackgroundTransparency = 1
 KeyInputBox.Font = Enum.Font.Code
 KeyInputBox.PlaceholderText = "Enter Key (FEYKSECURED)..."
 KeyInputBox.PlaceholderColor3 = Theme.Muted
@@ -413,175 +713,294 @@ KeyInputBox.Text = ""
 KeyInputBox.TextColor3 = Theme.White
 KeyInputBox.TextSize = 13
 KeyInputBox.ClearTextOnFocus = false
-KeyInputBox.Parent = KeyCard
-addCorner(KeyInputBox, 6)
-local KeyInputStroke = addStroke(KeyInputBox, Theme.Border, 1, 0)
+KeyInputBox.TextXAlignment = Enum.TextXAlignment.Left
+KeyInputBox.ZIndex = 23
+KeyInputBox.Parent = KeyInputHolder
 
 KeyInputBox.Focused:Connect(function()
-    tween(KeyInputStroke, FastTween, { Color = Theme.White })
+    tween(KeyInputStroke, FastTween, { Color = Theme.White, Thickness = 1.6 })
+    tween(KeyInputHolder, FastTween, { BackgroundColor3 = Theme.Elevated })
 end)
 KeyInputBox.FocusLost:Connect(function()
-    tween(KeyInputStroke, FastTween, { Color = Theme.Border })
+    tween(KeyInputStroke, FastTween, { Color = Theme.Border, Thickness = 1.2 })
+    tween(KeyInputHolder, FastTween, { BackgroundColor3 = Theme.Surface })
 end)
 
 local KeyFeedback = Instance.new("TextLabel")
-KeyFeedback.Position = UDim2.fromOffset(24, 126)
-KeyFeedback.Size = UDim2.new(1, -48, 0, 18)
+KeyFeedback.Position = UDim2.fromOffset(22, 128)
+KeyFeedback.Size = UDim2.new(1, -44, 0, 18)
 KeyFeedback.BackgroundTransparency = 1
 KeyFeedback.Font = Enum.Font.GothamMedium
 KeyFeedback.Text = "Status: Awaiting Authorization..."
-KeyFeedback.TextColor3 = Theme.Muted
+KeyFeedback.TextColor3 = Theme.Silver
 KeyFeedback.TextSize = 11
 KeyFeedback.TextXAlignment = Enum.TextXAlignment.Left
+KeyFeedback.ZIndex = 22
 KeyFeedback.Parent = KeyCard
 
 local UnlockButton = Instance.new("TextButton")
-UnlockButton.Position = UDim2.fromOffset(24, 156)
-UnlockButton.Size = UDim2.new(0.62, -28, 0, 40)
+UnlockButton.Position = UDim2.fromOffset(22, 156)
+UnlockButton.Size = UDim2.new(0.62, -26, 0, 42)
 UnlockButton.BackgroundColor3 = Theme.White
 UnlockButton.AutoButtonColor = false
-UnlockButton.Font = Enum.Font.GothamBold
+UnlockButton.Font = Enum.Font.GothamBlack
 UnlockButton.Text = "AUTHORIZE KEY"
 UnlockButton.TextColor3 = Theme.Black
 UnlockButton.TextSize = 12
+UnlockButton.ZIndex = 22
 UnlockButton.Parent = KeyCard
-addCorner(UnlockButton, 6)
+addCorner(UnlockButton, 8)
 
 local CopyKeyButton = Instance.new("TextButton")
 CopyKeyButton.Position = UDim2.new(0.62, 4, 0, 156)
-CopyKeyButton.Size = UDim2.new(0.38, -28, 0, 40)
+CopyKeyButton.Size = UDim2.new(0.38, -26, 0, 42)
 CopyKeyButton.BackgroundColor3 = Theme.Surface
 CopyKeyButton.AutoButtonColor = false
 CopyKeyButton.Font = Enum.Font.GothamBold
 CopyKeyButton.Text = "GET KEY"
 CopyKeyButton.TextColor3 = Theme.White
 CopyKeyButton.TextSize = 11
+CopyKeyButton.ZIndex = 22
 CopyKeyButton.Parent = KeyCard
-addCorner(CopyKeyButton, 6)
-local CopyKeyStroke = addStroke(CopyKeyButton, Theme.Border, 1, 0)
-
-CopyKeyButton.MouseEnter:Connect(function()
-    tween(CopyKeyButton, FastTween, { BackgroundColor3 = Theme.Elevated })
-    tween(CopyKeyStroke, FastTween, { Color = Theme.White })
-end)
-CopyKeyButton.MouseLeave:Connect(function()
-    tween(CopyKeyButton, FastTween, { BackgroundColor3 = Theme.Surface })
-    tween(CopyKeyStroke, FastTween, { Color = Theme.Border })
-end)
+addCorner(CopyKeyButton, 8)
+local CopyKeyStroke = addLiveBorder(CopyKeyButton, 1.2, 85, 0.2)
 
 local KeyFooter = Instance.new("TextLabel")
-KeyFooter.Position = UDim2.fromOffset(24, 206)
-KeyFooter.Size = UDim2.new(1, -48, 0, 16)
+KeyFooter.Position = UDim2.fromOffset(22, 210)
+KeyFooter.Size = UDim2.new(1, -44, 0, 18)
 KeyFooter.BackgroundTransparency = 1
 KeyFooter.Font = Enum.Font.Code
-KeyFooter.Text = "Core.xyz Security  ·  Key: FEYKSECURED"
+KeyFooter.Text = "CORE.XYZ SECURITY  ·  KEY: FEYKSECURED"
 KeyFooter.TextColor3 = Theme.Muted
 KeyFooter.TextSize = 10
 KeyFooter.TextXAlignment = Enum.TextXAlignment.Center
+KeyFooter.ZIndex = 22
 KeyFooter.Parent = KeyCard
 
+makeDraggable(KeyCard, KeyCard)
+
 --------------------------------------------------------------------------------
--- STAGE 3: MAIN "Core.xyz" ANIMATED WINDOW (BLACK & WHITE MONOCHROME)
+-- 7. FLOATING DRAGGABLE TOGGLE PILL (DECLARED BEFORE MAIN HUB!)
+--------------------------------------------------------------------------------
+local FloatingToggle = Instance.new("TextButton")
+FloatingToggle.Name = "CoreFloatingToggle"
+FloatingToggle.AnchorPoint = Vector2.new(0.5, 0)
+FloatingToggle.Position = UDim2.new(0.5, 0, 0, 14)
+FloatingToggle.Size = UDim2.fromOffset(132, 34)
+FloatingToggle.BackgroundColor3 = Theme.Black
+FloatingToggle.BackgroundTransparency = 0.05
+FloatingToggle.AutoButtonColor = false
+FloatingToggle.Text = ""
+FloatingToggle.Visible = false
+FloatingToggle.ZIndex = 40
+FloatingToggle.Parent = ScreenGui
+addCorner(FloatingToggle, 99)
+addLiveBorder(FloatingToggle, 1.4, 95, 0.08)
+
+local FloatOrb = Instance.new("Frame")
+FloatOrb.AnchorPoint = Vector2.new(0, 0.5)
+FloatOrb.Position = UDim2.new(0, 12, 0.5, 0)
+FloatOrb.Size = UDim2.fromOffset(12, 12)
+FloatOrb.BackgroundTransparency = 1
+FloatOrb.ZIndex = 41
+FloatOrb.Parent = FloatingToggle
+addCorner(FloatOrb, 3)
+addStroke(FloatOrb, Theme.White, 1.3, 0)
+table.insert(liveRotators, { Instance = FloatOrb, Speed = 65 })
+
+local FloatStatusDot = Instance.new("Frame")
+FloatStatusDot.AnchorPoint = Vector2.new(0.5, 0.5)
+FloatStatusDot.Position = UDim2.fromScale(0.5, 0.5)
+FloatStatusDot.Size = UDim2.fromOffset(4, 4)
+FloatStatusDot.BackgroundColor3 = Theme.White
+FloatStatusDot.BorderSizePixel = 0
+FloatStatusDot.ZIndex = 41
+FloatStatusDot.Parent = FloatOrb
+addCorner(FloatStatusDot, 99)
+
+local FloatLabel = Instance.new("TextLabel")
+FloatLabel.Position = UDim2.fromOffset(30, 0)
+FloatLabel.Size = UDim2.new(1, -38, 1, 0)
+FloatLabel.BackgroundTransparency = 1
+FloatLabel.Font = Enum.Font.GothamBlack
+FloatLabel.Text = "CORE.XYZ"
+FloatLabel.TextColor3 = Theme.White
+FloatLabel.TextSize = 11
+FloatLabel.TextXAlignment = Enum.TextXAlignment.Left
+FloatLabel.ZIndex = 41
+FloatLabel.Parent = FloatingToggle
+
+makeDraggable(FloatingToggle, FloatingToggle)
+
+--------------------------------------------------------------------------------
+-- 8. STAGE 3: LIVE-ANIMATED MAIN HUB ("Core.xyz")
 --------------------------------------------------------------------------------
 local MainWindow = Instance.new("Frame")
 MainWindow.Name = "CoreMainWindow"
 MainWindow.AnchorPoint = Vector2.new(0.5, 0.5)
-MainWindow.Position = UDim2.fromScale(0.5, 0.5)
-MainWindow.Size = UDim2.fromOffset(580, 390)
+MainWindow.Position = UDim2.fromScale(0.5, 0.52)
+MainWindow.Size = UDim2.fromOffset(530, 345)
 MainWindow.BackgroundColor3 = Theme.Black
 MainWindow.BackgroundTransparency = 1
+MainWindow.Active = true
 MainWindow.Visible = false
 MainWindow.ClipsDescendants = true
+MainWindow.ZIndex = 10
 MainWindow.Parent = ScreenGui
-addCorner(MainWindow, 10)
-local MainStroke = addStroke(MainWindow, Theme.White, 1, 1)
+addCorner(MainWindow, 12)
+local MainStroke = addLiveBorder(MainWindow, 1.5, 55, 1)
 
 local MainScale = Instance.new("UIScale")
-MainScale.Scale = 0.92
+MainScale.Scale = 0.88
 MainScale.Parent = MainWindow
+
+-- Live Monochrome Particle Field inside Main Window
+createParticleCanvas(MainWindow, 22)
 
 -- Top Header Bar
 local HeaderBar = Instance.new("Frame")
 HeaderBar.Size = UDim2.new(1, 0, 0, 46)
-HeaderBar.BackgroundColor3 = Theme.Surface
+HeaderBar.BackgroundColor3 = Theme.Deep
+HeaderBar.BackgroundTransparency = 0.08
 HeaderBar.BorderSizePixel = 0
+HeaderBar.ZIndex = 12
 HeaderBar.Parent = MainWindow
-addCorner(HeaderBar, 10)
+addCorner(HeaderBar, 12)
 
-local HeaderLine = Instance.new("Frame")
-HeaderLine.Position = UDim2.new(0, 0, 1, -1)
-HeaderLine.Size = UDim2.new(1, 0, 0, 1)
-HeaderLine.BackgroundColor3 = Theme.Border
-HeaderLine.BorderSizePixel = 0
-HeaderLine.Parent = HeaderBar
+local HeaderBottomLine = Instance.new("Frame")
+HeaderBottomLine.Position = UDim2.new(0, 0, 1, -1)
+HeaderBottomLine.Size = UDim2.new(1, 0, 0, 1)
+HeaderBottomLine.BackgroundColor3 = Theme.White
+HeaderBottomLine.BackgroundTransparency = 0.78
+HeaderBottomLine.BorderSizePixel = 0
+HeaderBottomLine.ZIndex = 13
+HeaderBottomLine.Parent = HeaderBar
 
-local HeaderLogoSquare = Instance.new("Frame")
-HeaderLogoSquare.AnchorPoint = Vector2.new(0, 0.5)
-HeaderLogoSquare.Position = UDim2.new(0, 16, 0.5, 0)
-HeaderLogoSquare.Size = UDim2.fromOffset(12, 12)
-HeaderLogoSquare.BackgroundTransparency = 1
-HeaderLogoSquare.Parent = HeaderBar
-addStroke(HeaderLogoSquare, Theme.White, 1.5, 0)
+local HeaderLineGrad = Instance.new("UIGradient")
+HeaderLineGrad.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0.0, Theme.Black),
+    ColorSequenceKeypoint.new(0.5, Theme.White),
+    ColorSequenceKeypoint.new(1.0, Theme.Black),
+})
+HeaderLineGrad.Parent = HeaderBottomLine
+
+-- Live Rotating Emblem in Header
+local HeaderLogoOuter = Instance.new("Frame")
+HeaderLogoOuter.AnchorPoint = Vector2.new(0, 0.5)
+HeaderLogoOuter.Position = UDim2.new(0, 16, 0.5, 0)
+HeaderLogoOuter.Size = UDim2.fromOffset(18, 18)
+HeaderLogoOuter.BackgroundTransparency = 1
+HeaderLogoOuter.ZIndex = 13
+HeaderLogoOuter.Parent = HeaderBar
+addCorner(HeaderLogoOuter, 4)
+addStroke(HeaderLogoOuter, Theme.White, 1.4, 0)
+table.insert(liveRotators, { Instance = HeaderLogoOuter, Speed = 45 })
+
+local HeaderLogoDot = Instance.new("Frame")
+HeaderLogoDot.AnchorPoint = Vector2.new(0.5, 0.5)
+HeaderLogoDot.Position = UDim2.fromScale(0.5, 0.5)
+HeaderLogoDot.Size = UDim2.fromOffset(5, 5)
+HeaderLogoDot.BackgroundColor3 = Theme.White
+HeaderLogoDot.BorderSizePixel = 0
+HeaderLogoDot.ZIndex = 13
+HeaderLogoDot.Parent = HeaderLogoOuter
+addCorner(HeaderLogoDot, 99)
 
 local HeaderTitle = Instance.new("TextLabel")
-HeaderTitle.Position = UDim2.fromOffset(36, 0)
-HeaderTitle.Size = UDim2.fromOffset(200, 46)
+HeaderTitle.Position = UDim2.fromOffset(42, 7)
+HeaderTitle.Size = UDim2.fromOffset(150, 18)
 HeaderTitle.BackgroundTransparency = 1
 HeaderTitle.Font = Enum.Font.GothamBlack
-HeaderTitle.Text = "Core.xyz"
+HeaderTitle.Text = "CORE.XYZ"
 HeaderTitle.TextColor3 = Theme.White
-HeaderTitle.TextSize = 16
+HeaderTitle.TextSize = 15
 HeaderTitle.TextXAlignment = Enum.TextXAlignment.Left
+HeaderTitle.ZIndex = 13
 HeaderTitle.Parent = HeaderBar
 
-local HeaderBadge = Instance.new("TextLabel")
-HeaderBadge.AnchorPoint = Vector2.new(1, 0.5)
-HeaderBadge.Position = UDim2.new(1, -16, 0.5, 0)
-HeaderBadge.Size = UDim2.fromOffset(220, 20)
-HeaderBadge.BackgroundTransparency = 1
-HeaderBadge.Font = Enum.Font.Code
-HeaderBadge.Text = "AUTH: FEYKSECURED · [R-SHIFT]"
-HeaderBadge.TextColor3 = Theme.Muted
-HeaderBadge.TextSize = 10
-HeaderBadge.TextXAlignment = Enum.TextXAlignment.Right
-HeaderBadge.Parent = HeaderBar
+local HeaderSub = Instance.new("TextLabel")
+HeaderSub.Position = UDim2.fromOffset(42, 24)
+HeaderSub.Size = UDim2.fromOffset(220, 14)
+HeaderSub.BackgroundTransparency = 1
+HeaderSub.Font = Enum.Font.Code
+HeaderSub.Text = "UNIVERSAL SUITE  ·  FEYKSECURED"
+HeaderSub.TextColor3 = Theme.Muted
+HeaderSub.TextSize = 9
+HeaderSub.TextXAlignment = Enum.TextXAlignment.Left
+HeaderSub.ZIndex = 13
+HeaderSub.Parent = HeaderBar
 
--- Smooth Dragging on HeaderBar
-do
-    local dragging, dragInput, dragStart, startPos
-    HeaderBar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = MainWindow.Position
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
-        end
-    end)
-    HeaderBar.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-            dragInput = input
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if input == dragInput and dragging then
-            local delta = input.Position - dragStart
-            tween(MainWindow, TweenInfo.new(0.08, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {
-                Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-            })
-        end
-    end)
+-- Minimize Button in Header
+local MinimizeBtn = Instance.new("TextButton")
+MinimizeBtn.AnchorPoint = Vector2.new(1, 0.5)
+MinimizeBtn.Position = UDim2.new(1, -12, 0.5, 0)
+MinimizeBtn.Size = UDim2.fromOffset(28, 28)
+MinimizeBtn.BackgroundColor3 = Theme.Surface
+MinimizeBtn.AutoButtonColor = false
+MinimizeBtn.Font = Enum.Font.GothamBold
+MinimizeBtn.Text = "—"
+MinimizeBtn.TextColor3 = Theme.Silver
+MinimizeBtn.TextSize = 12
+MinimizeBtn.ZIndex = 14
+MinimizeBtn.Parent = HeaderBar
+addCorner(MinimizeBtn, 6)
+local MinStroke = addStroke(MinimizeBtn, Theme.Border, 1, 0)
+
+MinimizeBtn.MouseEnter:Connect(function()
+    tween(MinimizeBtn, FastTween, { BackgroundColor3 = Theme.White, TextColor3 = Theme.Black })
+    tween(MinStroke, FastTween, { Color = Theme.White })
+end)
+MinimizeBtn.MouseLeave:Connect(function()
+    tween(MinimizeBtn, FastTween, { BackgroundColor3 = Theme.Surface, TextColor3 = Theme.Silver })
+    tween(MinStroke, FastTween, { Color = Theme.Border })
+end)
+
+makeDraggable(HeaderBar, MainWindow)
+
+-- Toggle Window Visibility Function (Used by Floating Pill, Minimize Button, and RightShift)
+local function toggleMainHub()
+    if not isAuthorized then
+        return
+    end
+    uiVisible = not uiVisible
+    local targetScale = getResponsiveScale()
+    if uiVisible then
+        MainWindow.Visible = true
+        tween(MainScale, SpringTween, { Scale = targetScale })
+        tween(MainWindow, FastTween, { BackgroundTransparency = 0.03 })
+        tween(MainStroke, FastTween, { Transparency = 0.08 })
+        tween(FloatingToggle, FastTween, { BackgroundColor3 = Theme.Black })
+    else
+        tween(MainScale, FastTween, { Scale = targetScale * 0.9 })
+        tween(MainWindow, FastTween, { BackgroundTransparency = 1 })
+        tween(MainStroke, FastTween, { Transparency = 1 })
+        tween(FloatingToggle, FastTween, { BackgroundColor3 = Theme.Elevated })
+        task.delay(0.18, function()
+            if not uiVisible then
+                MainWindow.Visible = false
+            end
+        end)
+    end
 end
+
+FloatingToggle.MouseButton1Click:Connect(function()
+    spawnRipple(FloatingToggle)
+    toggleMainHub()
+end)
+
+MinimizeBtn.MouseButton1Click:Connect(function()
+    spawnRipple(MinimizeBtn)
+    toggleMainHub()
+end)
 
 -- Left Navigation Sidebar
 local Sidebar = Instance.new("Frame")
 Sidebar.Position = UDim2.fromOffset(0, 46)
-Sidebar.Size = UDim2.new(0, 150, 1, -46)
-Sidebar.BackgroundColor3 = Theme.Surface
+Sidebar.Size = UDim2.new(0, 142, 1, -46)
+Sidebar.BackgroundColor3 = Theme.Deep
+Sidebar.BackgroundTransparency = 0.2
 Sidebar.BorderSizePixel = 0
+Sidebar.ZIndex = 12
 Sidebar.Parent = MainWindow
 
 local SidebarDivider = Instance.new("Frame")
@@ -589,12 +1008,24 @@ SidebarDivider.Position = UDim2.new(1, -1, 0, 0)
 SidebarDivider.Size = UDim2.new(0, 1, 1, 0)
 SidebarDivider.BackgroundColor3 = Theme.Border
 SidebarDivider.BorderSizePixel = 0
+SidebarDivider.ZIndex = 13
 SidebarDivider.Parent = Sidebar
+
+-- Live Sliding Active Tab Indicator Bar
+local ActiveTabIndicator = Instance.new("Frame")
+ActiveTabIndicator.Position = UDim2.fromOffset(10, 18)
+ActiveTabIndicator.Size = UDim2.fromOffset(3, 20)
+ActiveTabIndicator.BackgroundColor3 = Theme.White
+ActiveTabIndicator.BorderSizePixel = 0
+ActiveTabIndicator.ZIndex = 15
+ActiveTabIndicator.Parent = Sidebar
+addCorner(ActiveTabIndicator, 99)
 
 local NavList = Instance.new("Frame")
 NavList.Position = UDim2.fromOffset(10, 12)
-NavList.Size = UDim2.new(1, -20, 1, -24)
+NavList.Size = UDim2.new(1, -20, 1, -54)
 NavList.BackgroundTransparency = 1
+NavList.ZIndex = 13
 NavList.Parent = Sidebar
 
 local NavLayout = Instance.new("UIListLayout")
@@ -602,16 +1033,51 @@ NavLayout.Padding = UDim.new(0, 6)
 NavLayout.SortOrder = Enum.SortOrder.LayoutOrder
 NavLayout.Parent = NavList
 
--- Right Tab Pages Container
+-- User Footer Badge in Sidebar
+local UserCard = Instance.new("Frame")
+UserCard.AnchorPoint = Vector2.new(0.5, 1)
+UserCard.Position = UDim2.new(0.5, 0, 1, -10)
+UserCard.Size = UDim2.new(1, -20, 0, 32)
+UserCard.BackgroundColor3 = Theme.Surface
+UserCard.ZIndex = 13
+UserCard.Parent = Sidebar
+addCorner(UserCard, 6)
+addStroke(UserCard, Theme.Border, 1, 0)
+
+local UserDot = Instance.new("Frame")
+UserDot.AnchorPoint = Vector2.new(0, 0.5)
+UserDot.Position = UDim2.new(0, 10, 0.5, 0)
+UserDot.Size = UDim2.fromOffset(6, 6)
+UserDot.BackgroundColor3 = Theme.White
+UserDot.BorderSizePixel = 0
+UserDot.ZIndex = 14
+UserDot.Parent = UserCard
+addCorner(UserDot, 99)
+
+local UserLabel = Instance.new("TextLabel")
+UserLabel.Position = UDim2.fromOffset(22, 0)
+UserLabel.Size = UDim2.new(1, -26, 1, 0)
+UserLabel.BackgroundTransparency = 1
+UserLabel.Font = Enum.Font.Code
+UserLabel.Text = LocalPlayer.Name or "Operator"
+UserLabel.TextColor3 = Theme.Silver
+UserLabel.TextSize = 10
+UserLabel.TextTruncate = Enum.TextTruncate.AtEnd
+UserLabel.TextXAlignment = Enum.TextXAlignment.Left
+UserLabel.ZIndex = 14
+UserLabel.Parent = UserCard
+
+-- Right Pages Container
 local PagesHolder = Instance.new("Frame")
-PagesHolder.Position = UDim2.fromOffset(150, 46)
-PagesHolder.Size = UDim2.new(1, -150, 1, -46)
+PagesHolder.Position = UDim2.fromOffset(142, 46)
+PagesHolder.Size = UDim2.new(1, -142, 1, -46)
 PagesHolder.BackgroundTransparency = 1
 PagesHolder.ClipsDescendants = true
+PagesHolder.ZIndex = 12
 PagesHolder.Parent = MainWindow
 
 --------------------------------------------------------------------------------
--- UI COMPONENT BUILDERS (TABS, TOGGLES, SLIDERS, DROPDOWNS, BUTTONS)
+-- 9. ANIMATED COMPONENT BUILDERS (TABS, TOGGLES, SLIDERS, DROPDOWNS, BUTTONS)
 --------------------------------------------------------------------------------
 local Tabs = {}
 local activeTab = nil
@@ -619,37 +1085,40 @@ local activeTab = nil
 local function createTab(name, order)
     local btn = Instance.new("TextButton")
     btn.LayoutOrder = order
-    btn.Size = UDim2.new(1, 0, 0, 36)
-    btn.BackgroundColor3 = Theme.White
+    btn.Size = UDim2.new(1, 0, 0, 34)
+    btn.BackgroundColor3 = Theme.Elevated
     btn.BackgroundTransparency = 1
     btn.AutoButtonColor = false
     btn.Font = Enum.Font.GothamBold
-    btn.Text = "   " .. name
+    btn.Text = "    " .. string.upper(name)
     btn.TextColor3 = Theme.Muted
-    btn.TextSize = 12
+    btn.TextSize = 11
     btn.TextXAlignment = Enum.TextXAlignment.Left
+    btn.ZIndex = 14
     btn.Parent = NavList
-    addCorner(btn, 6)
+    addCorner(btn, 7)
     local st = addStroke(btn, Theme.Border, 1, 1)
 
     local page = Instance.new("ScrollingFrame")
     page.Name = name .. "_Page"
     page.Size = UDim2.new(1, 0, 1, 0)
-    page.Position = UDim2.fromOffset(0, 10)
+    page.Position = UDim2.fromOffset(0, 12)
     page.BackgroundTransparency = 1
     page.BorderSizePixel = 0
     page.ScrollBarThickness = 2
     page.ScrollBarImageColor3 = Theme.White
+    page.ScrollingEnabled = true
     page.Visible = false
     page.AutomaticCanvasSize = Enum.AutomaticSize.Y
     page.CanvasSize = UDim2.new(0, 0, 0, 0)
+    page.ZIndex = 13
     page.Parent = PagesHolder
 
     local pad = Instance.new("UIPadding")
-    pad.PaddingTop = UDim.new(0, 14)
+    pad.PaddingTop = UDim.new(0, 12)
     pad.PaddingBottom = UDim.new(0, 18)
-    pad.PaddingLeft = UDim.new(0, 16)
-    pad.PaddingRight = UDim.new(0, 16)
+    pad.PaddingLeft = UDim.new(0, 14)
+    pad.PaddingRight = UDim.new(0, 14)
     pad.Parent = page
 
     local list = Instance.new("UIListLayout")
@@ -657,41 +1126,89 @@ local function createTab(name, order)
     list.SortOrder = Enum.SortOrder.LayoutOrder
     list.Parent = page
 
-    local tabObj = { Btn = btn, Stroke = st, Page = page }
+    local tabObj = { Btn = btn, Stroke = st, Page = page, Order = order }
     table.insert(Tabs, tabObj)
 
     local function selectTab()
-        if activeTab == tabObj then return end
+        if activeTab == tabObj then
+            return
+        end
         for _, t in ipairs(Tabs) do
-            tween(t.Btn, FastTween, { BackgroundTransparency = 1, TextColor3 = Theme.Muted })
+            tween(t.Btn, FastTween, {
+                BackgroundTransparency = 1,
+                TextColor3 = Theme.Muted,
+            })
             tween(t.Stroke, FastTween, { Transparency = 1 })
             t.Page.Visible = false
         end
         activeTab = tabObj
-        tween(btn, FastTween, { BackgroundTransparency = 0, TextColor3 = Theme.Black })
-        tween(st, FastTween, { Transparency = 0 })
-        page.Position = UDim2.fromOffset(0, 12)
+        tween(btn, FastTween, {
+            BackgroundTransparency = 0.1,
+            TextColor3 = Theme.White,
+        })
+        tween(st, FastTween, { Transparency = 0.2, Color = Theme.White })
+
+        -- Slide ActiveTabIndicator smoothly to selected button row
+        local targetY = 12 + ((order - 1) * 40) + 7
+        tween(ActiveTabIndicator, SpringTween, {
+            Position = UDim2.fromOffset(10, targetY),
+        })
+
+        page.Position = UDim2.fromOffset(14, 0)
         page.Visible = true
         tween(page, SmoothTween, { Position = UDim2.fromOffset(0, 0) })
     end
 
-    btn.MouseButton1Click:Connect(selectTab)
+    btn.MouseEnter:Connect(function()
+        if activeTab ~= tabObj then
+            tween(btn, FastTween, { BackgroundTransparency = 0.5, TextColor3 = Theme.Silver })
+        end
+    end)
+    btn.MouseLeave:Connect(function()
+        if activeTab ~= tabObj then
+            tween(btn, FastTween, { BackgroundTransparency = 1, TextColor3 = Theme.Muted })
+        end
+    end)
+    btn.MouseButton1Click:Connect(function()
+        spawnRipple(btn)
+        selectTab()
+    end)
+
     if #Tabs == 1 then
         selectTab()
     end
+
     return page
 end
 
 local function createLabel(page, text)
+    local holder = Instance.new("Frame")
+    holder.Size = UDim2.new(1, 0, 0, 22)
+    holder.BackgroundTransparency = 1
+    holder.ZIndex = 14
+    holder.Parent = page
+
+    local dot = Instance.new("Frame")
+    dot.AnchorPoint = Vector2.new(0, 0.5)
+    dot.Position = UDim2.new(0, 2, 0.5, 0)
+    dot.Size = UDim2.fromOffset(4, 4)
+    dot.BackgroundColor3 = Theme.White
+    dot.BorderSizePixel = 0
+    dot.ZIndex = 14
+    dot.Parent = holder
+    addCorner(dot, 99)
+
     local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(1, 0, 0, 22)
+    lbl.Position = UDim2.fromOffset(12, 0)
+    lbl.Size = UDim2.new(1, -12, 1, 0)
     lbl.BackgroundTransparency = 1
-    lbl.Font = Enum.Font.GothamBold
+    lbl.Font = Enum.Font.GothamBlack
     lbl.Text = string.upper(text)
-    lbl.TextColor3 = Theme.Muted
+    lbl.TextColor3 = Theme.Silver
     lbl.TextSize = 10
     lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.Parent = page
+    lbl.ZIndex = 14
+    lbl.Parent = holder
 end
 
 local function createButton(page, text, callback)
@@ -703,8 +1220,9 @@ local function createButton(page, text, callback)
     btn.Text = text
     btn.TextColor3 = Theme.White
     btn.TextSize = 12
+    btn.ZIndex = 14
     btn.Parent = page
-    addCorner(btn, 6)
+    addCorner(btn, 8)
     local st = addStroke(btn, Theme.Border, 1, 0)
 
     btn.MouseEnter:Connect(function()
@@ -716,6 +1234,7 @@ local function createButton(page, text, callback)
         tween(st, FastTween, { Color = Theme.Border })
     end)
     btn.MouseButton1Click:Connect(function()
+        spawnRipple(btn)
         tween(btn, TweenInfo.new(0.08), { BackgroundColor3 = Theme.White, TextColor3 = Theme.Black })
         task.delay(0.12, function()
             tween(btn, FastTween, { BackgroundColor3 = Theme.Surface, TextColor3 = Theme.White })
@@ -726,54 +1245,82 @@ end
 
 local function createToggle(page, text, defaultVal, callback)
     local row = Instance.new("TextButton")
-    row.Size = UDim2.new(1, 0, 0, 38)
+    row.Size = UDim2.new(1, 0, 0, 40)
     row.BackgroundColor3 = Theme.Surface
     row.AutoButtonColor = false
     row.Text = ""
+    row.ZIndex = 14
     row.Parent = page
-    addCorner(row, 6)
-    local st = addStroke(row, Theme.Border, 1, 0)
+    addCorner(row, 8)
+    local st = addStroke(row, defaultVal and Theme.White or Theme.Border, 1, defaultVal and 0.35 or 0)
+
+    local statusBar = Instance.new("Frame")
+    statusBar.AnchorPoint = Vector2.new(0, 0.5)
+    statusBar.Position = UDim2.new(0, 0, 0.5, 0)
+    statusBar.Size = UDim2.fromOffset(3, defaultVal and 20 or 0)
+    statusBar.BackgroundColor3 = Theme.White
+    statusBar.BorderSizePixel = 0
+    statusBar.ZIndex = 15
+    statusBar.Parent = row
+    addCorner(statusBar, 99)
 
     local lbl = Instance.new("TextLabel")
-    lbl.Position = UDim2.fromOffset(12, 0)
-    lbl.Size = UDim2.new(1, -70, 1, 0)
+    lbl.Position = UDim2.fromOffset(14, 0)
+    lbl.Size = UDim2.new(1, -76, 1, 0)
     lbl.BackgroundTransparency = 1
     lbl.Font = Enum.Font.GothamMedium
     lbl.Text = text
-    lbl.TextColor3 = Theme.White
+    lbl.TextColor3 = defaultVal and Theme.White or Theme.Silver
     lbl.TextSize = 12
     lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.ZIndex = 15
     lbl.Parent = row
 
     local pill = Instance.new("Frame")
     pill.AnchorPoint = Vector2.new(1, 0.5)
     pill.Position = UDim2.new(1, -12, 0.5, 0)
-    pill.Size = UDim2.fromOffset(38, 20)
-    pill.BackgroundColor3 = defaultVal and Theme.White or Theme.Elevated
+    pill.Size = UDim2.fromOffset(42, 22)
+    pill.BackgroundColor3 = defaultVal and Theme.White or Theme.Deep
+    pill.ZIndex = 15
     pill.Parent = row
     addCorner(pill, 99)
-    addStroke(pill, Theme.Border, 1, 0)
+    local pillStroke = addStroke(pill, defaultVal and Theme.White or Theme.Border, 1, 0)
 
     local dot = Instance.new("Frame")
     dot.AnchorPoint = Vector2.new(0, 0.5)
-    dot.Position = defaultVal and UDim2.new(1, -17, 0.5, 0) or UDim2.new(0, 3, 0.5, 0)
-    dot.Size = UDim2.fromOffset(14, 14)
+    dot.Position = defaultVal and UDim2.new(1, -19, 0.5, 0) or UDim2.new(0, 3, 0.5, 0)
+    dot.Size = UDim2.fromOffset(16, 16)
     dot.BackgroundColor3 = defaultVal and Theme.Black or Theme.Muted
+    dot.ZIndex = 16
     dot.Parent = pill
     addCorner(dot, 99)
 
     local state = defaultVal
     row.MouseEnter:Connect(function()
-        tween(st, FastTween, { Color = Theme.Silver })
+        tween(row, FastTween, { BackgroundColor3 = Theme.Elevated })
     end)
     row.MouseLeave:Connect(function()
-        tween(st, FastTween, { Color = Theme.Border })
+        tween(row, FastTween, { BackgroundColor3 = Theme.Surface })
     end)
     row.MouseButton1Click:Connect(function()
         state = not state
-        tween(pill, FastTween, { BackgroundColor3 = state and Theme.White or Theme.Elevated })
-        tween(dot, FastTween, {
-            Position = state and UDim2.new(1, -17, 0.5, 0) or UDim2.new(0, 3, 0.5, 0),
+        spawnRipple(row)
+        tween(lbl, FastTween, { TextColor3 = state and Theme.White or Theme.Silver })
+        tween(st, FastTween, {
+            Color = state and Theme.White or Theme.Border,
+            Transparency = state and 0.35 or 0,
+        })
+        tween(statusBar, SpringTween, {
+            Size = UDim2.fromOffset(3, state and 20 or 0),
+        })
+        tween(pill, FastTween, {
+            BackgroundColor3 = state and Theme.White or Theme.Deep,
+        })
+        tween(pillStroke, FastTween, {
+            Color = state and Theme.White or Theme.Border,
+        })
+        tween(dot, SpringTween, {
+            Position = state and UDim2.new(1, -19, 0.5, 0) or UDim2.new(0, 3, 0.5, 0),
             BackgroundColor3 = state and Theme.Black or Theme.Muted,
         })
         callback(state)
@@ -782,72 +1329,106 @@ end
 
 local function createSlider(page, text, minVal, maxVal, defaultVal, increment, suffix, callback)
     local card = Instance.new("Frame")
-    card.Size = UDim2.new(1, 0, 0, 52)
+    card.Size = UDim2.new(1, 0, 0, 54)
     card.BackgroundColor3 = Theme.Surface
+    card.ZIndex = 14
     card.Parent = page
-    addCorner(card, 6)
-    addStroke(card, Theme.Border, 1, 0)
+    addCorner(card, 8)
+    local st = addStroke(card, Theme.Border, 1, 0)
 
     local lbl = Instance.new("TextLabel")
-    lbl.Position = UDim2.fromOffset(12, 6)
-    lbl.Size = UDim2.new(0.65, 0, 0, 18)
+    lbl.Position = UDim2.fromOffset(14, 7)
+    lbl.Size = UDim2.new(0.62, 0, 0, 18)
     lbl.BackgroundTransparency = 1
     lbl.Font = Enum.Font.GothamMedium
     lbl.Text = text
     lbl.TextColor3 = Theme.White
     lbl.TextSize = 12
     lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.ZIndex = 15
     lbl.Parent = card
 
-    local valText = Instance.new("TextLabel")
-    valText.AnchorPoint = Vector2.new(1, 0)
-    valText.Position = UDim2.new(1, -12, 0, 6)
-    valText.Size = UDim2.new(0.35, -12, 0, 18)
-    valText.BackgroundTransparency = 1
-    valText.Font = Enum.Font.Code
-    valText.Text = tostring(defaultVal) .. (suffix ~= "" and (" " .. suffix) or "")
-    valText.TextColor3 = Theme.Silver
-    valText.TextSize = 11
-    valText.TextXAlignment = Enum.TextXAlignment.Right
-    valText.Parent = card
+    local valBadge = Instance.new("TextLabel")
+    valBadge.AnchorPoint = Vector2.new(1, 0)
+    valBadge.Position = UDim2.new(1, -14, 0, 7)
+    valBadge.Size = UDim2.new(0.38, -14, 0, 18)
+    valBadge.BackgroundTransparency = 1
+    valBadge.Font = Enum.Font.Code
+    valBadge.Text = tostring(defaultVal) .. (suffix ~= "" and (" " .. suffix) or "")
+    valBadge.TextColor3 = Theme.White
+    valBadge.TextSize = 11
+    valBadge.TextXAlignment = Enum.TextXAlignment.Right
+    valBadge.ZIndex = 15
+    valBadge.Parent = card
 
     local track = Instance.new("TextButton")
-    track.Position = UDim2.fromOffset(12, 32)
-    track.Size = UDim2.new(1, -24, 0, 6)
-    track.BackgroundColor3 = Theme.Elevated
+    track.Position = UDim2.fromOffset(14, 34)
+    track.Size = UDim2.new(1, -28, 0, 6)
+    track.BackgroundColor3 = Theme.Deep
     track.AutoButtonColor = false
     track.Text = ""
+    track.ZIndex = 15
     track.Parent = card
     addCorner(track, 99)
+    addStroke(track, Theme.Border, 1, 0.3)
 
     local initPct = math.clamp((defaultVal - minVal) / (maxVal - minVal), 0, 1)
     local fill = Instance.new("Frame")
     fill.Size = UDim2.fromScale(initPct, 1)
     fill.BackgroundColor3 = Theme.White
     fill.BorderSizePixel = 0
+    fill.ZIndex = 16
     fill.Parent = track
     addCorner(fill, 99)
 
+    local thumb = Instance.new("Frame")
+    thumb.AnchorPoint = Vector2.new(0.5, 0.5)
+    thumb.Position = UDim2.fromScale(initPct, 0.5)
+    thumb.Size = UDim2.fromOffset(12, 12)
+    thumb.BackgroundColor3 = Theme.White
+    thumb.BorderSizePixel = 0
+    thumb.ZIndex = 17
+    thumb.Parent = track
+    addCorner(thumb, 99)
+    addStroke(thumb, Theme.Black, 2, 0)
+
     local sliding = false
     local function updateSlider(input)
-        local pct = math.clamp((input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
+        local trackWidth = track.AbsoluteSize.X
+        if trackWidth <= 0 then
+            trackWidth = 300
+        end
+        local pct = math.clamp((input.Position.X - track.AbsolutePosition.X) / trackWidth, 0, 1)
         local raw = minVal + (maxVal - minVal) * pct
         local snapped = math.floor((raw / increment) + 0.5) * increment
         snapped = tonumber(string.format("%.2f", snapped)) or snapped
         tween(fill, TweenInfo.new(0.06), { Size = UDim2.fromScale(pct, 1) })
-        valText.Text = tostring(snapped) .. (suffix ~= "" and (" " .. suffix) or "")
+        tween(thumb, TweenInfo.new(0.06), { Position = UDim2.fromScale(pct, 0.5) })
+        valBadge.Text = tostring(snapped) .. (suffix ~= "" and (" " .. suffix) or "")
         callback(snapped)
     end
 
     track.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             sliding = true
+            if page and page:IsA("ScrollingFrame") then
+                page.ScrollingEnabled = false
+            end
+            tween(thumb, FastTween, { Size = UDim2.fromOffset(16, 16) })
+            tween(st, FastTween, { Color = Theme.White })
             updateSlider(input)
         end
     end)
     UserInputService.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            sliding = false
+            if sliding then
+                sliding = false
+                if page and page:IsA("ScrollingFrame") then
+                    page.ScrollingEnabled = true
+                end
+                tween(thumb, FastTween, { Size = UDim2.fromOffset(12, 12) })
+                tween(st, FastTween, { Color = Theme.Border })
+            end
         end
     end)
     UserInputService.InputChanged:Connect(function(input)
@@ -857,67 +1438,151 @@ local function createSlider(page, text, minVal, maxVal, defaultVal, increment, s
     end)
 end
 
+-- Smooth Expandable Animated Dropdown
 local function createDropdown(page, text, options, defaultOption, callback)
-    local idx = table.find(options, defaultOption) or 1
-    local row = Instance.new("TextButton")
-    row.Size = UDim2.new(1, 0, 0, 38)
-    row.BackgroundColor3 = Theme.Surface
-    row.AutoButtonColor = false
-    row.Text = ""
-    row.Parent = page
-    addCorner(row, 6)
-    local st = addStroke(row, Theme.Border, 1, 0)
+    local isOpen = false
+    local selected = defaultOption or options[1]
+
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, 0, 0, 40)
+    container.BackgroundColor3 = Theme.Surface
+    container.ClipsDescendants = true
+    container.ZIndex = 14
+    container.Parent = page
+    addCorner(container, 8)
+    local st = addStroke(container, Theme.Border, 1, 0)
+
+    local headerBtn = Instance.new("TextButton")
+    headerBtn.Size = UDim2.new(1, 0, 0, 40)
+    headerBtn.BackgroundTransparency = 1
+    headerBtn.AutoButtonColor = false
+    headerBtn.Text = ""
+    headerBtn.ZIndex = 15
+    headerBtn.Parent = container
 
     local lbl = Instance.new("TextLabel")
-    lbl.Position = UDim2.fromOffset(12, 0)
-    lbl.Size = UDim2.new(0.55, 0, 1, 0)
+    lbl.Position = UDim2.fromOffset(14, 0)
+    lbl.Size = UDim2.new(0.52, 0, 1, 0)
     lbl.BackgroundTransparency = 1
     lbl.Font = Enum.Font.GothamMedium
     lbl.Text = text
     lbl.TextColor3 = Theme.White
     lbl.TextSize = 12
     lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.Parent = row
+    lbl.ZIndex = 15
+    lbl.Parent = headerBtn
 
     local badge = Instance.new("Frame")
     badge.AnchorPoint = Vector2.new(1, 0.5)
-    badge.Position = UDim2.new(1, -10, 0.5, 0)
-    badge.Size = UDim2.fromOffset(145, 24)
-    badge.BackgroundColor3 = Theme.Elevated
-    badge.Parent = row
-    addCorner(badge, 4)
+    badge.Position = UDim2.new(1, -12, 0.5, 0)
+    badge.Size = UDim2.fromOffset(148, 24)
+    badge.BackgroundColor3 = Theme.Deep
+    badge.ZIndex = 15
+    badge.Parent = headerBtn
+    addCorner(badge, 6)
     addStroke(badge, Theme.Border, 1, 0)
 
     local optLbl = Instance.new("TextLabel")
-    optLbl.Size = UDim2.fromScale(1, 1)
+    optLbl.Position = UDim2.fromOffset(8, 0)
+    optLbl.Size = UDim2.new(1, -24, 1, 0)
     optLbl.BackgroundTransparency = 1
     optLbl.Font = Enum.Font.Code
-    optLbl.Text = tostring(options[idx])
+    optLbl.Text = tostring(selected)
     optLbl.TextColor3 = Theme.White
     optLbl.TextSize = 11
+    optLbl.TextTruncate = Enum.TextTruncate.AtEnd
+    optLbl.TextXAlignment = Enum.TextXAlignment.Left
+    optLbl.ZIndex = 16
     optLbl.Parent = badge
 
-    row.MouseEnter:Connect(function()
-        tween(st, FastTween, { Color = Theme.White })
-    end)
-    row.MouseLeave:Connect(function()
-        tween(st, FastTween, { Color = Theme.Border })
-    end)
-    row.MouseButton1Click:Connect(function()
-        idx = (idx % #options) + 1
-        optLbl.Text = tostring(options[idx])
-        callback(options[idx])
+    local arrow = Instance.new("TextLabel")
+    arrow.AnchorPoint = Vector2.new(1, 0.5)
+    arrow.Position = UDim2.new(1, -6, 0.5, 0)
+    arrow.Size = UDim2.fromOffset(14, 14)
+    arrow.BackgroundTransparency = 1
+    arrow.Font = Enum.Font.GothamBold
+    arrow.Text = "v"
+    arrow.TextColor3 = Theme.Silver
+    arrow.TextSize = 10
+    arrow.ZIndex = 16
+    arrow.Parent = badge
+
+    local listHolder = Instance.new("Frame")
+    listHolder.Position = UDim2.fromOffset(10, 42)
+    listHolder.Size = UDim2.new(1, -20, 0, #options * 28)
+    listHolder.BackgroundTransparency = 1
+    listHolder.ZIndex = 15
+    listHolder.Parent = container
+
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.Padding = UDim.new(0, 4)
+    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    listLayout.Parent = listHolder
+
+    local optionButtons = {}
+
+    local function setOpen(state)
+        isOpen = state
+        local openHeight = 46 + (#options * 30)
+        tween(container, SmoothTween, {
+            Size = UDim2.new(1, 0, 0, isOpen and openHeight or 40),
+        })
+        tween(arrow, FastTween, {
+            Rotation = isOpen and 180 or 0,
+        })
+        tween(st, FastTween, {
+            Color = isOpen and Theme.White or Theme.Border,
+        })
+    end
+
+    for i, opt in ipairs(options) do
+        local optBtn = Instance.new("TextButton")
+        optBtn.LayoutOrder = i
+        optBtn.Size = UDim2.new(1, 0, 0, 26)
+        optBtn.BackgroundColor3 = (opt == selected) and Theme.White or Theme.Deep
+        optBtn.AutoButtonColor = false
+        optBtn.Font = Enum.Font.Code
+        optBtn.Text = tostring(opt)
+        optBtn.TextColor3 = (opt == selected) and Theme.Black or Theme.Silver
+        optBtn.TextSize = 11
+        optBtn.ZIndex = 16
+        optBtn.Parent = listHolder
+        addCorner(optBtn, 6)
+
+        table.insert(optionButtons, { Btn = optBtn, Value = opt })
+
+        optBtn.MouseButton1Click:Connect(function()
+            selected = opt
+            optLbl.Text = tostring(opt)
+            for _, item in ipairs(optionButtons) do
+                local active = (item.Value == selected)
+                tween(item.Btn, FastTween, {
+                    BackgroundColor3 = active and Theme.White or Theme.Deep,
+                    TextColor3 = active and Theme.Black or Theme.Silver,
+                })
+            end
+            setOpen(false)
+            callback(opt)
+        end)
+    end
+
+    headerBtn.MouseButton1Click:Connect(function()
+        spawnRipple(headerBtn)
+        setOpen(not isOpen)
     end)
 end
 
 --------------------------------------------------------------------------------
--- CORE GAMEPLAY FUNCTIONS (WITH ALL CODE REVIEW FIXES)
+-- 10. CORE GAMEPLAY FUNCTIONS (WITH ALL CODE REVIEW IMPROVEMENTS)
 --------------------------------------------------------------------------------
--- R6 & R15 Rig Target Fallback
 local function getTargetPartFromCharacter(char, partName)
-    if not char then return nil end
+    if not char then
+        return nil
+    end
     local found = char:FindFirstChild(partName)
-    if found then return found end
+    if found then
+        return found
+    end
 
     if partName == "UpperTorso" or partName == "LowerTorso" then
         return char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
@@ -934,18 +1599,34 @@ local function getTargetPartFromCharacter(char, partName)
 end
 
 local function passesTeamCheck(player)
-    if not teamCheckEnabled then return true end
-    if selectedTeams["All"] then return true end
+    if not teamCheckEnabled then
+        return true
+    end
+    if selectedTeams["All"] then
+        return true
+    end
     return selectedTeams[tostring(player.Team)] == true
 end
 
 local function cleanupPlayerESP(player)
     local data = espObjects[player]
-    if not data then return end
-    if data.Billboard then pcall(function() data.Billboard:Destroy() end) end
-    if data.Tracer then pcall(function() data.Tracer:Destroy() end) end
+    if not data then
+        return
+    end
+    if data.Billboard then
+        pcall(function()
+            data.Billboard:Destroy()
+        end)
+    end
+    if data.Tracer then
+        pcall(function()
+            data.Tracer:Destroy()
+        end)
+    end
     if data.Highlight then
-        pcall(function() data.Highlight:Destroy() end)
+        pcall(function()
+            data.Highlight:Destroy()
+        end)
         activeHighlightCount = math.max(0, activeHighlightCount - 1)
     end
     espObjects[player] = nil
@@ -1009,18 +1690,20 @@ local function updateESP(camera)
 
                 if (not tagData.Highlight or tagData.Highlight.Adornee ~= char) and activeHighlightCount < MAX_HIGHLIGHTS then
                     if tagData.Highlight then
-                        pcall(function() tagData.Highlight:Destroy() end)
+                        pcall(function()
+                            tagData.Highlight:Destroy()
+                        end)
                         activeHighlightCount = math.max(0, activeHighlightCount - 1)
                     end
                     local hl = Instance.new("Highlight")
                     hl.FillColor = espColor
                     hl.OutlineColor = Theme.White
                     hl.FillTransparency = 0.7
-                    hl.OutlineTransparency = 0.3
+                    hl.OutlineTransparency = 0.25
                     hl.Adornee = char
                     hl.Parent = HighlightContainer
                     tagData.Highlight = hl
-                    activeHighlightCount += 1
+                    activeHighlightCount = activeHighlightCount + 1
                 end
 
                 local dist = math.floor((hrp.Position - camera.CFrame.Position).Magnitude)
@@ -1028,7 +1711,7 @@ local function updateESP(camera)
 
                 tagData.Billboard.Adornee = hrp
                 tagData.Billboard.Enabled = onScreen
-                tagData.Text.Text = string.format("%s [%dm] | health : %d", player.Name, dist, math.floor(hum.Health))
+                tagData.Text.Text = string.format("%s [%dm] | HP: %d", player.Name, dist, math.floor(hum.Health))
                 tagData.Text.TextColor3 = espColor
 
                 if tagData.Highlight then
@@ -1049,9 +1732,10 @@ local function updateESP(camera)
                     local diff = toPos - fromPos
                     local mid = (fromPos + toPos) / 2
 
+                    local atan2Fn = math.atan2 or math.atan
                     tagData.Tracer.Position = UDim2.fromOffset(mid.X, mid.Y)
                     tagData.Tracer.Size = UDim2.fromOffset(diff.Magnitude, 1)
-                    tagData.Tracer.Rotation = math.deg(math.atan2(diff.Y, diff.X))
+                    tagData.Tracer.Rotation = math.deg(atan2Fn(diff.Y, diff.X))
                     tagData.Tracer.BackgroundColor3 = espColor
                     tagData.Tracer.Visible = true
                 else
@@ -1089,7 +1773,7 @@ local function getClosestTarget(camera)
                     if dist <= shortest then
                         local dir = part.Position - camera.CFrame.Position
                         local ray = workspace:Raycast(camera.CFrame.Position, dir.Unit * 999, rayParams)
-                        if ray and ray.Instance:IsDescendantOf(player.Character) then
+                        if ray and ray.Instance and ray.Instance:IsDescendantOf(player.Character) then
                             shortest = dist
                             closest = part
                         end
@@ -1122,7 +1806,7 @@ local function restoreNoClipCollisions()
 end
 
 --------------------------------------------------------------------------------
--- BUILD ALL TABS (HOME, COMBAT, VISUALS, MOVEMENT, MISC)
+-- 11. BUILD ALL TABS (HOME, COMBAT, VISUALS, MOVEMENT, MISC)
 --------------------------------------------------------------------------------
 local HomeTab = createTab("Home", 1)
 local CombatTab = createTab("Combat", 2)
@@ -1131,30 +1815,39 @@ local MovementTab = createTab("Movement", 4)
 local MiscTab = createTab("Misc", 5)
 
 -- Home Tab
-createLabel(HomeTab, "Welcome to Core.xyz Universal")
-createButton(HomeTab, "Copy Discord Link", function()
+createLabel(HomeTab, "Core.xyz Universal Control")
+createButton(HomeTab, "Copy Discord Invite", function()
     if setclipboard then
         setclipboard("https://discord.gg/yeKPEZpMMu")
-        notify("Core.xyz", "Discord link copied to clipboard!", 5)
+        notify("Core.xyz", "Discord invite copied to clipboard!", 4)
     else
-        notify("Core.xyz", "Discord: discord.gg/yeKPEZpMMu", 5)
+        notify("Core.xyz", "Discord: discord.gg/yeKPEZpMMu", 4)
+    end
+end)
+createButton(HomeTab, "Reset Character Camera", function()
+    local cam = workspace.CurrentCamera
+    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if cam and hum then
+        cam.CameraSubject = hum
+        cam.CameraType = Enum.CameraType.Custom
+        notify("Core.xyz", "Camera reset to Humanoid.", 3)
     end
 end)
 
 -- Combat Tab
-createLabel(CombatTab, "Aimbot and Targeting")
+createLabel(CombatTab, "Aimbot & Precision")
 createToggle(CombatTab, "Aimbot", false, function(val)
     enabled = val
 end)
-createToggle(CombatTab, "FOV Visual", false, function(val)
+createToggle(CombatTab, "FOV Circle", false, function(val)
     showFOV = val
     FovCircle.Visible = val
 end)
-createSlider(CombatTab, "FOV Radius", 1, 200, 75, 1, "Radius", function(val)
+createSlider(CombatTab, "FOV Radius", 10, 220, 75, 1, "px", function(val)
     fovRadius = val
     FovCircle.Size = UDim2.fromOffset(val * 2, val * 2)
 end)
-createSlider(CombatTab, "Smoothness", 0.05, 1, 0.4, 0.01, "", function(val)
+createSlider(CombatTab, "Aimbot Smoothness", 0.05, 1, 0.4, 0.01, "", function(val)
     smoothness = val
 end)
 createToggle(CombatTab, "Team Check", true, function(val)
@@ -1167,7 +1860,7 @@ end
 createDropdown(CombatTab, "Target Teams", allTeams, "All", function(opt)
     selectedTeams = { [opt] = true }
 end)
-createDropdown(CombatTab, "Part Target", {
+createDropdown(CombatTab, "Target Hitbox", {
     "Head",
     "HumanoidRootPart",
     "UpperTorso",
@@ -1175,18 +1868,20 @@ createDropdown(CombatTab, "Part Target", {
     "RightUpperArm",
     "LeftUpperArm",
     "RightUpperLeg",
-    "LeftUpperLeg"
+    "LeftUpperLeg",
 }, "Head", function(opt)
     targetPart = opt
 end)
 
 -- Visuals Tab
-createLabel(VisualsTab, "ESP and Visual Settings")
-createToggle(VisualsTab, "ESP", false, function(val)
+createLabel(VisualsTab, "ESP & Overlay Visuals")
+createToggle(VisualsTab, "Player ESP", false, function(val)
     espEnabled = val
-    if not val then clearESP() end
+    if not val then
+        clearESP()
+    end
 end)
-createToggle(VisualsTab, "Tracers", false, function(val)
+createToggle(VisualsTab, "Snapline Tracers", false, function(val)
     tracersEnabled = val
     for _, data in pairs(espObjects) do
         if data.Tracer then
@@ -1200,10 +1895,10 @@ end)
 
 local ColorMap = {
     White = Color3.fromRGB(255, 255, 255),
-    Silver = Color3.fromRGB(180, 180, 180),
-    Red = Color3.fromRGB(255, 65, 65),
-    Cyan = Color3.fromRGB(70, 225, 255),
-    Green = Color3.fromRGB(80, 255, 140),
+    Silver = Color3.fromRGB(185, 185, 195),
+    Red = Color3.fromRGB(255, 70, 70),
+    Cyan = Color3.fromRGB(80, 225, 255),
+    Green = Color3.fromRGB(90, 255, 145),
 }
 createDropdown(VisualsTab, "ESP Color", { "White", "Silver", "Red", "Cyan", "Green" }, "White", function(opt)
     espColor = ColorMap[opt] or Theme.White
@@ -1216,33 +1911,37 @@ createDropdown(VisualsTab, "Crosshair Color", { "White", "Red", "Cyan", "Green" 
     crosshairColor = ColorMap[opt] or Theme.White
     updateCrosshair()
 end)
-createSlider(VisualsTab, "Crosshair Size", 5, 50, 10, 1, "Px", function(val)
+createSlider(VisualsTab, "Crosshair Size", 4, 45, 10, 1, "px", function(val)
     crosshairSize = val
     updateCrosshair()
 end)
 
 -- Movement Tab
-createLabel(MovementTab, "Movement Enhancements")
-createToggle(MovementTab, "Custom Walkspeed", false, function(val)
+createLabel(MovementTab, "Character Movement")
+createToggle(MovementTab, "Custom WalkSpeed", false, function(val)
     walkSpeedEnabled = val
     updateMovement()
 end)
-createSlider(MovementTab, "Walkspeed", 16, 100, 16, 1, "Speed", function(val)
+createSlider(MovementTab, "WalkSpeed", 16, 120, 16, 1, "studs", function(val)
     walkSpeed = val
-    if walkSpeedEnabled then updateMovement() end
+    if walkSpeedEnabled then
+        updateMovement()
+    end
 end)
-createToggle(MovementTab, "Custom Jump Power", false, function(val)
+createToggle(MovementTab, "Custom JumpPower", false, function(val)
     jumpPowerEnabled = val
     updateMovement()
 end)
-createSlider(MovementTab, "Jump Power", 50, 200, 50, 1, "studs", function(val)
+createSlider(MovementTab, "JumpPower", 50, 220, 50, 1, "power", function(val)
     jumpPower = val
-    if jumpPowerEnabled then updateMovement() end
+    if jumpPowerEnabled then
+        updateMovement()
+    end
 end)
 createToggle(MovementTab, "Infinite Jump", false, function(val)
     infJumpEnabled = val
 end)
-createToggle(MovementTab, "NoClip", false, function(val)
+createToggle(MovementTab, "NoClip (Stepped)", false, function(val)
     noClipEnabled = val
     if not val then
         restoreNoClipCollisions()
@@ -1250,10 +1949,12 @@ createToggle(MovementTab, "NoClip", false, function(val)
 end)
 
 -- Misc Tab
-createLabel(MiscTab, "Miscellaneous Features")
-createToggle(MiscTab, "Anti-AFK", false, function(val)
+createLabel(MiscTab, "Session Utilities")
+createToggle(MiscTab, "Anti-AFK Protection", false, function(val)
     if val then
-        if antiAFKConnection then antiAFKConnection:Disconnect() end
+        if antiAFKConnection then
+            antiAFKConnection:Disconnect()
+        end
         antiAFKConnection = LocalPlayer.Idled:Connect(function()
             local cam = workspace.CurrentCamera
             if cam then
@@ -1262,7 +1963,7 @@ createToggle(MiscTab, "Anti-AFK", false, function(val)
                 VirtualUser:Button2Up(Vector2.zero, cam.CFrame)
             end
         end)
-        notify("Core.xyz", "Anti-AFK protection active.", 4)
+        notify("Core.xyz", "Anti-AFK protection enabled.", 4)
     else
         if antiAFKConnection then
             antiAFKConnection:Disconnect()
@@ -1272,54 +1973,81 @@ createToggle(MiscTab, "Anti-AFK", false, function(val)
 end)
 
 --------------------------------------------------------------------------------
--- KEY SYSTEM VERIFICATION & BOOT ORCHESTRATION
+-- 12. KEY SYSTEM AUTHORIZATION & MAIN HUB LAUNCHER
 --------------------------------------------------------------------------------
 local function launchMainHub()
     isAuthorized = true
-    FloatingToggle.Visible = true
-    MainWindow.Visible = true
-    tween(MainWindow, SmoothTween, { BackgroundTransparency = 0 })
-    tween(MainStroke, SmoothTween, { Transparency = 0.15 })
-    tween(MainScale, SmoothTween, { Scale = 1 })
-    notify("Core.xyz", "Authorized! Tap CORE.XYZ button or RightShift to toggle UI.", 6)
+    uiVisible = true
+
+    local targetScale = getResponsiveScale()
+    if FloatingToggle then
+        FloatingToggle.Visible = true
+    end
+    if MainWindow then
+        MainWindow.Visible = true
+        MainScale.Scale = targetScale * 0.86
+        tween(MainWindow, SmoothTween, { BackgroundTransparency = 0.03 })
+        tween(MainStroke, SmoothTween, { Transparency = 0.08 })
+        tween(MainScale, SpringTween, { Scale = targetScale })
+    end
+
+    notify("Core.xyz", "Authorized! Tap CORE.XYZ pill or RightShift to toggle UI.", 5)
 end
 
-CopyKeyButton.MouseButton1Click:Connect(function()
-    if setclipboard then
-        setclipboard(REQUIRED_KEY)
+local function attemptAuthorization()
+    if isAuthorizing or isAuthorized then
+        return
     end
-    KeyInputBox.Text = REQUIRED_KEY
-    KeyFeedback.Text = "Key copied & filled: " .. REQUIRED_KEY
-    KeyFeedback.TextColor3 = Theme.White
-end)
-
-UnlockButton.MouseButton1Click:Connect(function()
     local entered = string.upper((KeyInputBox.Text or ""):gsub("%s+", ""))
     if entered == REQUIRED_KEY then
+        isAuthorizing = true
         KeyFeedback.Text = "ACCESS GRANTED — LAUNCHING CORE.XYZ..."
         KeyFeedback.TextColor3 = Theme.White
-        tween(UnlockButton, FastTween, { BackgroundColor3 = Theme.White })
-        tween(KeyScale, FastTween, { Scale = 0.94 })
+        tween(KeyScale, FastTween, { Scale = 0.9 })
         tween(KeyCard, FastTween, { BackgroundTransparency = 1 })
         tween(KeyCardStroke, FastTween, { Transparency = 1 })
-        task.wait(0.25)
+        task.wait(0.22)
         KeyCard.Visible = false
         launchMainHub()
     else
         KeyFeedback.Text = "INVALID KEY! Required Key: " .. REQUIRED_KEY
         KeyFeedback.TextColor3 = Theme.Error
-        tween(KeyCardStroke, FastTween, { Color = Theme.Error })
-        -- Shake animation
+        tween(KeyInputStroke, FastTween, { Color = Theme.Error })
         local origPos = KeyCard.Position
-        for _, offset in ipairs({ -8, 8, -6, 6, -3, 0 }) do
+        for _, offset in ipairs({ -9, 9, -6, 6, -3, 0 }) do
             KeyCard.Position = UDim2.new(origPos.X.Scale, origPos.X.Offset + offset, origPos.Y.Scale, origPos.Y.Offset)
-            task.wait(0.03)
+            task.wait(0.028)
         end
-        tween(KeyCardStroke, SmoothTween, { Color = Theme.White })
+        tween(KeyInputStroke, SmoothTween, { Color = Theme.Border })
+    end
+end
+
+CopyKeyButton.MouseButton1Click:Connect(function()
+    spawnRipple(CopyKeyButton)
+    if setclipboard then
+        pcall(function()
+            setclipboard(REQUIRED_KEY)
+        end)
+    end
+    KeyInputBox.Text = REQUIRED_KEY
+    KeyFeedback.Text = "Key copied & auto-filled: " .. REQUIRED_KEY
+    KeyFeedback.TextColor3 = Theme.White
+end)
+
+UnlockButton.MouseButton1Click:Connect(function()
+    spawnRipple(UnlockButton)
+    attemptAuthorization()
+end)
+
+KeyInputBox.FocusLost:Connect(function(enterPressed)
+    if enterPressed then
+        attemptAuthorization()
     end
 end)
 
--- Character Respawn Listener
+--------------------------------------------------------------------------------
+-- 13. RUNTIME LOOPS (60FPS LIVE UI ANIMATIONS + AIMBOT + ESP + NOCLIP)
+--------------------------------------------------------------------------------
 LocalPlayer.CharacterAdded:Connect(function(character)
     table.clear(noclipCollideCache)
     local humanoid = character:WaitForChild("Humanoid", 5)
@@ -1330,7 +2058,6 @@ LocalPlayer.CharacterAdded:Connect(function(character)
     end
 end)
 
--- Infinite Jump Listener
 UserInputService.JumpRequest:Connect(function()
     if isAuthorized and infJumpEnabled and LocalPlayer.Character then
         local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
@@ -1340,27 +2067,12 @@ UserInputService.JumpRequest:Connect(function()
     end
 end)
 
--- RightShift Toggle UI
 UserInputService.InputBegan:Connect(function(input, gpe)
     if not gpe and isAuthorized and input.KeyCode == Enum.KeyCode.RightShift then
-        uiVisible = not uiVisible
-        if uiVisible then
-            MainWindow.Visible = true
-            tween(MainScale, SmoothTween, { Scale = 1 })
-            tween(MainWindow, FastTween, { BackgroundTransparency = 0 })
-        else
-            tween(MainScale, FastTween, { Scale = 0.92 })
-            tween(MainWindow, FastTween, { BackgroundTransparency = 1 })
-            task.delay(0.18, function()
-                if not uiVisible then
-                    MainWindow.Visible = false
-                end
-            end)
-        end
+        toggleMainHub()
     end
 end)
 
--- Stepped Loop for NoClip & Live Emblem Animation
 RunService.Stepped:Connect(function()
     if isAuthorized and noClipEnabled and LocalPlayer.Character then
         for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
@@ -1374,24 +2086,58 @@ RunService.Stepped:Connect(function()
     end
 end)
 
--- RenderStepped Loop (Live UI Animations + Aimbot + ESP + Crosshair)
 local animClock = 0
 RunService.RenderStepped:Connect(function(deltaTime)
-    animClock += deltaTime
+    animClock = animClock + deltaTime
 
-    -- Live geometric rotation while Loader or Header is visible
+    -- 1. Live Rotating UIGradient Shimmer Borders
+    for _, item in ipairs(liveGradients) do
+        if item.Gradient and item.Gradient.Parent then
+            item.Gradient.Rotation = (item.Offset + animClock * item.Speed) % 360
+        end
+    end
+
+    -- 2. Live Rotating Geometric Orbs & Header Logos
+    for _, rot in ipairs(liveRotators) do
+        if rot.Instance and rot.Instance.Parent then
+            rot.Instance.Rotation = (animClock * rot.Speed) % 360
+        end
+    end
+
+    -- 3. Live Drifting Monochrome Starfield Particles
+    for _, p in ipairs(liveParticles) do
+        if p.Instance and p.Container and p.Container.Visible then
+            p.Y = p.Y - (p.SpeedY * deltaTime)
+            p.X = p.X + math.sin(animClock * 1.5 + p.Phase) * (p.DriftX * deltaTime)
+            if p.Y < -0.04 then
+                p.Y = 1.04
+                p.X = math.random(5, 95) / 100
+            end
+            p.Instance.Position = UDim2.fromScale(p.X, p.Y)
+            p.Instance.BackgroundTransparency = 0.55 + 0.35 * math.sin(animClock * 3 + p.Phase)
+        end
+    end
+
+    -- 4. Pulsing Core Dots & Shimmer Sweeps
+    local pulse = 1 + 0.22 * math.sin(animClock * 4.5)
     if LoaderCard.Visible then
-        EmblemRingOuter.Rotation = (animClock * 55) % 360
-        EmblemRingInner.Rotation = (-animClock * 90) % 360
+        EmblemCore.Size = UDim2.fromOffset(8 * pulse, 8 * pulse)
+    end
+    if KeyCard.Visible then
+        KeyTopGrad.Offset = Vector2.new(math.sin(animClock * 2.2) * 0.45, 0)
     end
     if MainWindow.Visible then
-        HeaderLogoSquare.Rotation = (animClock * 40) % 360
+        HeaderLineGrad.Offset = Vector2.new(math.sin(animClock * 1.8) * 0.42, 0)
     end
 
-    if not isAuthorized then return end
+    if not isAuthorized then
+        return
+    end
 
     local camera = workspace.CurrentCamera
-    if not camera then return end
+    if not camera then
+        return
+    end
 
     FovCircle.Visible = showFOV
 
@@ -1409,31 +2155,32 @@ RunService.RenderStepped:Connect(function(deltaTime)
     if enabled then
         local target = getClosestTarget(camera)
         if target then
-            local alpha = 1 - math.pow(1 - math.clamp(smoothness, 0.01, 0.99), deltaTime * 60)
+            local alpha = 1 - ((1 - math.clamp(smoothness, 0.01, 0.99)) ^ (deltaTime * 60))
             camera.CFrame = camera.CFrame:Lerp(CFrame.new(camera.CFrame.Position, target.Position), alpha)
         end
     end
 end)
 
 --------------------------------------------------------------------------------
--- START-TO-END ANIMATED BOOT SEQUENCE
+-- 14. START-TO-END ANIMATED BOOT SEQUENCE
 --------------------------------------------------------------------------------
 task.spawn(function()
-    tween(LoaderCard, SmoothTween, { BackgroundTransparency = 0 })
-    tween(LoaderStroke, SmoothTween, { Transparency = 0.15 })
-    tween(LoaderScale, SmoothTween, { Scale = 1 })
-    tween(EmblemOuterStroke, SmoothTween, { Transparency = 0.15 })
-    tween(EmblemInnerStroke, SmoothTween, { Transparency = 0.35 })
-    tween(EmblemCoreDot, SmoothTween, { BackgroundTransparency = 0 })
+    local targetScale = getResponsiveScale()
+    tween(LoaderCard, SmoothTween, { BackgroundTransparency = 0.03 })
+    tween(LoaderStroke, SmoothTween, { Transparency = 0.08 })
+    tween(LoaderScale, SpringTween, { Scale = targetScale })
+    tween(EmblemOuterStroke, SmoothTween, { Transparency = 0.08 })
+    tween(EmblemInnerStroke, SmoothTween, { Transparency = 0.25 })
+    tween(EmblemCore, SmoothTween, { BackgroundTransparency = 0 })
     tween(LoaderTitle, SmoothTween, { TextTransparency = 0 })
     tween(LoaderStatus, SmoothTween, { TextTransparency = 0 })
     tween(LoaderBarBg, SmoothTween, { BackgroundTransparency = 0 })
     tween(LoaderPercent, SmoothTween, { TextTransparency = 0 })
 
     local stages = {
-        { pct = 28, text = "Loading Monochrome UI Components..." },
-        { pct = 62, text = "Configuring DeltaTime Camera & ESP..." },
-        { pct = 90, text = "Preparing FEYKSECURED Authorization Gate..." },
+        { pct = 28, text = "Mounting Core.xyz Monochrome Shaders..." },
+        { pct = 64, text = "Calibrating DeltaTime Aimbot & ESP Engine..." },
+        { pct = 92, text = "Verifying FEYKSECURED Security Gate..." },
         { pct = 100, text = "Core.xyz Ready." },
     }
 
@@ -1444,13 +2191,13 @@ task.spawn(function()
         while currentPct < stage.pct do
             currentPct = math.min(stage.pct, currentPct + 3)
             LoaderPercent.Text = tostring(currentPct) .. "%"
-            task.wait(0.025)
+            task.wait(0.022)
         end
-        task.wait(0.18)
+        task.wait(0.16)
     end
 
-    -- Fade out Loader
-    tween(LoaderScale, FastTween, { Scale = 0.94 })
+    -- Morph Loader out
+    tween(LoaderScale, FastTween, { Scale = targetScale * 0.9 })
     tween(LoaderCard, FastTween, { BackgroundTransparency = 1 })
     tween(LoaderStroke, FastTween, { Transparency = 1 })
     tween(LoaderTitle, FastTween, { TextTransparency = 1 })
@@ -1460,13 +2207,14 @@ task.spawn(function()
     tween(LoaderBarFill, FastTween, { BackgroundTransparency = 1 })
     tween(EmblemOuterStroke, FastTween, { Transparency = 1 })
     tween(EmblemInnerStroke, FastTween, { Transparency = 1 })
-    tween(EmblemCoreDot, FastTween, { BackgroundTransparency = 1 })
-    task.wait(0.22)
+    tween(EmblemCore, FastTween, { BackgroundTransparency = 1 })
+    task.wait(0.2)
     LoaderCard.Visible = false
 
-    -- Fade in Key System Gate
+    -- Morph Key System Gate in
     KeyCard.Visible = true
-    tween(KeyCard, SmoothTween, { BackgroundTransparency = 0 })
-    tween(KeyCardStroke, SmoothTween, { Transparency = 0.15 })
-    tween(KeyScale, SmoothTween, { Scale = 1 })
+    KeyScale.Scale = targetScale * 0.88
+    tween(KeyCard, SmoothTween, { BackgroundTransparency = 0.03 })
+    tween(KeyCardStroke, SmoothTween, { Transparency = 0.08 })
+    tween(KeyScale, SpringTween, { Scale = targetScale })
 end)

@@ -33,13 +33,13 @@ test('buildGithubRawUrl and buildLoadstringSnippet format GitHub raw URL accurat
   const rawUrl = buildGithubRawUrl(DEFAULT_GITHUB_CONFIG);
   assert.equal(
     rawUrl,
-    'https://raw.githubusercontent.com/feykhere/Core.xyz/main/loader.lua'
+    'https://raw.githubusercontent.com/FeykHere/Core.xyz/main/Core.xyz.lua'
   );
 
   const snippet = buildLoadstringSnippet(DEFAULT_GITHUB_CONFIG);
   assert.equal(
     snippet,
-    'loadstring(game:HttpGet("https://raw.githubusercontent.com/feykhere/Core.xyz/main/loader.lua"))()'
+    'loadstring(game:HttpGet("https://raw.githubusercontent.com/FeykHere/Core.xyz/main/Core.xyz.lua"))()'
   );
 });
 

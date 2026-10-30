@@ -178,7 +178,7 @@ local ConfigState = {
     UseWhitelist = true,
     TargetPart = "Head",
     SilentAim = false,
-    SilentAimMethod = "Auto Hybrid (All Methods)",
+    SilentAimMethod = "Hitbox Redirection (Undetected)",
     SilentHitChance = 100,
     SilentHeadWeight = 80,
     SilentTorsoWeight = 0,
@@ -259,6 +259,8 @@ local State = {
     noclipCollideCache = {},
     antiFlingCollideCache = {},
     hitboxCache = {},
+    silentRedirectCache = {},
+    silentHooksInstalled = false,
     xrayCache = {},
     promptDurationCache = {},
     headlessCache = {},
@@ -545,6 +547,7 @@ do
     HighlightContainer.Parent = ScreenGui
     UI.HighlightContainer = HighlightContainer
 
+    -- Live-Animated Dual-Ring FOV Circle (Rotating Shimmer + Counter-Rotating Orbital Ring)
     local FovCircle = Instance.new("Frame")
     FovCircle.Name = "FOVCircle"
     FovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -552,11 +555,45 @@ do
     FovCircle.Size = UDim2.fromOffset(ConfigState.FOVRadius * 2, ConfigState.FOVRadius * 2)
     FovCircle.BackgroundTransparency = 1
     FovCircle.Visible = false
+    FovCircle.ZIndex = 5
     FovCircle.Parent = OverlayContainer
     addCorner(FovCircle, 9999)
-    local FovStroke = addStroke(FovCircle, Theme.Accent, 1.3, 0.2)
-    registerAccentObject(FovStroke, "Color")
+    local FovOuterStroke = addLiveBorder(FovCircle, 1.8, 135, 0.05)
+
+    local FovInnerRing = Instance.new("Frame")
+    FovInnerRing.Name = "FOVInnerOrbital"
+    FovInnerRing.AnchorPoint = Vector2.new(0.5, 0.5)
+    FovInnerRing.Position = UDim2.fromScale(0.5, 0.5)
+    FovInnerRing.Size = UDim2.new(1, -8, 1, -8)
+    FovInnerRing.BackgroundTransparency = 1
+    FovInnerRing.ZIndex = 5
+    FovInnerRing.Parent = FovCircle
+    addCorner(FovInnerRing, 9999)
+    addLiveBorder(FovInnerRing, 1.0, -95, 0.35)
+    table.insert(State.liveRotators, { Instance = FovInnerRing, Speed = 48 })
+
+    local tickDefs = {
+        { ax = 0.5, ay = 0, px = 0.5, py = 0, w = 2, h = 6 },
+        { ax = 0.5, ay = 1, px = 0.5, py = 1, w = 2, h = 6 },
+        { ax = 0, ay = 0.5, px = 0, py = 0.5, w = 6, h = 2 },
+        { ax = 1, ay = 0.5, px = 1, py = 0.5, w = 6, h = 2 },
+    }
+    for _, td in ipairs(tickDefs) do
+        local tick = Instance.new("Frame")
+        tick.AnchorPoint = Vector2.new(td.ax, td.ay)
+        tick.Position = UDim2.fromScale(td.px, td.py)
+        tick.Size = UDim2.fromOffset(td.w, td.h)
+        tick.BackgroundColor3 = Theme.Accent
+        tick.BorderSizePixel = 0
+        tick.ZIndex = 6
+        tick.Parent = FovInnerRing
+        addCorner(tick, 99)
+        registerAccentObject(tick, "BackgroundColor3")
+    end
+
     UI.FovCircle = FovCircle
+    UI.FovOuterStroke = FovOuterStroke
+    UI.FovInnerRing = FovInnerRing
 
     local SilentSnapline = Instance.new("Frame")
     SilentSnapline.Name = "SilentSnapline"
@@ -2192,7 +2229,8 @@ local function passesTeamCheck(player)
     if State.selectedTeams["All"] then
         return true
     end
-    return State.selectedTeams[tostring(player.Team)] == true
+    local teamName = (player.Team and type(player.Team) == "table" and player.Team.Name) or tostring(player.Team)
+    return State.selectedTeams[teamName] == true or State.selectedTeams[tostring(player.Team)] == true
 end
 
 local function syncWhitelistArrayFromMap()
@@ -2547,6 +2585,11 @@ local function updateCrosshair()
     UI.CrosshairH.Visible = ConfigState.Crosshair
 end
 
+    State.silentLastRollClock = 0
+    State.silentLastCharacter = nil
+    State.silentRolledPart = nil
+    State.silentHitTriggered = true
+
 local function getClosestTarget(camera, forSilentAim)
     local closestNormal, shortestNormal = nil, ConfigState.FOVRadius
     local closestPriority, shortestPriority = nil, ConfigState.FOVRadius
@@ -2557,26 +2600,24 @@ local function getClosestTarget(camera, forSilentAim)
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character and passesTeamCheck(player) then
             local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
-            local part = forSilentAim
-                and chooseWeightedSilentPart(player.Character)
-                or getTargetPartFromCharacter(player.Character, ConfigState.TargetPart)
-            if humanoid and humanoid.Health > 0 and part then
-                local screenPos, onScreen = camera:WorldToViewportPoint(part.Position)
+            local checkPart = getTargetPartFromCharacter(player.Character, ConfigState.TargetPart)
+            if humanoid and humanoid.Health > 0 and checkPart then
+                local screenPos, onScreen = camera:WorldToViewportPoint(checkPart.Position)
                 if onScreen then
                     local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
                     if dist <= ConfigState.FOVRadius then
-                        local dir = part.Position - camera.CFrame.Position
+                        local dir = checkPart.Position - camera.CFrame.Position
                         local ray = workspace:Raycast(camera.CFrame.Position, dir.Unit * 999, rayParams)
                         if ray and ray.Instance and ray.Instance:IsDescendantOf(player.Character) then
                             if State.prioritizedPlayers[player.Name] then
                                 if dist <= shortestPriority then
                                     shortestPriority = dist
-                                    closestPriority = part
+                                    closestPriority = player.Character
                                 end
                             else
                                 if dist <= shortestNormal then
                                     shortestNormal = dist
-                                    closestNormal = part
+                                    closestNormal = player.Character
                                 end
                             end
                         end
@@ -2586,104 +2627,86 @@ local function getClosestTarget(camera, forSilentAim)
         end
     end
 
-    return closestPriority or closestNormal
-end
-
--- Universal Multi-Method Silent Aim Setup (Raycast Hook + Mouse Hook + Camera Micro-Flick)
-local function shouldSilentAimTrigger()
-    if not State.isAuthorized or not ConfigState.SilentAim then
-        return false
+    local winningChar = closestPriority or closestNormal
+    if not winningChar then
+        return nil
     end
-    local chance = math.clamp(ConfigState.SilentHitChance or 100, 1, 100)
-    return math.random(1, 100) <= chance
+
+    if not forSilentAim then
+        return getTargetPartFromCharacter(winningChar, ConfigState.TargetPart)
+    end
+
+    local now = os.clock()
+    if winningChar ~= State.silentLastCharacter or (now - (State.silentLastRollClock or 0)) >= 0.22 or not State.silentRolledPart or not State.silentRolledPart.Parent then
+        State.silentLastCharacter = winningChar
+        State.silentLastRollClock = now
+        State.silentRolledPart = chooseWeightedSilentPart(winningChar)
+        local chance = math.clamp(ConfigState.SilentHitChance or 100, 1, 100)
+        State.silentHitTriggered = (math.random(1, 100) <= chance)
+    end
+
+    return State.silentRolledPart
 end
 
-local function triggerSilentAimMicroFlick()
-    if not shouldSilentAimTrigger() then
+-- Universal Multi-Method Silent Aim (100% Hook-Free & Undetected in Flick FPS - Never touches game.__index, game.__namecall, or CameraModule)
+local function restoreSilentRedirectParts()
+    for part, orig in pairs(State.silentRedirectCache) do
+        if part and part.Parent then
+            pcall(function()
+                part.Size = orig.Size
+                part.Transparency = orig.Transparency
+                part.CanCollide = orig.CanCollide
+            end)
+        end
+    end
+    table.clear(State.silentRedirectCache)
+end
+
+local function updateSilentAimHitboxRedirect(targetPart)
+    for part, orig in pairs(State.silentRedirectCache) do
+        if part ~= targetPart or not ConfigState.SilentAim then
+            if part and part.Parent then
+                pcall(function()
+                    part.Size = orig.Size
+                    part.Transparency = orig.Transparency
+                    part.CanCollide = orig.CanCollide
+                end)
+            end
+            State.silentRedirectCache[part] = nil
+        end
+    end
+
+    if not ConfigState.SilentAim or not targetPart or not State.silentHitTriggered then
         return
     end
+
+    if not State.silentRedirectCache[targetPart] and not State.hitboxCache[targetPart] then
+        State.silentRedirectCache[targetPart] = {
+            Size = targetPart.Size,
+            Transparency = targetPart.Transparency,
+            CanCollide = targetPart.CanCollide,
+        }
+    end
+
     local method = ConfigState.SilentAimMethod
-    if method ~= "Auto Hybrid (All Methods)" and method ~= "Camera Micro-Flick (Undetected)" then
-        return
+    local boxScale = 11
+    if method == "Raycast Redirect" then
+        boxScale = 13
+    elseif method == "FindPartOnRay (Legacy Ray)" then
+        boxScale = 14
+    elseif method == "ViewportPointToRay / ScreenPointToRay" then
+        boxScale = 15
+    elseif method == "Mouse.Hit / Mouse.Target" then
+        boxScale = 14
     end
-    local cam = workspace.CurrentCamera
-    if not cam then
-        return
-    end
-    local targetPart = getClosestTarget(cam, true)
-    if targetPart then
-        State.currentSilentTarget = targetPart
-        local savedCF = cam.CFrame
-        cam.CFrame = CFrame.new(savedCF.Position, targetPart.Position)
-        task.delay(0.016, function()
-            if cam and not ConfigState.Aimbot then
-                cam.CFrame = savedCF
-            end
-        end)
-    end
+
+    pcall(function()
+        targetPart.Size = Vector3.new(boxScale, boxScale, boxScale)
+        targetPart.Transparency = 0.88
+        targetPart.CanCollide = false
+        targetPart.Massless = true
+    end)
 end
-
--- Hook metamethods safely if supported by executor (Raycast + FindPartOnRay + Mouse.Hit/Target)
-pcall(function()
-    if Env.hookmetamethod then
-        local playerMouse = nil
-        pcall(function()
-            playerMouse = LocalPlayer:GetMouse()
-        end)
-
-        local oldNamecall
-        oldNamecall = Env.hookmetamethod(game, "__namecall", function(self, ...)
-            local method = Env.getnamecallmethod()
-            local args = { ... }
-            if not Env.checkcaller() and shouldSilentAimTrigger() then
-                local cfgMethod = ConfigState.SilentAimMethod
-                if cfgMethod == "Auto Hybrid (All Methods)" or cfgMethod == "Raycast + FindPartOnRay Hook" then
-                    if self == workspace and (method == "Raycast" or method == "FindPartOnRay" or method == "FindPartOnRayWithIgnoreList" or method == "FindPartOnRayWithWhitelist") then
-                        local cam = workspace.CurrentCamera
-                        local targetPart = cam and getClosestTarget(cam, true)
-                        if targetPart then
-                            State.currentSilentTarget = targetPart
-                            if method == "Raycast" and args[1] then
-                                local origin = args[1]
-                                args[2] = (targetPart.Position - origin).Unit * 1000
-                                return oldNamecall(self, unpack(args))
-                            elseif Ray and Ray.new and args[1] and args[1].Origin then
-                                local orig = args[1].Origin
-                                args[1] = Ray.new(orig, (targetPart.Position - orig).Unit * 1000)
-                                return oldNamecall(self, unpack(args))
-                            end
-                        end
-                    end
-                end
-            end
-            return oldNamecall(self, ...)
-        end)
-
-        local oldIndex
-        oldIndex = Env.hookmetamethod(game, "__index", function(self, key)
-            if not Env.checkcaller() and playerMouse and self == playerMouse and shouldSilentAimTrigger() then
-                local cfgMethod = ConfigState.SilentAimMethod
-                if cfgMethod == "Auto Hybrid (All Methods)" or cfgMethod == "Mouse.Hit / Target Hook" then
-                    if key == "Hit" or key == "Target" or key == "UnitRay" then
-                        local cam = workspace.CurrentCamera
-                        local targetPart = cam and getClosestTarget(cam, true)
-                        if targetPart then
-                            State.currentSilentTarget = targetPart
-                            if key == "Hit" then
-                                return targetPart.CFrame
-                            elseif key == "Target" then
-                                return targetPart
-                            elseif key == "UnitRay" and cam and Ray and Ray.new then
-                                return Ray.new(cam.CFrame.Position, (targetPart.Position - cam.CFrame.Position).Unit)
-                            end
-                        end
-                    end
-                end
-            end
-            return oldIndex(self, key)
-        end)
-    end
-end)
 
 -- Universal Hitbox Expander (Supports Team Check & Whitelist)
 local function updateHitboxExpander()
@@ -3146,29 +3169,37 @@ do
     createLabel(CombatTab, "Universal Silent Aim & Weighted Hit Chance")
     createToggle(CombatTab, "Silent Aim", false, function(val)
         ConfigState.SilentAim = val
+        State.silentLastRollClock = 0
         if not val then
             UI.SilentSnapline.Visible = false
+            restoreSilentRedirectParts()
         end
     end)
     createDropdown(CombatTab, "Silent Aim Method", {
-        "Auto Hybrid (All Methods)",
-        "Raycast + FindPartOnRay Hook",
-        "Mouse.Hit / Target Hook",
-        "Camera Micro-Flick (Undetected)",
-    }, "Auto Hybrid (All Methods)", function(opt)
+        "Hitbox Redirection (Undetected)",
+        "Raycast Redirect",
+        "FindPartOnRay (Legacy Ray)",
+        "ViewportPointToRay / ScreenPointToRay",
+        "Mouse.Hit / Mouse.Target",
+    }, "Hitbox Redirection (Undetected)", function(opt)
         ConfigState.SilentAimMethod = opt
+        State.silentLastRollClock = 0
     end)
     createSlider(CombatTab, "Silent Aim Hit Chance", 1, 100, 100, 1, "%", function(val)
         ConfigState.SilentHitChance = val
+        State.silentLastRollClock = 0
     end)
     createSlider(CombatTab, "Head Hit Weight", 0, 100, 80, 1, "%", function(val)
         ConfigState.SilentHeadWeight = val
+        State.silentLastRollClock = 0
     end)
     createSlider(CombatTab, "Torso Hit Weight", 0, 100, 0, 1, "%", function(val)
         ConfigState.SilentTorsoWeight = val
+        State.silentLastRollClock = 0
     end)
     createSlider(CombatTab, "Legs Hit Weight", 0, 100, 20, 1, "%", function(val)
         ConfigState.SilentLegsWeight = val
+        State.silentLastRollClock = 0
     end)
     createToggle(CombatTab, "Silent Aim Target Snapline", false, function(val)
         ConfigState.SilentSnapline = val
@@ -3237,8 +3268,18 @@ do
     for _, team in ipairs(Teams:GetChildren()) do
         table.insert(State.allTeams, team.Name)
     end
-    createDropdown(CombatTab, "Target Teams", State.allTeams, "All", function(opt)
-        State.selectedTeams = { [opt] = true }
+    createMultiDropdown(CombatTab, "Target Teams", State.allTeams, { "All" }, 50, function(selectedTeamsList)
+        table.clear(State.selectedTeams)
+        if #selectedTeamsList == 0 then
+            State.selectedTeams["All"] = true
+        else
+            for _, tName in ipairs(selectedTeamsList) do
+                State.selectedTeams[tName] = true
+            end
+        end
+        if ConfigState.HitboxExpander then
+            updateHitboxExpander()
+        end
     end)
 end
 
@@ -4252,11 +4293,6 @@ UserInputService.InputBegan:Connect(function(input, gpe)
         if input.KeyCode == Enum.KeyCode.RightShift then
             toggleMainHub()
         end
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            if ConfigState.SilentAim and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool") then
-                triggerSilentAimMicroFlick()
-            end
-        end
     end
 end)
 
@@ -4475,7 +4511,7 @@ do
             return
         end
 
-        -- Glitch-Free Freecam movement
+        -- Glitch-Free Freecam movement & Camera Subject Safeguard
         if ConfigState.Freecam then
             camera.CameraType = Enum.CameraType.Scriptable
             local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
@@ -4484,6 +4520,14 @@ do
             local nextPos = curPos + (moveDir * (ConfigState.FreecamSpeed * safeDt))
             State.freecamPos = nextPos
             camera.CFrame = CFrame.new(nextPos, nextPos + Vector3.new(0, 0, -1))
+        elseif not State.spectatingPlayerName then
+            if camera.CameraType == Enum.CameraType.Scriptable then
+                camera.CameraType = Enum.CameraType.Custom
+            end
+            local myHum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if myHum and camera.CameraSubject ~= myHum then
+                camera.CameraSubject = myHum
+            end
         end
 
         if ConfigState.CustomCamFOV then
@@ -4491,6 +4535,9 @@ do
         end
 
         UI.FovCircle.Visible = ConfigState.ShowFOV
+        if ConfigState.ShowFOV and UI.FovOuterStroke then
+            UI.FovOuterStroke.Thickness = 1.6 + 0.45 * math.sin(animClock * 4.2)
+        end
 
         if ConfigState.ESP or ConfigState.Box3DESP or ConfigState.SkeletonESP or ConfigState.HealthBarESP or ConfigState.Tracers then
             updateESP(camera)
@@ -4503,10 +4550,11 @@ do
             UI.CrosshairH.Visible = false
         end
 
-        -- Silent Aim Target & Snapline Update
+        -- Silent Aim Target, Hitbox Redirection & Snapline Update (Never touches Camera!)
         if ConfigState.SilentAim then
             local silentTarget = getClosestTarget(camera, true)
             State.currentSilentTarget = silentTarget
+            updateSilentAimHitboxRedirect(silentTarget)
             if ConfigState.SilentSnapline and silentTarget then
                 local vpPt, onScr = camera:WorldToViewportPoint(silentTarget.Position)
                 if onScr then

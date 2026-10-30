@@ -997,9 +997,31 @@ assert(found3DBox == true, "3D Bounding Box overlay (12 edges) must be visible o
 assert(foundSkeletonBone == true, "3D Skeleton Rig overlay must be visible on enemies")
 assert(overlays:FindFirstChild("CornerBox2D") == nil, "Old 2D Corner Box must be completely replaced by 3D Bounding Box")
 
--- Verify Silent Aim Snapline is visible
+-- Verify Silent Aim Snapline is visible & Animated Dual-Ring FOV Circle rotates
 local silentSnap = overlays:FindFirstChild("SilentSnapline")
 assert(silentSnap ~= nil and silentSnap.Visible == true, "Silent Aim Snapline must lock onto weighted target bone")
+
+local fovCircle = overlays:FindFirstChild("FOVCircle")
+assert(fovCircle ~= nil and fovCircle.Visible == true, "FOVCircle must be visible when enabled")
+local fovInnerOrbital = fovCircle:FindFirstChild("FOVInnerOrbital")
+assert(fovInnerOrbital ~= nil and fovInnerOrbital.Rotation ~= 0, "FOVInnerOrbital must exist and live-rotate inside FOVCircle")
+
+-- Turn OFF Freecam while Silent Aim stays ON -> verify CameraType is Custom and Camera follows character!
+for _, desc in ipairs(mainWindow:GetDescendants()) do
+    if desc.Name == "Visuals_Page" then
+        for _, ctrl in ipairs(desc:GetDescendants()) do
+            if ctrl.ClassName == "TextButton" and ctrl.Text == "" then
+                local rowLabel = ctrl:FindFirstChildOfClass("TextLabel")
+                if rowLabel and string.find(rowLabel.Text, "Freecam") then
+                    ctrl.MouseButton1Click:Fire()
+                end
+            end
+        end
+    end
+end
+RunService.RenderStepped:Fire(0.016)
+assert(workspace.CurrentCamera.CameraType == Enum.CameraType.Custom, "Camera must remain Custom and follow character when Silent Aim is ON and Freecam is OFF")
+assert(workspace.CurrentCamera.CameraSubject == myHum, "CameraSubject must remain locked to LocalPlayer Humanoid when Silent Aim is ON")
 
 -- 7. Test Settings Tab Config Save (Required Config Name check + Save & Load Config)
 local configNameBox, saveCfgBtn, loadCfgBtn

@@ -1,44 +1,40 @@
 --[=[
-    CORE.XYZ | UNIVERSAL ROBLOX LUA SCRIPT (V4.0 CHEF'S KISS EDITION)
+    CORE.XYZ | UNIVERSAL ROBLOX LUA SCRIPT (V4.2 CHEF'S KISS EDITION)
     Theme: Pure Black & White Monochrome (With Full RGB & Theme Freedom in Settings)
-    Key System Authorization Key: FEYKSECURED (With Remember Key Auto-Unlock)
+    3 Test Keys Included:
+      - Developer Key : FEYKDEV      (Key Time Left: Developer)
+      - Permanent Key : FEYKPERM     (Key Time Left: Infinite)
+      - Normal 24h Key: FEYK24H      (Key Time Left: Live 24h Countdown | Also accepts FEYKSECURED)
 
-    Complete V4.0 Feature Suite:
-      1. Live-Animated Start-to-End Loading Screen & Key System ("FEYKSECURED" + Remember Key Toggle)
-      2. Customizable & Exact Auto-Sizing Telemetry Floating Pill ("CORE.XYZ | 120 FPS | 24ms")
-         - Custom Pill Title TextBox in Settings + Multi-Choice Telemetry Dropdown (Max 3)
-         - Exact pixel text measurement so there is NEVER empty dead space or text overflow
+    Complete V4.2 Feature Suite:
+      1. Home Tab:
+         - Interactive 3D Character/Avatar Showcase Box (Drag sideways to rotate your character 360°)
+         - Live Side Profile Panel: User (@Username), Executor, User ID, and Live Key Time Left
+           (Developer / Infinite / Live Countdown) + Quick Key Tier Switcher to test all 3 tiers
+      2. Visuals Tab + Right-Side Live ESP Preview Window:
+         - Opening the Visuals tab automatically docks a Live ESP Preview Window on the right side
+           showing your own character/avatar and previewing 3D Bounding Box, Skeleton Rig, Chams,
+           Name/HP Tag, Vertical Health Bar, and Snapline Tracers in real time as you toggle them
+         - Screen Resolution Stretch Toggle + Preset Dropdown (1280x960, 1440x1080, 1280x1024, 1728x1080)
+           + Custom Stretch Slider (selecting a dropdown preset automatically resets Custom Stretch)
+         - X-Ray Vision + Transparency Slider, Sky & Atmosphere Presets, Freecam, Headless & Korblox
       3. Combat Tab:
-         - Camera Aimbot with Priority Override, FOV Circle, Smoothness, Team Check
-         - Universal Multi-Method Silent Aim (Auto Hybrid, Raycast/FindPartOnRay Hook, Mouse.Hit/Target Hook, Camera Micro-Flick)
-         - Silent Aim Hit Chance % Slider + 3 Weighted Body-Part Sliders (Head %, Torso %, Legs % — e.g. 80% Head / 20% Legs)
-         - Universal Hitbox Expander (Toggle + Size Slider + Transparency Slider + Team/Whitelist Check)
-         - Player Whitelist Toggle + Multi-Select Player Dropdown (Synced with Players Tab)
-      4. Visuals Tab:
-         - 3D Bounding Box Overlay (12-Edge Projected 3D Wireframe Box — replaces 2D Box)
-         - 3D Skeleton Rig Overlay (Live Joint-to-Joint Bone Lines for R15 & R6)
-         - Animated Vertical Health Bar Overlay, Chams Highlights, Snapline Tracers, Custom Crosshair
-         - X-Ray Vision Toggle + Wall Transparency Slider (with full restoration)
-         - Sky & Atmosphere Preset Dropdown (Game Default, Pitch Black Void, Cyberpunk Night, Starry Nebula, Sunset Gold, Matrix Monochrome, Clean Daylight)
-         - Fullbright, No Fog, Time of Day Slider
-         - Glitch-Free Freecam Toggle + Freecam Speed Slider, Custom Camera FOV, Infinite Zoom, Noclip Camera
-         - Client Cosmetics: Headless Horseman & Korblox Right Leg
-      5. Movement & Protection Tab:
-         - WalkSpeed, JumpPower, Infinite Jump, Stepped NoClip, Spinbot + Speed Slider
-         - Swim in Air Toggle (Universal Sky-Swimming)
-         - Anti-Fling Toggle, Anti-Ragdoll / Anti-Stun Toggle, Anti-Void Protection Toggle
-      6. Players Tab (Auto-Refreshes Every 2 Seconds):
-         - Clean Player Cards with Avatar Thumbnail + DisplayName + @Username + Distance + Status Badges
-         - Click any player to expand/collapse the 6 inline options underneath:
-           (1) Whitelist  (2) Prioritize  (3) Spectate  (4) Teleport  (5) Copy UserName  (6) Fling
-      7. World & Misc Tab:
-         - Instant Interact, Auto-Interact + Radius Slider, Per-Game Persistent Waypoints (PlaceId Scoped),
-           Ultimate Deep FPS Booster, 3D Rendering Toggle, Uncap FPS + Custom FPS Target,
-           Rejoin Server, Server Hop (Default, Lowest Players, Highest Players, Lower Ping), Anti-AFK
-      8. Settings Tab:
-         - Custom Floating Pill Title TextBox, Telemetry Multi-Choice Dropdown (Max 3),
-           Theme Presets + Custom Accent R/G/B Sliders, Window Opacity & UI Scale Sliders,
-           Remember Key Toggle, Config Name TextBox (Required) + Save/Load Config + Auto-Load Config
+         - Camera Aimbot with Priority Override, Single-Ring Live-Animated FOV Circle (no tick markers),
+           Smoothness, Target Bone, Universal Hitbox Expander, Team Check, Multi-Choice Target Teams,
+           and Player Whitelist
+      4. Movement & Protection Tab:
+         - WalkSpeed, JumpPower, Infinite Jump, Swim in Air, Spider Climb (Wall Walk) + Climb Speed Slider,
+           Stepped NoClip, Spinbot + Speed Slider, Anti-Fling, Anti-Ragdoll, Anti-Void Protection
+      5. Players Tab (Auto-Refreshes Every 2 Seconds):
+         - Avatar Player Cards that expand on click to show 7 inline action buttons:
+           (1) Whitelist  (2) Prioritize  (3) Spectate  (4) Orbit  (5) Teleport  (6) Copy UserName  (7) Fling
+      6. World & Misc Tab:
+         - Join Server by JobId (TextBox + Button), Rejoin Server, Server Hop (4 Modes),
+           Instant Interact, Auto-Interact, Per-Game Waypoints, Ultimate Deep FPS Booster,
+           3D Rendering Toggle, Uncap FPS + Custom FPS Target, Anti-AFK
+      7. Settings Tab:
+         - Exact-Fit Customizable Floating Pill + Telemetry Multi-Choice Dropdown (Max 3),
+           Theme Presets + RGB Sliders, Remember Key Toggle, Config Save/Load Manager
 ]=]
 
 if not game:IsLoaded() then
@@ -73,11 +69,7 @@ local Env = {
     setfpscap = setfpscap,
     fireproximityprompt = fireproximityprompt,
     fireclickdetector = fireclickdetector,
-    hookmetamethod = hookmetamethod,
-    getrawmetatable = getrawmetatable,
-    setreadonly = setreadonly,
-    checkcaller = checkcaller or function() return false end,
-    getnamecallmethod = getnamecallmethod or function() return "" end,
+    identifyexecutor = identifyexecutor or getexecutorname,
     Stats = nil,
     TextService = nil,
 }
@@ -88,7 +80,14 @@ pcall(function()
     Env.TextService = game:GetService("TextService")
 end)
 
-local REQUIRED_KEY = "FEYKSECURED"
+local REQUIRED_KEY = "FEYKDEV"
+local KEY_TIERS = {
+    ["FEYKDEV"] = { Tier = "Developer", Duration = -1 },
+    ["FEYKPERM"] = { Tier = "Infinite", Duration = -1 },
+    ["FEYK24H"] = { Tier = "Normal", Duration = 86400 },
+    ["FEYKSECURED"] = { Tier = "Normal", Duration = 86400 },
+}
+
 local CURRENT_PLACE_ID = tostring(game.PlaceId or 0)
 local FS_FOLDER = "CoreXYZ_Data"
 local CONFIG_INDEX_FILE = FS_FOLDER .. "/ConfigIndex.json"
@@ -169,7 +168,7 @@ end
 -- 3. UNIFIED STATE & RUNTIME REGISTRIES (LOW LOCAL REGISTER FOOTPRINT)
 --------------------------------------------------------------------------------
 local ConfigState = {
-    -- Combat & Silent Aim & Hitbox
+    -- Combat & Hitbox
     Aimbot = false,
     ShowFOV = false,
     FOVRadius = 85,
@@ -177,17 +176,10 @@ local ConfigState = {
     TeamCheck = true,
     UseWhitelist = true,
     TargetPart = "Head",
-    SilentAim = false,
-    SilentAimMethod = "Hitbox Redirection (Undetected)",
-    SilentHitChance = 100,
-    SilentHeadWeight = 80,
-    SilentTorsoWeight = 0,
-    SilentLegsWeight = 20,
-    SilentSnapline = false,
     HitboxExpander = false,
     HitboxSize = 10,
     HitboxTransparency = 0.7,
-    -- Visuals
+    -- Visuals & Screen Resolution
     ESP = false,
     Box3DESP = false,
     SkeletonESP = false,
@@ -198,6 +190,9 @@ local ConfigState = {
     Crosshair = false,
     CrosshairColorName = "White",
     CrosshairSize = 10,
+    ResolutionEnabled = false,
+    ResolutionPreset = "1280x960",
+    CustomStretch = 0.75,
     XRay = false,
     XRayTransparency = 0.6,
     SkyPreset = "Game Default",
@@ -218,10 +213,14 @@ local ConfigState = {
     JumpPowerEnabled = false,
     JumpPower = 50,
     InfJump = false,
-    NoClip = false,
     SwimInAir = false,
+    SpiderClimb = false,
+    SpiderClimbSpeed = 32,
+    NoClip = false,
     Spinbot = false,
     SpinSpeed = 25,
+    OrbitSpeed = 4.5,
+    OrbitRadius = 8,
     AntiFling = false,
     AntiRagdoll = false,
     AntiVoid = false,
@@ -233,6 +232,7 @@ local ConfigState = {
     UncapFPS = false,
     CustomFPS = 144,
     ServerHopMode = "Lowest Players",
+    TargetJobId = "",
     AntiAFK = false,
     -- UI & Settings
     CustomPillTitle = "CORE.XYZ",
@@ -247,6 +247,13 @@ local ConfigState = {
     AutoLoadConfig = false,
 }
 
+local RESOLUTION_PRESETS = {
+    ["1280x960"] = 0.75,
+    ["1440x1080"] = 0.80,
+    ["1280x1024"] = 0.70,
+    ["1728x1080"] = 0.90,
+}
+
 local State = {
     selectedTeams = { ["All"] = true },
     allTeams = { "All" },
@@ -254,13 +261,13 @@ local State = {
     whitelistedPlayers = {},
     whitelistArray = {},
     spectatingPlayerName = nil,
+    orbitingPlayerName = nil,
+    orbitAngle = 0,
     expandedPlayerName = nil,
     espObjects = {},
     noclipCollideCache = {},
     antiFlingCollideCache = {},
     hitboxCache = {},
-    silentRedirectCache = {},
-    silentHooksInstalled = false,
     xrayCache = {},
     promptDurationCache = {},
     headlessCache = {},
@@ -286,13 +293,14 @@ local State = {
     antiAFKConnection = nil,
     instantPromptConnection = nil,
     fpsBoosterConnection = nil,
-    toolHookConnections = {},
     lastSafeCFrame = nil,
     freecamPos = nil,
-    freecamYaw = 0,
-    freecamPitch = 0,
-    freecamKeys = {},
-    currentSilentTarget = nil,
+    activeKeyString = "FEYKSECURED",
+    activeKeyTier = "Normal",
+    keyExpireTimestamp = os.time() + 86400,
+    homeAvatarYaw = 180,
+    previewAvatarYaw = 180,
+    appliedStretchRatio = 1.0,
     isAuthorized = false,
     uiVisible = true,
     isAuthorizing = false,
@@ -311,6 +319,8 @@ local State = {
     refreshPlayerListUI = nil,
     refreshWhitelistDropdown = nil,
     loadConfigByName = nil,
+    updateEspPreview = nil,
+    updateHomeKeyInfo = nil,
 }
 
 local UI = {}
@@ -547,7 +557,7 @@ do
     HighlightContainer.Parent = ScreenGui
     UI.HighlightContainer = HighlightContainer
 
-    -- Live-Animated Dual-Ring FOV Circle (Rotating Shimmer + Counter-Rotating Orbital Ring)
+    -- Live-Animated Single-Ring FOV Circle (No Tick Markers)
     local FovCircle = Instance.new("Frame")
     FovCircle.Name = "FOVCircle"
     FovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -560,51 +570,8 @@ do
     addCorner(FovCircle, 9999)
     local FovOuterStroke = addLiveBorder(FovCircle, 1.8, 135, 0.05)
 
-    local FovInnerRing = Instance.new("Frame")
-    FovInnerRing.Name = "FOVInnerOrbital"
-    FovInnerRing.AnchorPoint = Vector2.new(0.5, 0.5)
-    FovInnerRing.Position = UDim2.fromScale(0.5, 0.5)
-    FovInnerRing.Size = UDim2.new(1, -8, 1, -8)
-    FovInnerRing.BackgroundTransparency = 1
-    FovInnerRing.ZIndex = 5
-    FovInnerRing.Parent = FovCircle
-    addCorner(FovInnerRing, 9999)
-    addLiveBorder(FovInnerRing, 1.0, -95, 0.35)
-    table.insert(State.liveRotators, { Instance = FovInnerRing, Speed = 48 })
-
-    local tickDefs = {
-        { ax = 0.5, ay = 0, px = 0.5, py = 0, w = 2, h = 6 },
-        { ax = 0.5, ay = 1, px = 0.5, py = 1, w = 2, h = 6 },
-        { ax = 0, ay = 0.5, px = 0, py = 0.5, w = 6, h = 2 },
-        { ax = 1, ay = 0.5, px = 1, py = 0.5, w = 6, h = 2 },
-    }
-    for _, td in ipairs(tickDefs) do
-        local tick = Instance.new("Frame")
-        tick.AnchorPoint = Vector2.new(td.ax, td.ay)
-        tick.Position = UDim2.fromScale(td.px, td.py)
-        tick.Size = UDim2.fromOffset(td.w, td.h)
-        tick.BackgroundColor3 = Theme.Accent
-        tick.BorderSizePixel = 0
-        tick.ZIndex = 6
-        tick.Parent = FovInnerRing
-        addCorner(tick, 99)
-        registerAccentObject(tick, "BackgroundColor3")
-    end
-
     UI.FovCircle = FovCircle
     UI.FovOuterStroke = FovOuterStroke
-    UI.FovInnerRing = FovInnerRing
-
-    local SilentSnapline = Instance.new("Frame")
-    SilentSnapline.Name = "SilentSnapline"
-    SilentSnapline.AnchorPoint = Vector2.new(0.5, 0.5)
-    SilentSnapline.BackgroundColor3 = Theme.Accent
-    SilentSnapline.BorderSizePixel = 0
-    SilentSnapline.Visible = false
-    SilentSnapline.ZIndex = 6
-    SilentSnapline.Parent = OverlayContainer
-    registerAccentObject(SilentSnapline, "BackgroundColor3")
-    UI.SilentSnapline = SilentSnapline
 
     local CrosshairV = Instance.new("Frame")
     CrosshairV.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -1207,6 +1174,22 @@ end
 --------------------------------------------------------------------------------
 -- 9. STAGE 3: LIVE-ANIMATED MAIN HUB ("Core.xyz")
 --------------------------------------------------------------------------------
+local function syncEspPreviewVisibility()
+    if not UI.EspPreviewWindow then
+        return
+    end
+    local shouldShow = State.isAuthorized
+        and State.uiVisible
+        and UI.MainWindow
+        and UI.MainWindow.Visible
+        and State.activeTab
+        and State.activeTab.Name == "Visuals"
+    UI.EspPreviewWindow.Visible = shouldShow and true or false
+    if shouldShow and State.updateEspPreview then
+        State.updateEspPreview()
+    end
+end
+
 local function toggleMainHub()
     if not State.isAuthorized then
         return
@@ -1215,11 +1198,15 @@ local function toggleMainHub()
     local targetScale = getResponsiveScale()
     if State.uiVisible then
         UI.MainWindow.Visible = true
+        syncEspPreviewVisibility()
         tween(UI.MainScale, SpringTween, { Scale = targetScale })
         tween(UI.MainWindow, FastTween, { BackgroundTransparency = ConfigState.WindowTransparency })
         tween(UI.MainStroke, FastTween, { Transparency = 0.08 })
         tween(UI.FloatingToggle, FastTween, { BackgroundColor3 = Theme.Black })
     else
+        if UI.EspPreviewWindow then
+            UI.EspPreviewWindow.Visible = false
+        end
         tween(UI.MainScale, FastTween, { Scale = targetScale * 0.9 })
         tween(UI.MainWindow, FastTween, { BackgroundTransparency = 1 })
         tween(UI.MainStroke, FastTween, { Transparency = 1 })
@@ -1227,9 +1214,143 @@ local function toggleMainHub()
         task.delay(0.18, function()
             if not State.uiVisible then
                 UI.MainWindow.Visible = false
+                syncEspPreviewVisibility()
             end
         end)
     end
+end
+
+-- Interactive 3D Character Clone + Draggable Rotation Helper for Home & Visuals Preview
+local function buildInteractiveAvatarViewport(container, isHome)
+    local fallbackImg = Instance.new("ImageLabel")
+    fallbackImg.Name = "AvatarPreviewImage"
+    fallbackImg.AnchorPoint = Vector2.new(0.5, 0.5)
+    fallbackImg.Position = UDim2.fromScale(0.5, 0.5)
+    fallbackImg.Size = UDim2.new(1, -8, 1, -8)
+    fallbackImg.BackgroundTransparency = 1
+    fallbackImg.ScaleType = Enum.ScaleType.Fit
+    fallbackImg.Image = "rbxthumb://type=Avatar&id=" .. tostring(LocalPlayer.UserId or 1) .. "&w=420&h=420"
+    fallbackImg.ZIndex = container.ZIndex + 1
+    fallbackImg.Parent = container
+
+    local vp = Instance.new("ViewportFrame")
+    vp.Name = isHome and "HomeAvatarViewport" or "PreviewAvatarViewport"
+    vp.Size = UDim2.fromScale(1, 1)
+    vp.BackgroundTransparency = 1
+    vp.Ambient = Color3.fromRGB(210, 210, 220)
+    vp.LightColor = Color3.fromRGB(255, 255, 255)
+    vp.LightDirection = Vector3.new(-1, -1, -1)
+    vp.ZIndex = container.ZIndex + 2
+    vp.Parent = container
+
+    local worldModel = Instance.new("WorldModel")
+    worldModel.Parent = vp
+
+    local vpCam = Instance.new("Camera")
+    vpCam.FieldOfView = 50
+    vpCam.Parent = vp
+    vp.CurrentCamera = vpCam
+
+    local clonedParts = {}
+    local baseCenter = Vector3.new(0, 0, 0)
+
+    local function refreshCharacterClone()
+        for _, item in ipairs(clonedParts) do
+            if item.Part and item.Part.Parent then
+                pcall(function() item.Part:Destroy() end)
+            end
+        end
+        table.clear(clonedParts)
+
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not char or not hrp then
+            return
+        end
+
+        baseCenter = hrp.Position
+        for _, child in ipairs(char:GetChildren()) do
+            if child:IsA("BasePart") and child.Name ~= "HumanoidRootPart" then
+                pcall(function()
+                    local cp = Instance.new("Part")
+                    cp.Name = child.Name
+                    cp.Size = child.Size
+                    cp.Color = child.Color
+                    cp.Material = child.Material
+                    cp.Transparency = child.Transparency
+                    cp.Anchored = true
+                    cp.CanCollide = false
+                    cp.CFrame = child.CFrame
+                    cp.Parent = worldModel
+                    table.insert(clonedParts, {
+                        Part = cp,
+                        RelOffset = child.Position - baseCenter,
+                        OrigTransparency = child.Transparency,
+                    })
+                end)
+            end
+        end
+    end
+
+    local function applyYawRotation(yawDeg)
+        local rad = math.rad(yawDeg or 180)
+        local camDist = 6.2
+        local camPos = baseCenter + Vector3.new(math.sin(rad) * camDist, 0.4, math.cos(rad) * camDist)
+        vpCam.CFrame = CFrame.new(camPos, baseCenter)
+        if not isHome and State.updateEspPreview then
+            State.updateEspPreview()
+        end
+    end
+
+    refreshCharacterClone()
+    applyYawRotation(isHome and State.homeAvatarYaw or State.previewAvatarYaw)
+
+    local dragBtn = Instance.new("TextButton")
+    dragBtn.Name = "AvatarRotateDragZone"
+    dragBtn.Size = UDim2.fromScale(1, 1)
+    dragBtn.BackgroundTransparency = 1
+    dragBtn.Text = ""
+    dragBtn.AutoButtonColor = false
+    dragBtn.ZIndex = container.ZIndex + 8
+    dragBtn.Parent = container
+
+    local draggingYaw = false
+    local lastInputX = 0
+
+    dragBtn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            draggingYaw = true
+            lastInputX = input.Position.X
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if draggingYaw and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local dx = input.Position.X - lastInputX
+            lastInputX = input.Position.X
+            if isHome then
+                State.homeAvatarYaw = (State.homeAvatarYaw + dx * 0.9) % 360
+                applyYawRotation(State.homeAvatarYaw)
+            else
+                State.previewAvatarYaw = (State.previewAvatarYaw + dx * 0.9) % 360
+                applyYawRotation(State.previewAvatarYaw)
+            end
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            draggingYaw = false
+        end
+    end)
+
+    return {
+        Viewport = vp,
+        FallbackImage = fallbackImg,
+        RefreshClone = refreshCharacterClone,
+        ApplyYaw = applyYawRotation,
+        ClonedParts = clonedParts,
+    }
 end
 
 do
@@ -1321,7 +1442,7 @@ do
     HeaderSub.Size = UDim2.fromOffset(260, 14)
     HeaderSub.BackgroundTransparency = 1
     HeaderSub.Font = Enum.Font.Code
-    HeaderSub.Text = "UNIVERSAL V4.0  ·  FEYKSECURED"
+    HeaderSub.Text = "UNIVERSAL V4.2  ·  FEYKSECURED"
     HeaderSub.TextColor3 = Theme.Muted
     HeaderSub.TextSize = 9
     HeaderSub.TextXAlignment = Enum.TextXAlignment.Left
@@ -1341,7 +1462,7 @@ do
     MinimizeBtn.ZIndex = 14
     MinimizeBtn.Parent = HeaderBar
     addCorner(MinimizeBtn, 6)
-    local MinStroke = addStroke(MinimizeBtn, Theme.Border, 1, 0)
+    addStroke(MinimizeBtn, Theme.Border, 1, 0)
 
     makeDraggable(HeaderBar, MainWindow)
 
@@ -1426,7 +1547,7 @@ do
     UserStatusLbl.Size = UDim2.new(1, -20, 0, 12)
     UserStatusLbl.BackgroundTransparency = 1
     UserStatusLbl.Font = Enum.Font.Code
-    UserStatusLbl.Text = "● ACTIVE · V4.0"
+    UserStatusLbl.Text = "● ACTIVE · V4.2"
     UserStatusLbl.TextColor3 = Theme.Silver
     UserStatusLbl.TextSize = 9
     UserStatusLbl.TextXAlignment = Enum.TextXAlignment.Left
@@ -1450,6 +1571,207 @@ do
     UI.ActiveTabIndicator = ActiveTabIndicator
     UI.NavList = NavList
     UI.PagesHolder = PagesHolder
+end
+
+-- RIGHT-SIDE COMPANION WINDOW: LIVE ESP PREVIEW ON YOUR OWN CHARACTER (SHOWN WHEN IN VISUALS TAB)
+do
+    local EspPreviewWindow = Instance.new("Frame")
+    EspPreviewWindow.Name = "CoreESPPreviewWindow"
+    EspPreviewWindow.AnchorPoint = Vector2.new(0.5, 0.5)
+    EspPreviewWindow.Position = UDim2.new(0.5, 384, 0.52, 0)
+    EspPreviewWindow.Size = UDim2.fromOffset(188, 365)
+    EspPreviewWindow.BackgroundColor3 = Theme.Black
+    EspPreviewWindow.BackgroundTransparency = 0.03
+    EspPreviewWindow.Active = true
+    EspPreviewWindow.Visible = false
+    EspPreviewWindow.ClipsDescendants = true
+    EspPreviewWindow.ZIndex = 10
+    EspPreviewWindow.Parent = UI.ScreenGui
+    addCorner(EspPreviewWindow, 12)
+    addLiveBorder(EspPreviewWindow, 1.5, 65, 0.08)
+
+    local EspPreviewScale = Instance.new("UIScale")
+    EspPreviewScale.Scale = 0.88
+    EspPreviewScale.Parent = EspPreviewWindow
+
+    local PrevHeader = Instance.new("Frame")
+    PrevHeader.Size = UDim2.new(1, 0, 0, 40)
+    PrevHeader.BackgroundColor3 = Theme.Deep
+    PrevHeader.BackgroundTransparency = 0.08
+    PrevHeader.BorderSizePixel = 0
+    PrevHeader.ZIndex = 12
+    PrevHeader.Parent = EspPreviewWindow
+    addCorner(PrevHeader, 12)
+    makeDraggable(PrevHeader, EspPreviewWindow)
+
+    local PrevTitle = Instance.new("TextLabel")
+    PrevTitle.Position = UDim2.fromOffset(12, 6)
+    PrevTitle.Size = UDim2.new(1, -24, 0, 16)
+    PrevTitle.BackgroundTransparency = 1
+    PrevTitle.Font = Enum.Font.GothamBlack
+    PrevTitle.Text = "ESP LIVE PREVIEW"
+    PrevTitle.TextColor3 = Theme.White
+    PrevTitle.TextSize = 11
+    PrevTitle.TextXAlignment = Enum.TextXAlignment.Left
+    PrevTitle.ZIndex = 13
+    PrevTitle.Parent = PrevHeader
+
+    local PrevSub = Instance.new("TextLabel")
+    PrevSub.Position = UDim2.fromOffset(12, 21)
+    PrevSub.Size = UDim2.new(1, -24, 0, 13)
+    PrevSub.BackgroundTransparency = 1
+    PrevSub.Font = Enum.Font.Code
+    PrevSub.Text = "⇄ DRAG AVATAR TO ROTATE"
+    PrevSub.TextColor3 = Theme.Muted
+    PrevSub.TextSize = 9
+    PrevSub.TextXAlignment = Enum.TextXAlignment.Left
+    PrevSub.ZIndex = 13
+    PrevSub.Parent = PrevHeader
+
+    local PreviewStage = Instance.new("Frame")
+    PreviewStage.Name = "PreviewStage"
+    PreviewStage.Position = UDim2.fromOffset(12, 48)
+    PreviewStage.Size = UDim2.new(1, -24, 1, -86)
+    PreviewStage.BackgroundColor3 = Theme.Deep
+    PreviewStage.ClipsDescendants = true
+    PreviewStage.ZIndex = 12
+    PreviewStage.Parent = EspPreviewWindow
+    addCorner(PreviewStage, 8)
+    addStroke(PreviewStage, Theme.Border, 1, 0)
+
+    local previewAvatarCtrl = buildInteractiveAvatarViewport(PreviewStage, false)
+
+    -- 1. Chams Highlight Tint Overlay inside PreviewStage
+    local PreviewChams = Instance.new("Frame")
+    PreviewChams.Name = "PreviewChams"
+    PreviewChams.AnchorPoint = Vector2.new(0.5, 0.5)
+    PreviewChams.Position = UDim2.fromScale(0.5, 0.52)
+    PreviewChams.Size = UDim2.fromOffset(88, 178)
+    PreviewChams.BackgroundColor3 = State.espColor
+    PreviewChams.BackgroundTransparency = 0.72
+    PreviewChams.Visible = false
+    PreviewChams.ZIndex = 15
+    PreviewChams.Parent = PreviewStage
+    addCorner(PreviewChams, 8)
+    local PreviewChamsStroke = addStroke(PreviewChams, Theme.White, 1.3, 0.15)
+
+    -- 2. Floating Name & HP Tag inside PreviewStage
+    local PreviewNameTag = Instance.new("TextLabel")
+    PreviewNameTag.Name = "PreviewNameTag"
+    PreviewNameTag.AnchorPoint = Vector2.new(0.5, 0)
+    PreviewNameTag.Position = UDim2.new(0.5, 0, 0, 8)
+    PreviewNameTag.Size = UDim2.new(1, -8, 0, 18)
+    PreviewNameTag.BackgroundTransparency = 1
+    PreviewNameTag.Font = Enum.Font.Code
+    PreviewNameTag.Text = tostring(LocalPlayer.Name) .. " [10m] | HP: 100"
+    PreviewNameTag.TextColor3 = State.espColor
+    PreviewNameTag.TextSize = 10
+    PreviewNameTag.Visible = false
+    PreviewNameTag.ZIndex = 18
+    PreviewNameTag.Parent = PreviewStage
+
+    -- 3. 3D Wireframe Bounding Box (12 Edges) inside PreviewStage
+    local PreviewBox3DFolder = Instance.new("Frame")
+    PreviewBox3DFolder.Name = "PreviewBox3D"
+    PreviewBox3DFolder.Size = UDim2.fromScale(1, 1)
+    PreviewBox3DFolder.BackgroundTransparency = 1
+    PreviewBox3DFolder.Visible = false
+    PreviewBox3DFolder.ZIndex = 16
+    PreviewBox3DFolder.Parent = PreviewStage
+
+    local previewBoxEdges = {}
+    for i = 1, 12 do
+        local eLine = Instance.new("Frame")
+        eLine.Name = "PreviewEdge3D_" .. i
+        eLine.AnchorPoint = Vector2.new(0.5, 0.5)
+        eLine.BackgroundColor3 = State.espColor
+        eLine.BorderSizePixel = 0
+        eLine.ZIndex = 16
+        eLine.Parent = PreviewBox3DFolder
+        table.insert(previewBoxEdges, eLine)
+    end
+
+    -- 4. 3D Skeleton Rig (10 Bones) inside PreviewStage
+    local PreviewSkeletonFolder = Instance.new("Frame")
+    PreviewSkeletonFolder.Name = "PreviewSkeleton"
+    PreviewSkeletonFolder.Size = UDim2.fromScale(1, 1)
+    PreviewSkeletonFolder.BackgroundTransparency = 1
+    PreviewSkeletonFolder.Visible = false
+    PreviewSkeletonFolder.ZIndex = 17
+    PreviewSkeletonFolder.Parent = PreviewStage
+
+    local previewSkelBones = {}
+    for i = 1, 10 do
+        local bLine = Instance.new("Frame")
+        bLine.Name = "PreviewBone_" .. i
+        bLine.AnchorPoint = Vector2.new(0.5, 0.5)
+        bLine.BackgroundColor3 = Theme.White
+        bLine.BorderSizePixel = 0
+        bLine.ZIndex = 17
+        bLine.Parent = PreviewSkeletonFolder
+        table.insert(previewSkelBones, bLine)
+    end
+
+    -- 5. Vertical Health Bar inside PreviewStage
+    local PreviewHealthBarBg = Instance.new("Frame")
+    PreviewHealthBarBg.Name = "PreviewHealthBar"
+    PreviewHealthBarBg.Position = UDim2.fromOffset(18, 46)
+    PreviewHealthBarBg.Size = UDim2.fromOffset(4, 182)
+    PreviewHealthBarBg.BackgroundColor3 = Theme.Black
+    PreviewHealthBarBg.BorderSizePixel = 0
+    PreviewHealthBarBg.Visible = false
+    PreviewHealthBarBg.ZIndex = 18
+    PreviewHealthBarBg.Parent = PreviewStage
+    addCorner(PreviewHealthBarBg, 99)
+
+    local PreviewHealthBarFill = Instance.new("Frame")
+    PreviewHealthBarFill.AnchorPoint = Vector2.new(0, 1)
+    PreviewHealthBarFill.Position = UDim2.fromScale(0, 1)
+    PreviewHealthBarFill.Size = UDim2.fromScale(1, 1)
+    PreviewHealthBarFill.BackgroundColor3 = Theme.Success
+    PreviewHealthBarFill.BorderSizePixel = 0
+    PreviewHealthBarFill.ZIndex = 19
+    PreviewHealthBarFill.Parent = PreviewHealthBarBg
+    addCorner(PreviewHealthBarFill, 99)
+
+    -- 6. Snapline Tracer inside PreviewStage
+    local PreviewTracer = Instance.new("Frame")
+    PreviewTracer.Name = "PreviewTracer"
+    PreviewTracer.AnchorPoint = Vector2.new(0.5, 0.5)
+    PreviewTracer.BackgroundColor3 = State.espColor
+    PreviewTracer.BorderSizePixel = 0
+    PreviewTracer.Visible = false
+    PreviewTracer.ZIndex = 18
+    PreviewTracer.Parent = PreviewStage
+
+    local PreviewFooter = Instance.new("TextLabel")
+    PreviewFooter.Position = UDim2.new(0, 12, 1, -30)
+    PreviewFooter.Size = UDim2.new(1, -24, 0, 22)
+    PreviewFooter.BackgroundTransparency = 1
+    PreviewFooter.Font = Enum.Font.Code
+    PreviewFooter.Text = "ACTIVE: NONE"
+    PreviewFooter.TextColor3 = Theme.Silver
+    PreviewFooter.TextSize = 9
+    PreviewFooter.TextTruncate = Enum.TextTruncate.AtEnd
+    PreviewFooter.TextXAlignment = Enum.TextXAlignment.Center
+    PreviewFooter.ZIndex = 13
+    PreviewFooter.Parent = EspPreviewWindow
+
+    UI.EspPreviewWindow = EspPreviewWindow
+    UI.EspPreviewScale = EspPreviewScale
+    UI.PreviewStage = PreviewStage
+    UI.PreviewChams = PreviewChams
+    UI.PreviewChamsStroke = PreviewChamsStroke
+    UI.PreviewNameTag = PreviewNameTag
+    UI.PreviewBox3DFolder = PreviewBox3DFolder
+    UI.PreviewBoxEdges = previewBoxEdges
+    UI.PreviewSkeletonFolder = PreviewSkeletonFolder
+    UI.PreviewSkelBones = previewSkelBones
+    UI.PreviewHealthBarBg = PreviewHealthBarBg
+    UI.PreviewHealthBarFill = PreviewHealthBarFill
+    UI.PreviewTracer = PreviewTracer
+    UI.PreviewFooter = PreviewFooter
+    UI.PreviewAvatarCtrl = previewAvatarCtrl
 end
 
 --------------------------------------------------------------------------------
@@ -1500,11 +1822,12 @@ local function createTab(name, order)
     list.SortOrder = Enum.SortOrder.LayoutOrder
     list.Parent = page
 
-    local tabObj = { Btn = btn, Stroke = st, Page = page, Order = order }
+    local tabObj = { Name = name, Btn = btn, Stroke = st, Page = page, Order = order }
     table.insert(State.Tabs, tabObj)
 
     local function selectTab()
         if State.activeTab == tabObj then
+            syncEspPreviewVisibility()
             return
         end
         for _, t in ipairs(State.Tabs) do
@@ -1530,6 +1853,7 @@ local function createTab(name, order)
         page.Position = UDim2.fromOffset(14, 0)
         page.Visible = true
         tween(page, SmoothTween, { Position = UDim2.fromOffset(0, 0) })
+        syncEspPreviewVisibility()
     end
 
     btn.MouseButton1Click:Connect(function()
@@ -2184,34 +2508,6 @@ local function getTargetPartFromCharacter(char, partName)
     return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
 end
 
--- Weighted Body-Part Selector for Silent Aim (Head %, Torso %, Legs %)
-local function chooseWeightedSilentPart(char)
-    if not char then
-        return nil
-    end
-    local wHead = math.max(ConfigState.SilentHeadWeight or 80, 0)
-    local wTorso = math.max(ConfigState.SilentTorsoWeight or 0, 0)
-    local wLegs = math.max(ConfigState.SilentLegsWeight or 20, 0)
-    local total = wHead + wTorso + wLegs
-
-    if total <= 0 then
-        return getTargetPartFromCharacter(char, "Head")
-    end
-
-    local roll = math.random() * total
-    if roll <= wHead then
-        return char:FindFirstChild("Head") or getTargetPartFromCharacter(char, "Head")
-    elseif roll <= (wHead + wTorso) then
-        return char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
-    else
-        return char:FindFirstChild("RightLowerLeg")
-            or char:FindFirstChild("LeftLowerLeg")
-            or char:FindFirstChild("Right Leg")
-            or char:FindFirstChild("Left Leg")
-            or char:FindFirstChild("HumanoidRootPart")
-    end
-end
-
 local function isPlayerWhitelisted(player)
     if not ConfigState.UseWhitelist then
         return false
@@ -2585,12 +2881,111 @@ local function updateCrosshair()
     UI.CrosshairH.Visible = ConfigState.Crosshair
 end
 
-    State.silentLastRollClock = 0
-    State.silentLastCharacter = nil
-    State.silentRolledPart = nil
-    State.silentHitTriggered = true
+-- Live ESP Preview Updater (Updates the Right-Side Companion Window on Your Character/Avatar)
+local function updateEspPreviewWindow()
+    if not UI.EspPreviewWindow then
+        return
+    end
+    local col = State.espColor or Theme.White
 
-local function getClosestTarget(camera, forSilentAim)
+    -- 1. Chams & Name Tag Preview
+    if UI.PreviewChams then
+        UI.PreviewChams.Visible = ConfigState.ESP
+        UI.PreviewChams.BackgroundColor3 = col
+    end
+    if UI.PreviewNameTag then
+        UI.PreviewNameTag.Visible = ConfigState.ESP
+        UI.PreviewNameTag.TextColor3 = col
+        UI.PreviewNameTag.Text = string.format("%s [10m] | HP: 100", tostring(LocalPlayer.Name))
+    end
+
+    -- Project 3D coordinates around preview center (cx = 82, cy = 142) using State.previewAvatarYaw
+    local cx, cy = 82, 142
+    local yawRad = math.rad(State.previewAvatarYaw or 180)
+    local cosY = math.cos(yawRad)
+    local sinY = math.sin(yawRad)
+
+    local function projectPreviewPoint(x3d, y3d, z3d)
+        local rx = x3d * cosY - z3d * sinY
+        local rz = x3d * sinY + z3d * cosY
+        local depthScale = 24 / math.max(6.5 + rz * 0.25, 2)
+        return Vector2.new(cx + rx * depthScale, cy - y3d * depthScale)
+    end
+
+    -- 2. 3D Bounding Box Preview (12 Edges)
+    if UI.PreviewBox3DFolder then
+        UI.PreviewBox3DFolder.Visible = ConfigState.Box3DESP
+        if ConfigState.Box3DESP then
+            local pCorners = {}
+            for idx, c in ipairs(BOX_3D_CORNERS) do
+                pCorners[idx] = projectPreviewPoint(c.X * 0.85, c.Y * 0.9, c.Z * 0.85)
+            end
+            for eIdx, edge in ipairs(BOX_3D_EDGES) do
+                drawLineFrame(UI.PreviewBoxEdges[eIdx], pCorners[edge[1]], pCorners[edge[2]], col, 1.2)
+            end
+        end
+    end
+
+    -- 3. 3D Skeleton Rig Preview (10 Bones)
+    if UI.PreviewSkeletonFolder then
+        UI.PreviewSkeletonFolder.Visible = ConfigState.SkeletonESP
+        if ConfigState.SkeletonESP then
+            local previewJoints3D = {
+                { Vector3.new(0, 2.1, 0), Vector3.new(0, 1.1, 0) },       -- Head to UpperTorso
+                { Vector3.new(0, 1.1, 0), Vector3.new(0, -0.2, 0) },      -- UpperTorso to LowerTorso
+                { Vector3.new(0, 1.0, 0), Vector3.new(-1.1, 0.8, 0) },    -- Left Shoulder
+                { Vector3.new(-1.1, 0.8, 0), Vector3.new(-1.25, -0.5, 0) },-- Left Arm
+                { Vector3.new(0, 1.0, 0), Vector3.new(1.1, 0.8, 0) },     -- Right Shoulder
+                { Vector3.new(1.1, 0.8, 0), Vector3.new(1.25, -0.5, 0) }, -- Right Arm
+                { Vector3.new(0, -0.2, 0), Vector3.new(-0.6, -1.3, 0) },  -- Left Hip
+                { Vector3.new(-0.6, -1.3, 0), Vector3.new(-0.65, -2.6, 0) },-- Left Leg
+                { Vector3.new(0, -0.2, 0), Vector3.new(0.6, -1.3, 0) },   -- Right Hip
+                { Vector3.new(0.6, -1.3, 0), Vector3.new(0.65, -2.6, 0) }, -- Right Leg
+            }
+            for bIdx, jPair in ipairs(previewJoints3D) do
+                local ptA = projectPreviewPoint(jPair[1].X, jPair[1].Y, jPair[1].Z)
+                local ptB = projectPreviewPoint(jPair[2].X, jPair[2].Y, jPair[2].Z)
+                drawLineFrame(UI.PreviewSkelBones[bIdx], ptA, ptB, Theme.White, 1.4)
+            end
+        end
+    end
+
+    -- 4. Animated Health Bar Preview
+    if UI.PreviewHealthBarBg then
+        UI.PreviewHealthBarBg.Visible = ConfigState.HealthBarESP
+    end
+
+    -- 5. Snapline Tracer Preview
+    if UI.PreviewTracer then
+        UI.PreviewTracer.Visible = ConfigState.Tracers
+        if ConfigState.Tracers then
+            local originPt = Vector2.new(cx, cy)
+            if ConfigState.TracerOrigin == "Bottom" then
+                originPt = Vector2.new(cx, 272)
+            elseif ConfigState.TracerOrigin == "Top" then
+                originPt = Vector2.new(cx, 6)
+            else
+                originPt = Vector2.new(cx, 200)
+            end
+            drawLineFrame(UI.PreviewTracer, originPt, Vector2.new(cx, cy - 10), col, 1.3)
+        end
+    end
+
+    -- 6. Footer Summary
+    if UI.PreviewFooter then
+        local activeList = {}
+        if ConfigState.ESP then table.insert(activeList, "ESP") end
+        if ConfigState.Box3DESP then table.insert(activeList, "3D BOX") end
+        if ConfigState.SkeletonESP then table.insert(activeList, "SKELETON") end
+        if ConfigState.HealthBarESP then table.insert(activeList, "HP BAR") end
+        if ConfigState.Tracers then table.insert(activeList, "TRACER") end
+        UI.PreviewFooter.Text = #activeList > 0 and ("ACTIVE: " .. table.concat(activeList, " · ")) or "ACTIVE: NONE (TOGGLE ESP)"
+    end
+end
+
+State.updateEspPreview = updateEspPreviewWindow
+
+local function getClosestTarget(camera)
     local closestNormal, shortestNormal = nil, ConfigState.FOVRadius
     local closestPriority, shortestPriority = nil, ConfigState.FOVRadius
     local center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
@@ -2612,12 +3007,12 @@ local function getClosestTarget(camera, forSilentAim)
                             if State.prioritizedPlayers[player.Name] then
                                 if dist <= shortestPriority then
                                     shortestPriority = dist
-                                    closestPriority = player.Character
+                                    closestPriority = checkPart
                                 end
                             else
                                 if dist <= shortestNormal then
                                     shortestNormal = dist
-                                    closestNormal = player.Character
+                                    closestNormal = checkPart
                                 end
                             end
                         end
@@ -2627,85 +3022,7 @@ local function getClosestTarget(camera, forSilentAim)
         end
     end
 
-    local winningChar = closestPriority or closestNormal
-    if not winningChar then
-        return nil
-    end
-
-    if not forSilentAim then
-        return getTargetPartFromCharacter(winningChar, ConfigState.TargetPart)
-    end
-
-    local now = os.clock()
-    if winningChar ~= State.silentLastCharacter or (now - (State.silentLastRollClock or 0)) >= 0.22 or not State.silentRolledPart or not State.silentRolledPart.Parent then
-        State.silentLastCharacter = winningChar
-        State.silentLastRollClock = now
-        State.silentRolledPart = chooseWeightedSilentPart(winningChar)
-        local chance = math.clamp(ConfigState.SilentHitChance or 100, 1, 100)
-        State.silentHitTriggered = (math.random(1, 100) <= chance)
-    end
-
-    return State.silentRolledPart
-end
-
--- Universal Multi-Method Silent Aim (100% Hook-Free & Undetected in Flick FPS - Never touches game.__index, game.__namecall, or CameraModule)
-local function restoreSilentRedirectParts()
-    for part, orig in pairs(State.silentRedirectCache) do
-        if part and part.Parent then
-            pcall(function()
-                part.Size = orig.Size
-                part.Transparency = orig.Transparency
-                part.CanCollide = orig.CanCollide
-            end)
-        end
-    end
-    table.clear(State.silentRedirectCache)
-end
-
-local function updateSilentAimHitboxRedirect(targetPart)
-    for part, orig in pairs(State.silentRedirectCache) do
-        if part ~= targetPart or not ConfigState.SilentAim then
-            if part and part.Parent then
-                pcall(function()
-                    part.Size = orig.Size
-                    part.Transparency = orig.Transparency
-                    part.CanCollide = orig.CanCollide
-                end)
-            end
-            State.silentRedirectCache[part] = nil
-        end
-    end
-
-    if not ConfigState.SilentAim or not targetPart or not State.silentHitTriggered then
-        return
-    end
-
-    if not State.silentRedirectCache[targetPart] and not State.hitboxCache[targetPart] then
-        State.silentRedirectCache[targetPart] = {
-            Size = targetPart.Size,
-            Transparency = targetPart.Transparency,
-            CanCollide = targetPart.CanCollide,
-        }
-    end
-
-    local method = ConfigState.SilentAimMethod
-    local boxScale = 11
-    if method == "Raycast Redirect" then
-        boxScale = 13
-    elseif method == "FindPartOnRay (Legacy Ray)" then
-        boxScale = 14
-    elseif method == "ViewportPointToRay / ScreenPointToRay" then
-        boxScale = 15
-    elseif method == "Mouse.Hit / Mouse.Target" then
-        boxScale = 14
-    end
-
-    pcall(function()
-        targetPart.Size = Vector3.new(boxScale, boxScale, boxScale)
-        targetPart.Transparency = 0.88
-        targetPart.CanCollide = false
-        targetPart.Massless = true
-    end)
+    return closestPriority or closestNormal
 end
 
 -- Universal Hitbox Expander (Supports Team Check & Whitelist)
@@ -2866,8 +3183,6 @@ local function setFreecamEnabled(enabled)
 
     if enabled and cam then
         State.freecamPos = cam.CFrame.Position
-        State.freecamYaw = 0
-        State.freecamPitch = 0
         if hrp then
             hrp.Anchored = true
         end
@@ -3106,6 +3421,52 @@ local function flingTargetPlayer(targetPlayer)
     end)
 end
 
+local function getDetectedExecutorName()
+    local execName = "Universal Executor"
+    pcall(function()
+        if Env.identifyexecutor then
+            local name, ver = Env.identifyexecutor()
+            if name and tostring(name) ~= "" then
+                execName = ver and (tostring(name) .. " " .. tostring(ver)) or tostring(name)
+            end
+        end
+    end)
+    return execName
+end
+
+local function formatRemainingKeyTime()
+    if State.activeKeyTier == "Developer" then
+        return "Developer"
+    elseif State.activeKeyTier == "Infinite" then
+        return "Infinite"
+    else
+        local rem = math.max(0, (State.keyExpireTimestamp or (os.time() + 86400)) - os.time())
+        local hrs = math.floor(rem / 3600)
+        local mins = math.floor((rem % 3600) / 60)
+        local secs = math.floor(rem % 60)
+        return string.format("%02dh %02dm %02ds", hrs, mins, secs)
+    end
+end
+
+local function applyKeyTierFromKeyString(keyStr)
+    local clean = string.upper((keyStr or ""):gsub("%s+", ""))
+    local tierInfo = KEY_TIERS[clean]
+    if not tierInfo then
+        return false
+    end
+    State.activeKeyString = clean
+    State.activeKeyTier = tierInfo.Tier
+    if tierInfo.Duration and tierInfo.Duration > 0 then
+        State.keyExpireTimestamp = os.time() + tierInfo.Duration
+    else
+        State.keyExpireTimestamp = -1
+    end
+    if State.updateHomeKeyInfo then
+        State.updateHomeKeyInfo()
+    end
+    return true
+end
+
 --------------------------------------------------------------------------------
 -- 12. BUILD ALL 7 TABS (SCOPED IN DO-BLOCKS TO FREE LOCAL REGISTERS)
 --------------------------------------------------------------------------------
@@ -3117,9 +3478,136 @@ local PlayersTab = createTab("Players", 5)
 local WorldTab = createTab("World", 6)
 local SettingsTab = createTab("Settings", 7)
 
--- TAB 1: HOME
+-- TAB 1: HOME (INTERACTIVE 3D CHARACTER SHOWCASE BOX + SIDE PROFILE & KEY TIME INFO)
 do
-    createLabel(HomeTab, "Core.xyz Universal v4.0")
+    createLabel(HomeTab, "Operator Showcase & License Status")
+
+    local HomeProfileCard = Instance.new("Frame")
+    HomeProfileCard.Name = "HomeProfileCard"
+    HomeProfileCard.Size = UDim2.new(1, 0, 0, 168)
+    HomeProfileCard.BackgroundColor3 = Theme.Surface
+    HomeProfileCard.ZIndex = 14
+    HomeProfileCard.Parent = HomeTab
+    addCorner(HomeProfileCard, 10)
+    addStroke(HomeProfileCard, Theme.Border, 1.2, 0)
+
+    local HomeAvatarBox = Instance.new("Frame")
+    HomeAvatarBox.Name = "HomeAvatarBox"
+    HomeAvatarBox.Position = UDim2.fromOffset(10, 10)
+    HomeAvatarBox.Size = UDim2.fromOffset(132, 148)
+    HomeAvatarBox.BackgroundColor3 = Theme.Deep
+    HomeAvatarBox.ClipsDescendants = true
+    HomeAvatarBox.ZIndex = 15
+    HomeAvatarBox.Parent = HomeProfileCard
+    addCorner(HomeAvatarBox, 8)
+    local HomeAvatarStroke = addStroke(HomeAvatarBox, Theme.Accent, 1.2, 0.25)
+    registerAccentObject(HomeAvatarStroke, "Color")
+
+    UI.HomeAvatarCtrl = buildInteractiveAvatarViewport(HomeAvatarBox, true)
+
+    local DragHintLbl = Instance.new("TextLabel")
+    DragHintLbl.AnchorPoint = Vector2.new(0.5, 1)
+    DragHintLbl.Position = UDim2.new(0.5, 0, 1, -4)
+    DragHintLbl.Size = UDim2.new(1, -8, 0, 14)
+    DragHintLbl.BackgroundTransparency = 1
+    DragHintLbl.Font = Enum.Font.Code
+    DragHintLbl.Text = "⇄ DRAG SIDEWAYS"
+    DragHintLbl.TextColor3 = Theme.Silver
+    DragHintLbl.TextSize = 9
+    DragHintLbl.ZIndex = 20
+    DragHintLbl.Parent = HomeAvatarBox
+
+    local InfoPanel = Instance.new("Frame")
+    InfoPanel.Name = "HomeInfoPanel"
+    InfoPanel.Position = UDim2.fromOffset(152, 10)
+    InfoPanel.Size = UDim2.new(1, -162, 1, -20)
+    InfoPanel.BackgroundTransparency = 1
+    InfoPanel.ZIndex = 15
+    InfoPanel.Parent = HomeProfileCard
+
+    local function createProfileRow(rowIdx, keyTitle, initVal, valName)
+        local rowFrame = Instance.new("Frame")
+        rowFrame.Name = "Row_" .. valName
+        rowFrame.Position = UDim2.fromOffset(0, (rowIdx - 1) * 37)
+        rowFrame.Size = UDim2.new(1, 0, 0, 33)
+        rowFrame.BackgroundColor3 = Theme.Deep
+        rowFrame.ZIndex = 15
+        rowFrame.Parent = InfoPanel
+        addCorner(rowFrame, 6)
+        addStroke(rowFrame, Theme.Border, 1, 0)
+
+        local kLbl = Instance.new("TextLabel")
+        kLbl.Position = UDim2.fromOffset(10, 2)
+        kLbl.Size = UDim2.new(1, -20, 0, 12)
+        kLbl.BackgroundTransparency = 1
+        kLbl.Font = Enum.Font.GothamBold
+        kLbl.Text = string.upper(keyTitle)
+        kLbl.TextColor3 = Theme.Muted
+        kLbl.TextSize = 9
+        kLbl.TextXAlignment = Enum.TextXAlignment.Left
+        kLbl.ZIndex = 16
+        kLbl.Parent = rowFrame
+
+        local vLbl = Instance.new("TextLabel")
+        vLbl.Name = valName
+        vLbl.Position = UDim2.fromOffset(10, 14)
+        vLbl.Size = UDim2.new(1, -20, 0, 16)
+        vLbl.BackgroundTransparency = 1
+        vLbl.Font = Enum.Font.Code
+        vLbl.Text = tostring(initVal)
+        vLbl.TextColor3 = Theme.White
+        vLbl.TextSize = 11
+        vLbl.TextTruncate = Enum.TextTruncate.AtEnd
+        vLbl.TextXAlignment = Enum.TextXAlignment.Left
+        vLbl.ZIndex = 16
+        vLbl.Parent = rowFrame
+
+        return vLbl
+    end
+
+    local userStr = string.format("%s (@%s)", tostring(LocalPlayer.DisplayName or LocalPlayer.Name), tostring(LocalPlayer.Name))
+    UI.HomeUserValue = createProfileRow(1, "User", userStr, "Info_User")
+    UI.HomeExecutorValue = createProfileRow(2, "Executor", getDetectedExecutorName(), "Info_Executor")
+    UI.HomeUserIdValue = createProfileRow(3, "User ID", tostring(LocalPlayer.UserId or 0), "Info_UserId")
+    UI.HomeKeyTimeValue = createProfileRow(4, "Key Time Left", formatRemainingKeyTime(), "Info_KeyTime")
+
+    local function updateHomeKeyInfo()
+        if not UI.HomeKeyTimeValue then
+            return
+        end
+        local formatted = formatRemainingKeyTime()
+        UI.HomeKeyTimeValue.Text = formatted
+        if formatted == "Developer" then
+            UI.HomeKeyTimeValue.TextColor3 = Theme.Accent
+        elseif formatted == "Infinite" then
+            UI.HomeKeyTimeValue.TextColor3 = Theme.Success
+        else
+            UI.HomeKeyTimeValue.TextColor3 = Theme.White
+        end
+    end
+
+    State.updateHomeKeyInfo = updateHomeKeyInfo
+    updateHomeKeyInfo()
+
+    createLabel(HomeTab, "Test Key Tiers (Developer / Permanent / Normal 24h)")
+    createDropdown(HomeTab, "Switch Key Tier (Test)", {
+        "FEYKDEV (Developer)",
+        "FEYKPERM (Infinite / Permanent)",
+        "FEYK24H (Normal 24h Timer)",
+    }, "FEYK24H (Normal 24h Timer)", function(opt)
+        if string.find(opt, "FEYKDEV") then
+            applyKeyTierFromKeyString("FEYKDEV")
+            notify("Key System", "Switched to Developer Key (FEYKDEV) -> Key Time: Developer", 3)
+        elseif string.find(opt, "FEYKPERM") then
+            applyKeyTierFromKeyString("FEYKPERM")
+            notify("Key System", "Switched to Permanent Key (FEYKPERM) -> Key Time: Infinite", 3)
+        else
+            applyKeyTierFromKeyString("FEYK24H")
+            notify("Key System", "Switched to Normal Key (FEYK24H) -> Key Time: 24h Countdown", 3)
+        end
+    end)
+
+    createLabel(HomeTab, "Quick Utilities")
     createButton(HomeTab, "Copy Discord Invite", function()
         if Env.setclipboard then
             Env.setclipboard("https://discord.gg/yeKPEZpMMu")
@@ -3140,9 +3628,9 @@ do
     end)
 end
 
--- TAB 2: COMBAT (AIMBOT + SILENT AIM + WEIGHTED BODY HIT CHANCE + HITBOX EXPANDER + WHITELIST)
+-- TAB 2: COMBAT (CAMERA AIMBOT + SINGLE-RING ANIMATED FOV + HITBOX EXPANDER + MULTI-TEAM + WHITELIST)
 do
-    createLabel(CombatTab, "Camera Aimbot & FOV")
+    createLabel(CombatTab, "Camera Aimbot & Single-Ring Animated FOV")
     createToggle(CombatTab, "Aimbot", false, function(val)
         ConfigState.Aimbot = val
     end)
@@ -3164,48 +3652,6 @@ do
         "LowerTorso",
     }, "Head", function(opt)
         ConfigState.TargetPart = opt
-    end)
-
-    createLabel(CombatTab, "Universal Silent Aim & Weighted Hit Chance")
-    createToggle(CombatTab, "Silent Aim", false, function(val)
-        ConfigState.SilentAim = val
-        State.silentLastRollClock = 0
-        if not val then
-            UI.SilentSnapline.Visible = false
-            restoreSilentRedirectParts()
-        end
-    end)
-    createDropdown(CombatTab, "Silent Aim Method", {
-        "Hitbox Redirection (Undetected)",
-        "Raycast Redirect",
-        "FindPartOnRay (Legacy Ray)",
-        "ViewportPointToRay / ScreenPointToRay",
-        "Mouse.Hit / Mouse.Target",
-    }, "Hitbox Redirection (Undetected)", function(opt)
-        ConfigState.SilentAimMethod = opt
-        State.silentLastRollClock = 0
-    end)
-    createSlider(CombatTab, "Silent Aim Hit Chance", 1, 100, 100, 1, "%", function(val)
-        ConfigState.SilentHitChance = val
-        State.silentLastRollClock = 0
-    end)
-    createSlider(CombatTab, "Head Hit Weight", 0, 100, 80, 1, "%", function(val)
-        ConfigState.SilentHeadWeight = val
-        State.silentLastRollClock = 0
-    end)
-    createSlider(CombatTab, "Torso Hit Weight", 0, 100, 0, 1, "%", function(val)
-        ConfigState.SilentTorsoWeight = val
-        State.silentLastRollClock = 0
-    end)
-    createSlider(CombatTab, "Legs Hit Weight", 0, 100, 20, 1, "%", function(val)
-        ConfigState.SilentLegsWeight = val
-        State.silentLastRollClock = 0
-    end)
-    createToggle(CombatTab, "Silent Aim Target Snapline", false, function(val)
-        ConfigState.SilentSnapline = val
-        if not val then
-            UI.SilentSnapline.Visible = false
-        end
     end)
 
     createLabel(CombatTab, "Universal Hitbox Expander (Team & Whitelist Aware)")
@@ -3283,35 +3729,40 @@ do
     end)
 end
 
--- TAB 3: VISUALS (3D BOUNDING BOX + SKELETON RIG + X-RAY + SKY/ATMOSPHERE + FREECAM)
+-- TAB 3: VISUALS (LIVE ESP PREVIEW + SCREEN RESOLUTION STRETCH + 3D BOX + SKELETON + X-RAY + FREECAM)
 do
-    createLabel(VisualsTab, "3D ESP & Skeleton Rig Overlays")
+    createLabel(VisualsTab, "3D ESP & Skeleton Overlays (See Right-Side Live Preview)")
     createToggle(VisualsTab, "Player ESP (Highlight + Tag)", false, function(val)
         ConfigState.ESP = val
+        updateEspPreviewWindow()
         if not val and not ConfigState.Box3DESP and not ConfigState.SkeletonESP and not ConfigState.HealthBarESP and not ConfigState.Tracers then
             clearESP()
         end
     end)
     createToggle(VisualsTab, "3D Bounding Box Overlay", false, function(val)
         ConfigState.Box3DESP = val
+        updateEspPreviewWindow()
         if not val and not ConfigState.ESP and not ConfigState.SkeletonESP and not ConfigState.HealthBarESP and not ConfigState.Tracers then
             clearESP()
         end
     end)
     createToggle(VisualsTab, "3D Skeleton Rig Overlay", false, function(val)
         ConfigState.SkeletonESP = val
+        updateEspPreviewWindow()
         if not val and not ConfigState.ESP and not ConfigState.Box3DESP and not ConfigState.HealthBarESP and not ConfigState.Tracers then
             clearESP()
         end
     end)
     createToggle(VisualsTab, "Animated Health Bar Overlay", false, function(val)
         ConfigState.HealthBarESP = val
+        updateEspPreviewWindow()
         if not val and not ConfigState.ESP and not ConfigState.Box3DESP and not ConfigState.SkeletonESP and not ConfigState.Tracers then
             clearESP()
         end
     end)
     createToggle(VisualsTab, "Snapline Tracers", false, function(val)
         ConfigState.Tracers = val
+        updateEspPreviewWindow()
         for _, data in pairs(State.espObjects) do
             if data.Tracer then
                 data.Tracer.Visible = val
@@ -3320,6 +3771,7 @@ do
     end)
     createDropdown(VisualsTab, "Tracer Origin", { "Center", "Bottom", "Top" }, "Center", function(opt)
         ConfigState.TracerOrigin = opt
+        updateEspPreviewWindow()
     end)
 
     local ColorMap = {
@@ -3332,8 +3784,46 @@ do
     createDropdown(VisualsTab, "ESP Color", { "White", "Silver", "Red", "Cyan", "Green" }, "White", function(opt)
         ConfigState.ESPColorName = opt
         State.espColor = ColorMap[opt] or Theme.White
+        updateEspPreviewWindow()
     end)
 
+    createLabel(VisualsTab, "Screen Resolution & Custom Stretch")
+    local CustomStretchSliderCtrl
+
+    createToggle(VisualsTab, "Screen Resolution", false, function(val)
+        ConfigState.ResolutionEnabled = val
+        if not val then
+            State.appliedStretchRatio = 1.0
+        else
+            State.appliedStretchRatio = ConfigState.CustomStretch
+        end
+    end)
+
+    createDropdown(VisualsTab, "Resolution Preset", {
+        "1280x960",
+        "1440x1080",
+        "1280x1024",
+        "1728x1080",
+    }, "1280x960", function(opt)
+        ConfigState.ResolutionPreset = opt
+        local presetStretch = RESOLUTION_PRESETS[opt] or 0.75
+        ConfigState.CustomStretch = presetStretch
+        if ConfigState.ResolutionEnabled then
+            State.appliedStretchRatio = presetStretch
+        end
+        if CustomStretchSliderCtrl then
+            CustomStretchSliderCtrl.Set(presetStretch, false)
+        end
+    end)
+
+    CustomStretchSliderCtrl = createSlider(VisualsTab, "Custom Stretch", 0.40, 1.20, 0.75, 0.01, "x", function(val)
+        ConfigState.CustomStretch = val
+        if ConfigState.ResolutionEnabled then
+            State.appliedStretchRatio = val
+        end
+    end)
+
+    createLabel(VisualsTab, "Crosshair Overlay")
     createToggle(VisualsTab, "Custom Crosshair", false, function(val)
         ConfigState.Crosshair = val
         updateCrosshair()
@@ -3427,9 +3917,9 @@ do
     end)
 end
 
--- TAB 4: MOVEMENT & PROTECTION (SWIM IN AIR + SPINBOT + ANTI-FLING + ANTI-RAGDOLL + ANTI-VOID)
+-- TAB 4: MOVEMENT & PROTECTION (SWIM IN AIR + SPIDER CLIMB + SPINBOT + ANTI-FLING + ANTI-RAGDOLL + ANTI-VOID)
 do
-    createLabel(MovementTab, "Character Speed, Jump & Air Swim")
+    createLabel(MovementTab, "Character Speed, Jump, Air Swim & Spider Climb")
     createToggle(MovementTab, "Custom WalkSpeed", false, function(val)
         ConfigState.WalkSpeedEnabled = val
         updateMovement()
@@ -3462,6 +3952,12 @@ do
             end)
         end
     end)
+    createToggle(MovementTab, "Spider Climb (Wall Walk)", false, function(val)
+        ConfigState.SpiderClimb = val
+    end)
+    createSlider(MovementTab, "Spider Climb Speed", 15, 80, 32, 1, "studs/s", function(val)
+        ConfigState.SpiderClimbSpeed = val
+    end)
     createToggle(MovementTab, "NoClip (Stepped)", false, function(val)
         ConfigState.NoClip = val
         if not val then
@@ -3492,9 +3988,9 @@ do
     end)
 end
 
--- TAB 5: PLAYERS (EXPANDABLE PLAYER CARDS WITH AVATAR & 6 INLINE ACTION BUTTONS)
+-- TAB 5: PLAYERS (EXPANDABLE PLAYER CARDS WITH AVATAR & 7 INLINE ACTION BUTTONS INCLUDING ORBIT)
 do
-    createLabel(PlayersTab, "Server Players (Tap Player to Open/Close 6 Actions)")
+    createLabel(PlayersTab, "Server Players (Tap Player to Open/Close 7 Actions)")
 
     local PlayerListContainer = Instance.new("Frame")
     PlayerListContainer.Size = UDim2.new(1, 0, 0, 180)
@@ -3526,11 +4022,12 @@ do
                 local isWhite = State.whitelistedPlayers[p.Name] == true
                 local isPrio = State.prioritizedPlayers[p.Name] == true
                 local isSpec = (State.spectatingPlayerName == p.Name)
+                local isOrbit = (State.orbitingPlayerName == p.Name)
 
                 local card = Instance.new("Frame")
                 card.Name = "PlayerCard_" .. p.Name
                 card.LayoutOrder = i
-                card.Size = UDim2.new(1, 0, 0, isExpanded and 126 or 44)
+                card.Size = UDim2.new(1, 0, 0, isExpanded and 160 or 44)
                 card.BackgroundColor3 = isExpanded and Theme.Elevated or Theme.Surface
                 card.ClipsDescendants = true
                 card.ZIndex = 15
@@ -3570,6 +4067,7 @@ do
                 if isWhite then badges = badges .. " [WHITELIST]" end
                 if isPrio then badges = badges .. " [PRIORITY]" end
                 if isSpec then badges = badges .. " [SPECTATING]" end
+                if isOrbit then badges = badges .. " [ORBITING]" end
 
                 local nameLbl = Instance.new("TextLabel")
                 nameLbl.Position = UDim2.fromOffset(46, 0)
@@ -3596,7 +4094,7 @@ do
                 chev.ZIndex = 17
                 chev.Parent = headerBtn
 
-                -- Clicking header toggles 6-option drawer under this player (or switches from another player)
+                -- Clicking header toggles 7-option drawer under this player (or switches from another player)
                 headerBtn.MouseButton1Click:Connect(function()
                     if State.expandedPlayerName == p.Name then
                         State.expandedPlayerName = nil
@@ -3606,21 +4104,21 @@ do
                     refreshPlayerListUI()
                 end)
 
-                -- 6 Action Buttons Container underneath Header (2 rows x 3 columns)
+                -- 7 Action Buttons Container underneath Header
                 local actionsHolder = Instance.new("Frame")
                 actionsHolder.Name = "PlayerActions_" .. p.Name
                 actionsHolder.Position = UDim2.fromOffset(8, 46)
-                actionsHolder.Size = UDim2.new(1, -16, 0, 72)
+                actionsHolder.Size = UDim2.new(1, -16, 0, 106)
                 actionsHolder.BackgroundTransparency = 1
                 actionsHolder.Visible = isExpanded
                 actionsHolder.ZIndex = 16
                 actionsHolder.Parent = card
 
-                local function makeActionBtn(col, row, label, isActive, onClick)
+                local function makeActionBtn(col, row, label, isActive, onClick, fullRow)
                     local aBtn = Instance.new("TextButton")
                     aBtn.Name = "Action_" .. label
-                    aBtn.Position = UDim2.new((col - 1) * 0.335, 0, 0, (row - 1) * 36)
-                    aBtn.Size = UDim2.new(0.32, 0, 0, 30)
+                    aBtn.Position = fullRow and UDim2.new(0, 0, 0, (row - 1) * 35) or UDim2.new((col - 1) * 0.335, 0, 0, (row - 1) * 35)
+                    aBtn.Size = fullRow and UDim2.new(1, 0, 0, 30) or UDim2.new(0.32, 0, 0, 30)
                     aBtn.BackgroundColor3 = isActive and Theme.Accent or Theme.Deep
                     aBtn.AutoButtonColor = false
                     aBtn.Font = Enum.Font.GothamBold
@@ -3673,8 +4171,21 @@ do
                     refreshPlayerListUI()
                 end)
 
-                -- 4. Teleport
-                makeActionBtn(1, 2, "Teleport", false, function()
+                -- 4. Orbit (7th Toggle Option)
+                makeActionBtn(1, 2, "Orbit", isOrbit, function()
+                    if isOrbit then
+                        State.orbitingPlayerName = nil
+                        notify("Players", "Stopped orbiting " .. p.Name, 3)
+                    else
+                        State.orbitingPlayerName = p.Name
+                        State.orbitAngle = 0
+                        notify("Players", "Orbiting around " .. p.Name, 3)
+                    end
+                    refreshPlayerListUI()
+                end)
+
+                -- 5. Teleport
+                makeActionBtn(2, 2, "Teleport", false, function()
                     local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
                     local targetRoot = p.Character and p.Character:FindFirstChild("HumanoidRootPart")
                     if myRoot and targetRoot then
@@ -3683,18 +4194,18 @@ do
                     end
                 end)
 
-                -- 5. Copy UserName
-                makeActionBtn(2, 2, "Copy UserName", false, function()
+                -- 6. Copy UserName
+                makeActionBtn(3, 2, "Copy UserName", false, function()
                     if Env.setclipboard then
                         Env.setclipboard(p.Name)
                     end
                     notify("Players", "Copied username: " .. p.Name, 3)
                 end)
 
-                -- 6. Fling
-                makeActionBtn(3, 2, "Fling", false, function()
+                -- 7. Fling
+                makeActionBtn(1, 3, "Fling", false, function()
                     flingTargetPlayer(p)
-                end)
+                end, true)
 
                 table.insert(playerCardsUI, card)
             end
@@ -3704,13 +4215,24 @@ do
     State.refreshPlayerListUI = refreshPlayerListUI
     refreshPlayerListUI()
 
+    createLabel(PlayersTab, "Orbit Player Settings")
+    createSlider(PlayersTab, "Orbit Speed", 1, 20, 5, 0.5, "rad/s", function(val)
+        ConfigState.OrbitSpeed = val
+    end)
+    createSlider(PlayersTab, "Orbit Radius", 3, 25, 8, 1, "studs", function(val)
+        ConfigState.OrbitRadius = val
+    end)
+
     Players.PlayerAdded:Connect(function()
         syncWhitelistArrayFromMap()
         if UI.MainWindow.Visible then
             refreshPlayerListUI()
         end
     end)
-    Players.PlayerRemoving:Connect(function()
+    Players.PlayerRemoving:Connect(function(remPlayer)
+        if remPlayer and State.orbitingPlayerName == remPlayer.Name then
+            State.orbitingPlayerName = nil
+        end
         syncWhitelistArrayFromMap()
         if UI.MainWindow.Visible then
             refreshPlayerListUI()
@@ -3718,7 +4240,7 @@ do
     end)
 end
 
--- TAB 6: WORLD & MISC
+-- TAB 6: WORLD & MISC (WAYPOINTS + FPS BOOSTER + JOIN SERVER JOBID + SERVER HOP)
 do
     createLabel(WorldTab, "Universal Interaction Automation")
     createToggle(WorldTab, "Instant Interact (0s ProximityPrompts)", false, function(val)
@@ -3907,7 +4429,23 @@ do
         end
     end)
 
-    createLabel(WorldTab, "Server & Session Tools")
+    createLabel(WorldTab, "Server & Session Tools (JobId Join & Server Hop)")
+    local ServerJobIdBox = createTextInputRow(WorldTab, "Server JobId", "Paste Server JobId...", "", function(txt)
+        ConfigState.TargetJobId = (txt or ""):gsub("^%s*(.-)%s*$", "%1")
+    end)
+
+    createButton(WorldTab, "Join Server by JobId", function()
+        local cleanJobId = ((ServerJobIdBox and ServerJobIdBox.Text) or ConfigState.TargetJobId or ""):gsub("^%s*(.-)%s*$", "%1")
+        if cleanJobId == "" then
+            notify("Server Join", "Please enter a valid Server JobId first!", 3)
+            return
+        end
+        notify("Server Join", "Teleporting to JobId: " .. cleanJobId, 4)
+        pcall(function()
+            TeleportService:TeleportToPlaceInstance(game.PlaceId, cleanJobId, LocalPlayer)
+        end)
+    end)
+
     createButton(WorldTab, "Rejoin Current Server", function()
         notify("Server", "Rejoining current server...", 3)
         pcall(function()
@@ -4017,7 +4555,7 @@ do
     createToggle(SettingsTab, "Remember Key (Auto-Unlock on Startup)", true, function(val)
         ConfigState.RememberKey = val
         if val and State.isAuthorized then
-            safeWriteFile(SAVED_KEY_FILE, REQUIRED_KEY)
+            safeWriteFile(SAVED_KEY_FILE, State.activeKeyString or REQUIRED_KEY)
         elseif not val then
             safeWriteFile(SAVED_KEY_FILE, "")
         end
@@ -4072,6 +4610,9 @@ do
     createSlider(SettingsTab, "UI Scale Override", 0.70, 1.15, 1.00, 0.01, "x", function(val)
         State.customUIScaleOverride = val
         UI.MainScale.Scale = val
+        if UI.EspPreviewScale then
+            UI.EspPreviewScale.Scale = val
+        end
     end)
 
     createToggle(SettingsTab, "Live Particle Starfield", true, function(val)
@@ -4142,6 +4683,7 @@ do
         updateLightingEnvironment()
         updateCrosshair()
         updateFloatingPillTelemetry()
+        updateEspPreviewWindow()
         notify("Config System", "Loaded configuration '" .. cleanName .. "'!", 4)
         return true
     end
@@ -4173,14 +4715,18 @@ do
 end
 
 --------------------------------------------------------------------------------
--- 13. KEY SYSTEM AUTHORIZATION & MAIN HUB LAUNCHER
+-- 13. KEY SYSTEM AUTHORIZATION (SUPPORTS FEYKDEV, FEYKPERM, FEYK24H, FEYKSECURED)
 --------------------------------------------------------------------------------
 local function launchMainHub()
     State.isAuthorized = true
     State.uiVisible = true
 
     if ConfigState.RememberKey then
-        safeWriteFile(SAVED_KEY_FILE, REQUIRED_KEY)
+        safeWriteFile(SAVED_KEY_FILE, State.activeKeyString or REQUIRED_KEY)
+    end
+
+    if State.updateHomeKeyInfo then
+        State.updateHomeKeyInfo()
     end
 
     local targetScale = getResponsiveScale()
@@ -4195,13 +4741,17 @@ local function launchMainHub()
         tween(UI.MainStroke, SmoothTween, { Transparency = 0.08 })
         tween(UI.MainScale, SpringTween, { Scale = targetScale })
     end
+    if UI.EspPreviewScale then
+        UI.EspPreviewScale.Scale = targetScale
+    end
+    syncEspPreviewVisibility()
 
     local autoCfg = safeReadFile(AUTO_LOAD_FILE)
     if autoCfg and autoCfg ~= "" and State.loadConfigByName then
         State.loadConfigByName(autoCfg)
     end
 
-    notify("Core.xyz", "Authorized! Tap CORE.XYZ pill or RightShift to toggle UI.", 5)
+    notify("Core.xyz", "Authorized (" .. tostring(State.activeKeyTier) .. ")! Tap CORE.XYZ pill or RightShift to toggle UI.", 5)
 end
 
 local function attemptAuthorization()
@@ -4209,9 +4759,9 @@ local function attemptAuthorization()
         return
     end
     local entered = string.upper((UI.KeyInputBox.Text or ""):gsub("%s+", ""))
-    if entered == REQUIRED_KEY then
+    if applyKeyTierFromKeyString(entered) then
         State.isAuthorizing = true
-        UI.KeyFeedback.Text = "ACCESS GRANTED — LAUNCHING CORE.XYZ..."
+        UI.KeyFeedback.Text = "ACCESS GRANTED (" .. string.upper(State.activeKeyTier) .. ") — LAUNCHING..."
         UI.KeyFeedback.TextColor3 = Theme.Accent
         tween(UI.KeyScale, FastTween, { Scale = 0.9 })
         tween(UI.KeyCard, FastTween, { BackgroundTransparency = 1 })
@@ -4220,7 +4770,7 @@ local function attemptAuthorization()
         UI.KeyCard.Visible = false
         launchMainHub()
     else
-        UI.KeyFeedback.Text = "INVALID KEY! Required Key: " .. REQUIRED_KEY
+        UI.KeyFeedback.Text = "INVALID KEY! Try: FEYKDEV | FEYKPERM | FEYK24H"
         UI.KeyFeedback.TextColor3 = Theme.Error
         tween(UI.KeyInputStroke, FastTween, { Color = Theme.Error })
         local origPos = UI.KeyCard.Position
@@ -4240,7 +4790,7 @@ UI.CopyKeyButton.MouseButton1Click:Connect(function()
         end)
     end
     UI.KeyInputBox.Text = REQUIRED_KEY
-    UI.KeyFeedback.Text = "Key copied & auto-filled: " .. REQUIRED_KEY
+    UI.KeyFeedback.Text = "Key copied & auto-filled: " .. REQUIRED_KEY .. " (Or use FEYKDEV / FEYKPERM / FEYK24H)"
     UI.KeyFeedback.TextColor3 = Theme.White
 end)
 
@@ -4256,7 +4806,7 @@ UI.KeyInputBox.FocusLost:Connect(function(enterPressed)
 end)
 
 --------------------------------------------------------------------------------
--- 14. RUNTIME LOOPS (60FPS LIVE UI + PROTECTION + SILENT AIM + 3D ESP + FREECAM)
+-- 14. RUNTIME LOOPS (60FPS LIVE UI + SPIDER CLIMB + ORBIT + RESOLUTION STRETCH)
 --------------------------------------------------------------------------------
 LocalPlayer.CharacterAdded:Connect(function(character)
     table.clear(State.noclipCollideCache)
@@ -4276,6 +4826,12 @@ LocalPlayer.CharacterAdded:Connect(function(character)
     end
     if ConfigState.Korblox then
         task.delay(0.5, function() applyKorblox(true) end)
+    end
+    if UI.HomeAvatarCtrl and UI.HomeAvatarCtrl.RefreshClone then
+        task.delay(0.5, function() UI.HomeAvatarCtrl.RefreshClone() end)
+    end
+    if UI.PreviewAvatarCtrl and UI.PreviewAvatarCtrl.RefreshClone then
+        task.delay(0.5, function() UI.PreviewAvatarCtrl.RefreshClone() end)
     end
 end)
 
@@ -4309,6 +4865,7 @@ do
 
         local myHRP = char:FindFirstChild("HumanoidRootPart")
         local myHum = char:FindFirstChildOfClass("Humanoid")
+        local dt = (stepDt and stepDt > 0) and stepDt or 0.016
 
         -- Save last safe CFrame for Anti-Void
         if myHRP and myHRP.Position.Y > -50 then
@@ -4336,6 +4893,20 @@ do
             pcall(function()
                 myHum:ChangeState(Enum.HumanoidStateType.Swimming)
             end)
+        end
+
+        -- Spider Climb (Wall Walk)
+        if ConfigState.SpiderClimb and myHRP then
+            rayParams.FilterDescendantsInstances = { char }
+            local lookDir = myHRP.CFrame.LookVector
+            local wallHit = workspace:Raycast(myHRP.Position, lookDir * 4.0, rayParams)
+            if wallHit and wallHit.Instance then
+                local climbSpd = ConfigState.SpiderClimbSpeed or 32
+                pcall(function()
+                    myHRP.Velocity = Vector3.new(myHRP.Velocity.X, climbSpd, myHRP.Velocity.Z)
+                end)
+                myHRP.CFrame = myHRP.CFrame * CFrame.new(0, climbSpd * dt, 0)
+            end
         end
 
         -- Anti-Ragdoll / Anti-Stun
@@ -4384,7 +4955,7 @@ do
 
         -- Auto-Interact
         if ConfigState.AutoInteract and myHRP then
-            interactCooldown = interactCooldown + (stepDt or 0.016)
+            interactCooldown = interactCooldown + dt
             if interactCooldown >= 0.25 then
                 interactCooldown = 0
                 for _, desc in ipairs(workspace:GetDescendants()) do
@@ -4417,12 +4988,21 @@ do
     local animClock = 0
     local telemetryTimer = 0
     local playerListRefreshTimer = 0
+    local keyCountdownTimer = 0
 
     RunService.RenderStepped:Connect(function(deltaTime)
         local safeDt = (deltaTime and deltaTime > 0) and deltaTime or (1 / 60)
         animClock = animClock + safeDt
         telemetryTimer = telemetryTimer + safeDt
         playerListRefreshTimer = playerListRefreshTimer + safeDt
+        keyCountdownTimer = keyCountdownTimer + safeDt
+
+        if keyCountdownTimer >= 1.0 then
+            keyCountdownTimer = 0
+            if State.isAuthorized and State.updateHomeKeyInfo then
+                State.updateHomeKeyInfo()
+            end
+        end
 
         if playerListRefreshTimer >= 2.0 then
             playerListRefreshTimer = 0
@@ -4497,6 +5077,26 @@ do
             return
         end
 
+        -- Orbit Player Movement
+        if State.orbitingPlayerName and LocalPlayer.Character then
+            local myHRP = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            local targetPlayer = nil
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p.Name == State.orbitingPlayerName then
+                    targetPlayer = p
+                    break
+                end
+            end
+            local tHRP = targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if myHRP and tHRP then
+                State.orbitAngle = (State.orbitAngle or 0) + safeDt * (ConfigState.OrbitSpeed or 4.5)
+                local rad = ConfigState.OrbitRadius or 8
+                local offset = Vector3.new(math.cos(State.orbitAngle) * rad, 0, math.sin(State.orbitAngle) * rad)
+                local orbitPos = tHRP.Position + offset
+                myHRP.CFrame = CFrame.new(orbitPos, tHRP.Position)
+            end
+        end
+
         if ConfigState.Spinbot and LocalPlayer.Character then
             local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
             if hrp and CFrame.Angles then
@@ -4550,33 +5150,29 @@ do
             UI.CrosshairH.Visible = false
         end
 
-        -- Silent Aim Target, Hitbox Redirection & Snapline Update (Never touches Camera!)
-        if ConfigState.SilentAim then
-            local silentTarget = getClosestTarget(camera, true)
-            State.currentSilentTarget = silentTarget
-            updateSilentAimHitboxRedirect(silentTarget)
-            if ConfigState.SilentSnapline and silentTarget then
-                local vpPt, onScr = camera:WorldToViewportPoint(silentTarget.Position)
-                if onScr then
-                    local center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
-                    drawLineFrame(UI.SilentSnapline, center, Vector2.new(vpPt.X, vpPt.Y), Theme.Accent, 1)
-                else
-                    UI.SilentSnapline.Visible = false
-                end
-            else
-                UI.SilentSnapline.Visible = false
-            end
-        else
-            State.currentSilentTarget = nil
-            UI.SilentSnapline.Visible = false
-        end
-
         if ConfigState.Aimbot then
-            local target = getClosestTarget(camera, false)
+            local target = getClosestTarget(camera)
             if target then
                 local alpha = 1 - ((1 - math.clamp(ConfigState.Smoothness, 0.01, 0.99)) ^ (safeDt * 60))
                 camera.CFrame = camera.CFrame:Lerp(CFrame.new(camera.CFrame.Position, target.Position), alpha)
             end
+        end
+
+        -- Screen Resolution Stretch (Applied last so Aimbot/Freecam CFrame updates preserve stretch ratio)
+        if ConfigState.ResolutionEnabled then
+            local stretch = math.clamp(ConfigState.CustomStretch or 0.75, 0.35, 1.35)
+            State.appliedStretchRatio = stretch
+            camera.__stretchRatio = stretch
+            pcall(function()
+                local cf = camera.CFrame
+                if cf and cf.GetComponents then
+                    local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 = cf:GetComponents()
+                    camera.CFrame = CFrame.new(x, y, z, r00, r01 * stretch, r02, r10, r11 * stretch, r12, r20, r21 * stretch, r22)
+                end
+            end)
+        else
+            State.appliedStretchRatio = 1.0
+            camera.__stretchRatio = 1.0
         end
     end)
 end
@@ -4598,10 +5194,10 @@ task.spawn(function()
     tween(UI.LoaderPercent, SmoothTween, { TextTransparency = 0 })
 
     local stages = {
-        { pct = 28, text = "Mounting Core.xyz 3D Box & Skeleton Engine..." },
-        { pct = 64, text = "Loading Silent Aim, Waypoints & Telemetry..." },
-        { pct = 92, text = "Verifying FEYKSECURED Security Gate..." },
-        { pct = 100, text = "Core.xyz v4.0 Ready." },
+        { pct = 28, text = "Mounting Core.xyz 3D Box & Live ESP Preview..." },
+        { pct = 64, text = "Loading Avatar Showcase, Spider Climb & Orbit..." },
+        { pct = 92, text = "Verifying 3-Tier Security Gate..." },
+        { pct = 100, text = "Core.xyz v4.2 Ready." },
     }
 
     local currentPct = 0
@@ -4632,7 +5228,7 @@ task.spawn(function()
 
     -- Check Remember Key
     local savedKey = safeReadFile(SAVED_KEY_FILE)
-    if savedKey and savedKey:gsub("%s+", "") == REQUIRED_KEY then
+    if savedKey and applyKeyTierFromKeyString(savedKey) then
         launchMainHub()
     else
         UI.KeyCard.Visible = true
@@ -4642,3 +5238,4 @@ task.spawn(function()
         tween(UI.KeyScale, SpringTween, { Scale = targetScale })
     end
 end)
+

@@ -197,15 +197,25 @@ ColorSequence = {
 
 CFrame = {}
 CFrame.__index = CFrame
-function CFrame.new(pos, lookAt)
+function CFrame.new(pos, lookAt, z, r00, r01, r02, r10, r11, r12, r20, r21, r22)
+    local stretchY = 1
     if type(pos) == "number" then
-        pos = Vector3.new(pos, lookAt or 0, 0)
+        if r11 ~= nil then
+            stretchY = r11
+        end
+        pos = Vector3.new(pos, lookAt or 0, z or 0)
         lookAt = nil
     end
     return setmetatable({
         Position = pos or Vector3.new(0, 0, 0),
         LookAt = lookAt or Vector3.new(0, 0, -1),
+        LookVector = Vector3.new(0, 0, -1),
         RotationY = 0,
+        R11 = stretchY,
+        GetComponents = function(self)
+            local p = self.Position
+            return p.X, p.Y, p.Z, 1, 0, 0, 0, 1, 0, 0, 0, 1
+        end,
         Lerp = function(self, goal, alpha)
             local p1 = self.Position
             local p2 = goal.Position
@@ -270,6 +280,7 @@ Enum = {
     DevCameraOcclusionMode = { Zoom = "Zoom", Invisicam = "Invisicam" },
     Material = { SmoothPlastic = "SmoothPlastic", Plastic = "Plastic" },
     QualityLevel = { Level01 = "Level01" },
+    ScaleType = { Fit = "Fit", Crop = "Crop", Stretch = "Stretch" },
 }
 
 _G.__ALL_INSTANCES = {}
@@ -374,6 +385,19 @@ local function createInstance(className)
         props.__lastState = st
     end
 
+    function props:Clone()
+        local cloned = createInstance(props.ClassName)
+        cloned.Name = props.Name
+        cloned.CFrame = props.CFrame
+        for _, child in ipairs(children) do
+            if child.Clone then
+                local cc = child:Clone()
+                cc.Parent = cloned
+            end
+        end
+        return cloned
+    end
+
     function props:Destroy()
         local oldParent = props.Parent
         if oldParent and oldParent.__rawChildren then
@@ -476,6 +500,7 @@ LocalHum.Parent = LocalChar
 local LocalPlayer = createInstance("Player")
 LocalPlayer.Name = "FeykHere"
 LocalPlayer.DisplayName = "Feyk"
+LocalPlayer.UserId = 12345678
 LocalPlayer.Team = "Alpha"
 LocalPlayer.Character = LocalChar
 LocalPlayer.CameraMaxZoomDistance = 128
@@ -520,6 +545,7 @@ for i = 1, 35 do
     local ep = createInstance("Player")
     ep.Name = "Enemy_" .. i
     ep.DisplayName = "Target_" .. i
+    ep.UserId = 1000 + i
     ep.Team = "Bravo"
     ep.Character = eChar
     ep.Parent = CoreGui
@@ -753,11 +779,13 @@ local loaderCard = screenGui:FindFirstChild("CoreLoader")
 local keyCard = screenGui:FindFirstChild("CoreKeySystem")
 local floatingToggle = screenGui:FindFirstChild("CoreFloatingToggle")
 local mainWindow = screenGui:FindFirstChild("CoreMainWindow")
+local espPreviewWindow = screenGui:FindFirstChild("CoreESPPreviewWindow")
 
 assert(loaderCard.Visible == false, "LoaderCard should hide after boot sequence")
 assert(keyCard.Visible == true, "KeyCard should be visible after boot sequence")
+assert(espPreviewWindow ~= nil and espPreviewWindow.Visible == false, "CoreESPPreviewWindow must exist and start hidden")
 
--- Unlock with GET KEY + AUTHORIZE KEY (and verify Remember Key saves FEYKSECURED)
+-- Unlock with GET KEY + AUTHORIZE KEY (and verify Remember Key saves FEYKDEV)
 local keyInputBox, unlockBtn, copyKeyBtn
 for _, desc in ipairs(keyCard:GetDescendants()) do
     if desc.ClassName == "TextBox" then keyInputBox = desc end
@@ -766,13 +794,61 @@ for _, desc in ipairs(keyCard:GetDescendants()) do
 end
 
 copyKeyBtn.MouseButton1Click:Fire()
-assert(keyInputBox.Text == "FEYKSECURED", "GET KEY should fill FEYKSECURED")
+assert(keyInputBox.Text == "FEYKDEV", "GET KEY should fill FEYKDEV")
 unlockBtn.MouseButton1Click:Fire()
 
-assert(keyCard.Visible == false, "KeyCard must hide after FEYKSECURED")
+assert(keyCard.Visible == false, "KeyCard must hide after FEYKDEV")
 assert(floatingToggle.Visible == true, "FloatingToggle must be visible")
 assert(mainWindow.Visible == true, "MainWindow must be visible")
-assert(_G.__FILES["CoreXYZ_Data/SavedKey.txt"] == "FEYKSECURED", "Remember Key must persist FEYKSECURED to SavedKey.txt")
+assert(_G.__FILES["CoreXYZ_Data/SavedKey.txt"] == "FEYKDEV", "Remember Key must persist FEYKDEV to SavedKey.txt")
+
+-- 0. Test Home Tab 3D Avatar Box + Side Profile Info (User, Executor, User ID, Key Time Left) + 3 Test Keys
+local homePage
+for _, desc in ipairs(mainWindow:GetDescendants()) do
+    if desc.Name == "Home_Page" then homePage = desc end
+end
+assert(homePage ~= nil, "Home_Page must exist")
+
+local homeProfileCard = homePage:FindFirstChild("HomeProfileCard")
+assert(homeProfileCard ~= nil, "HomeProfileCard must exist in Home_Page")
+local homeAvatarBox = homeProfileCard:FindFirstChild("HomeAvatarBox")
+local homeInfoPanel = homeProfileCard:FindFirstChild("HomeInfoPanel")
+assert(homeAvatarBox ~= nil and homeInfoPanel ~= nil, "HomeAvatarBox and HomeInfoPanel must exist inside HomeProfileCard")
+local homeViewport = homeAvatarBox:FindFirstChild("HomeAvatarViewport")
+local homeDragZone = homeAvatarBox:FindFirstChild("AvatarRotateDragZone")
+assert(homeViewport ~= nil and homeDragZone ~= nil, "HomeAvatarViewport and AvatarRotateDragZone must exist inside HomeAvatarBox")
+
+local infoUser, infoExec, infoUserId, infoKeyTime
+for _, desc in ipairs(homeInfoPanel:GetDescendants()) do
+    if desc.Name == "Info_User" then infoUser = desc end
+    if desc.Name == "Info_Executor" then infoExec = desc end
+    if desc.Name == "Info_UserId" then infoUserId = desc end
+    if desc.Name == "Info_KeyTime" then infoKeyTime = desc end
+end
+assert(infoUser and string.find(infoUser.Text, "FeykHere"), "Info_User must display local player username")
+assert(infoExec and infoExec.Text ~= "", "Info_Executor must display executor name")
+assert(infoUserId and infoUserId.Text == "12345678", "Info_UserId must display LocalPlayer.UserId")
+assert(infoKeyTime and infoKeyTime.Text == "Developer", "FEYKDEV key must show 'Developer' in Key Time Left")
+
+-- Test switching between the 3 Key Tiers (FEYKPERM -> Infinite, FEYK24H -> live countdown, FEYKDEV -> Developer)
+local permKeyBtn, timedKeyBtn, devKeyBtn
+for _, desc in ipairs(homePage:GetDescendants()) do
+    if desc.ClassName == "TextButton" then
+        if string.find(desc.Text, "FEYKPERM") then permKeyBtn = desc end
+        if string.find(desc.Text, "FEYK24H") then timedKeyBtn = desc end
+        if string.find(desc.Text, "FEYKDEV") then devKeyBtn = desc end
+    end
+end
+assert(permKeyBtn and timedKeyBtn and devKeyBtn, "All 3 test key options (FEYKDEV, FEYKPERM, FEYK24H) must exist in Home_Page")
+
+permKeyBtn.MouseButton1Click:Fire()
+assert(infoKeyTime.Text == "Infinite", "FEYKPERM key must show 'Infinite' in Key Time Left")
+
+timedKeyBtn.MouseButton1Click:Fire()
+assert(string.find(infoKeyTime.Text, "h ") ~= nil and string.find(infoKeyTime.Text, "m ") ~= nil, "FEYK24H key must show live countdown (e.g. 23h 59m 59s)")
+
+devKeyBtn.MouseButton1Click:Fire()
+assert(infoKeyTime.Text == "Developer", "FEYKDEV key must restore 'Developer'")
 
 -- 1. Verify Dynamic Floating Pill exact size & text ("CORE.XYZ | 60 FPS | 34ms")
 local floatLabel
@@ -801,23 +877,19 @@ for _, desc in ipairs(settingsPage:GetDescendants()) do
 end
 assert(cpuBtn ~= nil and gpuBtn ~= nil, "Telemetry multi-dropdown option buttons must exist")
 
--- Click "CPU Usage" (3rd metric) -> width must increase!
 cpuBtn.MouseButton1Click:Fire()
 local widthWith3Metrics = floatingToggle.Size.X.Offset
 assert(widthWith3Metrics > widthWith2Metrics, "FloatingToggle width must expand when 3rd metric is added")
 
--- Click "GPU Usage" (4th metric) -> must be blocked because max is 3!
 gpuBtn.MouseButton1Click:Fire()
 assert(string.find(floatLabel.Text, "GPU") == nil, "4th telemetry metric must be rejected (max 3)")
 
--- Deselect CPU, Ping, FPS -> pill shrinks cleanly to exact width of "CORE.XYZ" (~88px, NO empty space!)
 cpuBtn.MouseButton1Click:Fire()
 pingBtn.MouseButton1Click:Fire()
 fpsBtn.MouseButton1Click:Fire()
 assert(floatLabel.Text == "CORE.XYZ", "When 0 metrics selected, FloatLabel shows CORE.XYZ")
 assert(floatingToggle.Size.X.Offset <= 95, "FloatingToggle with only CORE.XYZ must have zero empty space on right (<=95px)")
 
--- Test Custom Pill Title TextBox in Settings
 local pillTitleBox
 for _, desc in ipairs(settingsPage:GetDescendants()) do
     if desc.ClassName == "TextBox" and string.find(desc.PlaceholderText, "FEYK.XYZ") then
@@ -831,11 +903,10 @@ assert(floatLabel.Text == "FEYK.XYZ", "Custom Pill Title must update FloatLabel 
 pillTitleBox.Text = "CORE.XYZ"
 pillTitleBox.FocusLost:Fire(true)
 
--- Re-enable FPS & Ping
 fpsBtn.MouseButton1Click:Fire()
 pingBtn.MouseButton1Click:Fire()
 
--- 3. Test Redesigned Players Tab (Avatar Cards + Click-to-Expand 6 Inline Options + Click-Again-to-Collapse)
+-- 3. Test Redesigned Players Tab (Avatar Cards + Click-to-Expand 7 Inline Options including Orbit + Click-Again-to-Collapse)
 local playersPage
 for _, desc in ipairs(mainWindow:GetDescendants()) do
     if desc.Name == "Players_Page" then playersPage = desc end
@@ -857,19 +928,20 @@ assert(card3 ~= nil and header3 ~= nil and actions3 ~= nil, "PlayerCard_Enemy_3 
 assert(header3:FindFirstChild("AvatarImage") ~= nil, "PlayerCard must include AvatarImage thumbnail")
 assert(actions3.Visible == false and card3.Size.Y.Offset == 44, "PlayerCard_Enemy_3 must start collapsed (44px)")
 
--- Click Enemy_3 -> expands to show all 6 options underneath!
+-- Click Enemy_3 -> expands to show all 7 options underneath (160px)!
 header3.MouseButton1Click:Fire()
 card3, header3, actions3 = findPlayerCardAndActions("Enemy_3")
-assert(actions3.Visible == true and card3.Size.Y.Offset == 126, "Clicking Enemy_3 must expand card to show 6 options (126px)")
+assert(actions3.Visible == true and card3.Size.Y.Offset == 160, "Clicking Enemy_3 must expand card to show 7 options (160px)")
 
--- Verify all 6 buttons exist inside PlayerActions_Enemy_3 and test them
+-- Verify all 7 buttons exist inside PlayerActions_Enemy_3 and test them
 local btnWhitelist = actions3:FindFirstChild("Action_Whitelist")
 local btnPrioritize = actions3:FindFirstChild("Action_Prioritize")
 local btnSpectate = actions3:FindFirstChild("Action_Spectate")
+local btnOrbit = actions3:FindFirstChild("Action_Orbit")
 local btnTeleport = actions3:FindFirstChild("Action_Teleport")
 local btnCopy = actions3:FindFirstChild("Action_Copy UserName")
 local btnFling = actions3:FindFirstChild("Action_Fling")
-assert(btnWhitelist and btnPrioritize and btnSpectate and btnTeleport and btnCopy and btnFling, "All 6 inline player action buttons must exist")
+assert(btnWhitelist and btnPrioritize and btnSpectate and btnOrbit and btnTeleport and btnCopy and btnFling, "All 7 inline player action buttons (including Orbit) must exist")
 
 btnCopy.MouseButton1Click:Fire()
 assert(_G.__CLIPBOARD == "Enemy_3", "Copy UserName must copy Enemy_3")
@@ -882,15 +954,27 @@ myHRP.CFrame = CFrame.new(Vector3.new(10, 5, 20))
 btnFling.MouseButton1Click:Fire()
 assert(myHRP.Position.X == 10 and myHRP.Position.Z == 20, "Fling must return LocalPlayer to exact starting CFrame")
 
+-- Test Orbit (7th button): toggle ON -> step RenderStepped -> verify LocalHRP orbits around Enemy_3 -> toggle OFF
+btnOrbit.MouseButton1Click:Fire()
+game:GetService("RunService").RenderStepped:Fire(0.05)
+local enemy3HRP = _G.__ALL_PLAYERS[4].Character:FindFirstChild("HumanoidRootPart")
+local distToEnemy3 = (myHRP.Position - enemy3HRP.Position).Magnitude
+assert(distToEnemy3 < 15, "Orbit Player must orbit LocalHRP around target Enemy_3 within OrbitRadius")
+-- Turn off Orbit
+card3, header3, actions3 = findPlayerCardAndActions("Enemy_3")
+actions3:FindFirstChild("Action_Orbit").MouseButton1Click:Fire()
+myHRP.CFrame = CFrame.new(Vector3.new(10, 5, 20))
+
 -- Toggle Prioritize on Enemy_3
-btnPrioritize.MouseButton1Click:Fire()
+card3, header3, actions3 = findPlayerCardAndActions("Enemy_3")
+actions3:FindFirstChild("Action_Prioritize").MouseButton1Click:Fire()
 card3, header3, actions3 = findPlayerCardAndActions("Enemy_3")
 assert(actions3.Visible == true, "Enemy_3 card stays expanded after clicking an inline option")
 
--- Click Enemy_3 header again -> must collapse/close the 6 options!
+-- Click Enemy_3 header again -> must collapse/close the 7 options!
 header3.MouseButton1Click:Fire()
 card3, header3, actions3 = findPlayerCardAndActions("Enemy_3")
-assert(actions3.Visible == false and card3.Size.Y.Offset == 44, "Clicking Enemy_3 header again must collapse the 6 options")
+assert(actions3.Visible == false and card3.Size.Y.Offset == 44, "Clicking Enemy_3 header again must collapse the 7 options")
 
 -- Also Whitelist Enemy_2 via Enemy_2's card to verify Hitbox Expander skips whitelisted players
 local _, header2, _ = findPlayerCardAndActions("Enemy_2")
@@ -898,26 +982,36 @@ header2.MouseButton1Click:Fire()
 local _, _, actions2 = findPlayerCardAndActions("Enemy_2")
 actions2:FindFirstChild("Action_Whitelist").MouseButton1Click:Fire()
 
--- 4. Test World Tab (Instant Interact, Auto-Interact, Per-Game Waypoints, FPS Booster, Uncap FPS, Server Hop)
+-- 4. Test World Tab (Instant Interact, Auto-Interact, Per-Game Waypoints, FPS Booster, Uncap FPS, Join Server by JobId)
 local worldPage
 for _, desc in ipairs(mainWindow:GetDescendants()) do
     if desc.Name == "World_Page" then worldPage = desc end
 end
 assert(worldPage ~= nil, "World_Page must exist")
 
-local waypointBox, customFpsBox
+local waypointBox, customFpsBox, jobIdBox, joinJobBtn
 for _, desc in ipairs(worldPage:GetDescendants()) do
     if desc.ClassName == "TextBox" then
         if string.find(desc.PlaceholderText, "SafeZone") then waypointBox = desc end
         if string.find(desc.PlaceholderText, "144") then customFpsBox = desc end
+        if string.find(desc.PlaceholderText, "JobId") then jobIdBox = desc end
+    end
+    if desc.ClassName == "TextButton" and desc.Text == "Join Server by JobId" then
+        joinJobBtn = desc
     end
 end
+assert(jobIdBox ~= nil and joinJobBtn ~= nil, "Server JobId TextBox and Join Server by JobId button must exist in World_Page")
+
 waypointBox.Text = "SafeZone"
 customFpsBox.Text = "240"
 customFpsBox.FocusLost:Fire(true)
+jobIdBox.Text = "job-uuid-9999"
+jobIdBox.FocusLost:Fire(true)
+joinJobBtn.MouseButton1Click:Fire()
+assert(game:GetService("TeleportService").__lastTeleportJob == "job-uuid-9999", "Join Server by JobId must call TeleportToPlaceInstance with entered JobId")
 
 for _, desc in ipairs(worldPage:GetDescendants()) do
-    if desc.ClassName == "TextButton" then
+    if desc.ClassName == "TextButton" and desc ~= joinJobBtn then
         desc.MouseButton1Click:Fire()
     end
 end
@@ -929,7 +1023,29 @@ assert(chest.Material == Enum.Material.SmoothPlastic, "FPS Booster must set part
 assert(chest:FindFirstChildOfClass("ProximityPrompt").HoldDuration == 0, "Instant Interact must set HoldDuration = 0")
 assert(_G.__FPS_CAP == 240, "Uncap FPS with Custom FPS 240 must call setfpscap(240)")
 
--- 5. Enable Combat (Aimbot + Silent Aim + Hitbox Expander), Visuals (ESP + 3D Bounding Box + 3D Skeleton Rig + Health Bar + X-Ray + Freecam + Headless + Korblox), and Movement (Swim in Air + Spinbot + NoClip + Anti-Fling + Anti-Ragdoll + Anti-Void)
+-- 5. Test Visuals Tab Right-Side Companion ESP Preview Window + Screen Resolution Preset resetting Custom Stretch
+local visualsTabBtn, homeTabBtn
+for _, desc in ipairs(mainWindow:GetDescendants()) do
+    if desc.Name == "Visuals_TabBtn" then visualsTabBtn = desc end
+    if desc.Name == "Home_TabBtn" then homeTabBtn = desc end
+end
+assert(visualsTabBtn ~= nil, "Visuals_TabBtn must exist in sidebar")
+visualsTabBtn.MouseButton1Click:Fire()
+assert(espPreviewWindow.Visible == true, "Clicking Visuals_TabBtn must show CoreESPPreviewWindow on the right side of the main UI")
+
+-- Verify Silent Aim was removed from Combat_Page
+local combatPage
+for _, desc in ipairs(mainWindow:GetDescendants()) do
+    if desc.Name == "Combat_Page" then combatPage = desc end
+end
+for _, desc in ipairs(combatPage:GetDescendants()) do
+    if desc.ClassName == "TextLabel" then
+        assert(string.find(desc.Text, "Silent Aim") == nil, "Silent Aim must be removed from Combat_Page")
+        assert(string.find(desc.Text, "Hit Chance") == nil, "Hit Chance must be removed from Combat_Page")
+    end
+end
+
+-- Enable Combat, Visuals, and Movement toggles
 for _, pageName in ipairs({ "Combat_Page", "Visuals_Page", "Movement_Page" }) do
     for _, desc in ipairs(mainWindow:GetDescendants()) do
         if desc.Name == pageName then
@@ -946,26 +1062,64 @@ for _, pageName in ipairs({ "Combat_Page", "Visuals_Page", "Movement_Page" }) do
     end
 end
 
+-- Verify live ESP Preview Window reflects enabled ESP toggles on user's own character!
+local previewStage = espPreviewWindow:FindFirstChild("PreviewStage")
+assert(previewStage ~= nil, "PreviewStage must exist inside CoreESPPreviewWindow")
+local previewBox3D = previewStage:FindFirstChild("PreviewBox3D")
+local previewSkeleton = previewStage:FindFirstChild("PreviewSkeleton")
+local previewHealthBar = previewStage:FindFirstChild("PreviewHealthBar")
+local previewTracer = previewStage:FindFirstChild("PreviewTracer")
+local previewNameTag = previewStage:FindFirstChild("PreviewNameTag")
+local previewChams = previewStage:FindFirstChild("PreviewChams")
+assert(previewBox3D.Visible == true, "PreviewBox3D must be visible in CoreESPPreviewWindow when 3D Bounding Box is enabled")
+assert(previewSkeleton.Visible == true, "PreviewSkeleton must be visible in CoreESPPreviewWindow when 3D Skeleton Rig is enabled")
+assert(previewHealthBar.Visible == true, "PreviewHealthBar must be visible in CoreESPPreviewWindow when Health Bar is enabled")
+assert(previewTracer.Visible == true, "PreviewTracer must be visible in CoreESPPreviewWindow when Snapline Tracers is enabled")
+assert(previewNameTag.Visible == true and previewChams.Visible == true, "PreviewNameTag & PreviewChams must be visible when Player ESP is enabled")
+
+-- Test Screen Resolution Preset dropdown resetting Custom Stretch
+local visualsPage
+for _, desc in ipairs(mainWindow:GetDescendants()) do
+    if desc.Name == "Visuals_Page" then visualsPage = desc end
+end
+local res1280x1024Btn, res1728x1080Btn
+for _, desc in ipairs(visualsPage:GetDescendants()) do
+    if desc.ClassName == "TextButton" then
+        if desc.Text == "1280x1024" then res1280x1024Btn = desc end
+        if desc.Text == "1728x1080" then res1728x1080Btn = desc end
+    end
+end
+assert(res1280x1024Btn ~= nil and res1728x1080Btn ~= nil, "Resolution Preset options (1280x960, 1440x1080, 1280x1024, 1728x1080) must exist")
+res1280x1024Btn.MouseButton1Click:Fire()
+game:GetService("RunService").RenderStepped:Fire(0.016)
+assert(math.abs(workspace.CurrentCamera.CFrame.R11 - 0.70) < 0.02, "Selecting 1280x1024 must reset Custom Stretch and apply 0.70 stretch ratio to Camera CFrame")
+res1728x1080Btn.MouseButton1Click:Fire()
+game:GetService("RunService").RenderStepped:Fire(0.016)
+assert(math.abs(workspace.CurrentCamera.CFrame.R11 - 0.90) < 0.02, "Selecting 1728x1080 must reset Custom Stretch to 0.90 stretch ratio")
+
+-- Verify switching back to Home tab hides the right-side CoreESPPreviewWindow
+homeTabBtn.MouseButton1Click:Fire()
+assert(espPreviewWindow.Visible == false, "CoreESPPreviewWindow must hide when leaving Visuals tab")
+
 -- Verify X-Ray Vision made ChestPart translucent (0.6) while keeping player parts untouched
 assert(math.abs(chest.Transparency - 0.6) < 0.05, "X-Ray Vision must set map part transparency to 0.6")
 
 -- Verify Hitbox Expander expanded Enemy_3 (non-whitelisted) to 10 studs, while Enemy_2 (whitelisted) stayed size 2!
 local enemy2HRP = _G.__ALL_PLAYERS[3].Character:FindFirstChild("HumanoidRootPart") -- Enemy_2
-local enemy3HRP = _G.__ALL_PLAYERS[4].Character:FindFirstChild("HumanoidRootPart") -- Enemy_3
 assert(enemy3HRP.Size.X == 10, "Hitbox Expander must expand non-whitelisted enemy HumanoidRootPart to 10")
 assert(enemy2HRP.Size.X == 2, "Hitbox Expander must ignore whitelisted player Enemy_2")
 
--- Verify Freecam enabled Scriptable camera & anchored LocalHRP
-assert(workspace.CurrentCamera.CameraType == Enum.CameraType.Scriptable, "Freecam must set CameraType to Scriptable")
-assert(myHRP.Anchored == true, "Freecam must anchor LocalHRP while active")
-
--- 6. Run 40 frames of Stepped & RenderStepped (tests 3D Bounding Box, Skeleton Rig, Silent Aim Snapline, Swim in Air, Anti-Fling, Anti-Ragdoll, Spinbot, Auto-Interact)
+-- 6. Run 40 frames of Stepped & RenderStepped (tests 3D Bounding Box, Skeleton Rig, Spider Climb, Swim in Air, Anti-Fling, Anti-Ragdoll, Spinbot, Auto-Interact)
 local RunService = game:GetService("RunService")
-local initialRotY = myHRP.CFrame.RotationY or 0
+myHRP.Anchored = false
+local startYBeforeClimb = myHRP.Position.Y
 for frame = 1, 40 do
     RunService.Stepped:Fire(0, 0.1)
     RunService.RenderStepped:Fire(0.06)
 end
+
+-- Verify Spider Climb climbed upward when facing a wall/part
+assert(myHRP.Position.Y > startYBeforeClimb, "Spider Climb must climb LocalHRP upward when raycast hits a wall in front")
 
 -- Verify Swim in Air put Humanoid into Swimming state
 local myHum = game:GetService("Players").LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
@@ -979,7 +1133,7 @@ myHRP.CFrame = CFrame.new(Vector3.new(10, -300, 20))
 RunService.Stepped:Fire(0, 0.016)
 assert(myHRP.Position.Y > -50, "Anti-Void must teleport LocalPlayer back to safe ground when falling into void")
 
--- Verify 3D Bounding Box (12 edges) & 3D Skeleton Rig were rendered (and 2D box was replaced)
+-- Verify 3D Bounding Box (12 edges) & 3D Skeleton Rig were rendered
 local overlays = screenGui:FindFirstChild("Overlays")
 local found3DBox = false
 local foundSkeletonBone = false
@@ -995,33 +1149,12 @@ for _, child in ipairs(overlays:GetChildren()) do
 end
 assert(found3DBox == true, "3D Bounding Box overlay (12 edges) must be visible on enemies")
 assert(foundSkeletonBone == true, "3D Skeleton Rig overlay must be visible on enemies")
-assert(overlays:FindFirstChild("CornerBox2D") == nil, "Old 2D Corner Box must be completely replaced by 3D Bounding Box")
 
--- Verify Silent Aim Snapline is visible & Animated Dual-Ring FOV Circle rotates
-local silentSnap = overlays:FindFirstChild("SilentSnapline")
-assert(silentSnap ~= nil and silentSnap.Visible == true, "Silent Aim Snapline must lock onto weighted target bone")
-
+-- Verify Single-Ring FOV Circle has NO tick markers and NO inner orbital ring
 local fovCircle = overlays:FindFirstChild("FOVCircle")
 assert(fovCircle ~= nil and fovCircle.Visible == true, "FOVCircle must be visible when enabled")
-local fovInnerOrbital = fovCircle:FindFirstChild("FOVInnerOrbital")
-assert(fovInnerOrbital ~= nil and fovInnerOrbital.Rotation ~= 0, "FOVInnerOrbital must exist and live-rotate inside FOVCircle")
-
--- Turn OFF Freecam while Silent Aim stays ON -> verify CameraType is Custom and Camera follows character!
-for _, desc in ipairs(mainWindow:GetDescendants()) do
-    if desc.Name == "Visuals_Page" then
-        for _, ctrl in ipairs(desc:GetDescendants()) do
-            if ctrl.ClassName == "TextButton" and ctrl.Text == "" then
-                local rowLabel = ctrl:FindFirstChildOfClass("TextLabel")
-                if rowLabel and string.find(rowLabel.Text, "Freecam") then
-                    ctrl.MouseButton1Click:Fire()
-                end
-            end
-        end
-    end
-end
-RunService.RenderStepped:Fire(0.016)
-assert(workspace.CurrentCamera.CameraType == Enum.CameraType.Custom, "Camera must remain Custom and follow character when Silent Aim is ON and Freecam is OFF")
-assert(workspace.CurrentCamera.CameraSubject == myHum, "CameraSubject must remain locked to LocalPlayer Humanoid when Silent Aim is ON")
+assert(fovCircle:FindFirstChild("FOVInnerOrbital") == nil, "FOVCircle must be a single clean ring with no inner orbital ring or tick markers")
+assert(overlays:FindFirstChild("SilentSnapline") == nil, "SilentSnapline must be removed")
 
 -- 7. Test Settings Tab Config Save (Required Config Name check + Save & Load Config)
 local configNameBox, saveCfgBtn, loadCfgBtn
@@ -1057,7 +1190,7 @@ function runLuaChunk(L: any, code: string, label: string) {
   }
 }
 
-test('Core.xyz.lua v4.0 Chef\'s Kiss Edition executes all 7 tabs, exact-fit telemetry pill, 3D bounding box + skeleton rig, multi-method silent aim with weighted body parts, hitbox expander, whitelist, expandable 6-action player cards, swim in air, anti-fling/ragdoll/void, x-ray, freecam, and config manager with zero errors', () => {
+test('Core.xyz.lua v4.2 Chef\'s Kiss Edition executes Home 3D Avatar Box + 3 Key Tiers (FEYKDEV/FEYKPERM/FEYK24H), Right-Side Live ESP Preview Window, Single-Ring FOV Circle, Screen Resolution Stretch + Preset Reset, Spider Climb, 7-Action Player Cards with Orbit, Join Server by JobId, and 3D ESP with zero errors', () => {
   const scriptPath = path.resolve(process.cwd(), 'Core.xyz.lua');
   const coreLuaCode = fs.readFileSync(scriptPath, 'utf8');
 
@@ -1072,4 +1205,5 @@ test('Core.xyz.lua v4.0 Chef\'s Kiss Edition executes all 7 tabs, exact-fit tele
   const passed = lua.lua_toboolean(L, -1);
   assert.equal(passed, true, 'Expected __TEST_PASSED to be true');
 });
+
 

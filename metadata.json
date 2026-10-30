@@ -1,0 +1,6 @@
+{
+  "name": "Core.xyz Suite & Key System",
+  "description": "Monochrome animated loading screen, FEYKSECURED key authorization system, interactive UI simulator, and GitHub loadstring builder for Core.xyz.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

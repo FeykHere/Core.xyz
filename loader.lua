@@ -1,5 +1,5 @@
 --[=[
-    CORE.XYZ | UNIVERSAL ROBLOX LUA SCRIPT (V4.6 ULTRA-FPS STEALTH & ZERO-FLAW EDITION)
+    CORE.XYZ | UNIVERSAL ROBLOX LUA SCRIPT (V5.0 PRODUCTION RELEASE)
     Theme: Pure Black & White Monochrome (With Full RGB & Theme Freedom in Settings)
     Architecture:
       1. Zero Metatable Hooks (No __namecall, __index, hookmetamethod, or restricted C++ telemetry calls)
@@ -7,11 +7,7 @@
       3. Self-Healing Object Pool ESP (Instant refresh on PlayerAdded, Death, Respawn & Limb Streaming)
       4. Isolated Closure Scope (Self-contained task.spawn closure — zero global or getgenv() pollution)
       5. Deterministic Toggle & Lifecycle Cleanup (Instant primitive hide, state restoration, and unbind)
-
-    3 Test Keys Included:
-      - Developer Key : FEYKDEV      (Key Time Left: Developer)
-      - Permanent Key : FEYKPERM     (Key Time Left: Infinite)
-      - Normal 24h Key: FEYK24H      (Key Time Left: Live 24h Countdown | Also accepts FEYKSECURED)
+      6. Platoboost Live License Verification (Service 36271 · SHA-256 Nonce Integrity · Accurate Live Key Timer)
 ]=]
 
 task.spawn(function()
@@ -60,6 +56,8 @@ local Env = {
     fireproximityprompt = fireproximityprompt,
     fireclickdetector = fireclickdetector,
     identifyexecutor = identifyexecutor or getexecutorname,
+    request = request or http_request or syn_request or (type(http) == "table" and http.request) or (type(fluxus) == "table" and fluxus.request),
+    gethwid = gethwid,
     Stats = nil,
     TextService = nil,
 }
@@ -70,19 +68,11 @@ pcall(function()
     Env.TextService = safeGetService("TextService")
 end)
 
-local REQUIRED_KEY = "FEYKDEV"
-local KEY_TIERS = {
-    ["FEYKDEV"] = { Tier = "Developer", Duration = -1 },
-    ["FEYKPERM"] = { Tier = "Infinite", Duration = -1 },
-    ["FEYK24H"] = { Tier = "Normal", Duration = 86400 },
-    ["FEYKSECURED"] = { Tier = "Normal", Duration = 86400 },
-}
-
 local CURRENT_PLACE_ID = tostring(game.PlaceId or 0)
 local FS_FOLDER = "CoreXYZ_Data"
 local CONFIG_INDEX_FILE = FS_FOLDER .. "/ConfigIndex.json"
 local AUTO_LOAD_FILE = FS_FOLDER .. "/AutoLoadConfig.txt"
-local SAVED_KEY_FILE = FS_FOLDER .. "/SavedKey.txt"
+local KEY_META_FILE = FS_FOLDER .. "/PlatoKeyMeta.json"
 local WAYPOINTS_FILE = FS_FOLDER .. "/Waypoints_" .. CURRENT_PLACE_ID .. ".json"
 
 pcall(function()
@@ -92,7 +82,7 @@ pcall(function()
 end)
 
 --------------------------------------------------------------------------------
--- 1. SAFE FILE SYSTEM & JSON HELPERS
+-- 1. SAFE FILE SYSTEM, JSON & PLATOBOOST LICENSE ENGINE (SERVICE 36271)
 --------------------------------------------------------------------------------
 local memoryFileStore = {}
 
@@ -120,11 +110,370 @@ local function safeReadFile(path)
     return memoryFileStore[path]
 end
 
+local PlatoBoost = (function()
+    --! json library & cryptography library (SHA-256)
+    local a=2^32;local b=a-1;local function c(d,e)local f,g=0,1;while d~=0 or e~=0 do local h,i=d%2,e%2;local j=(h+i)%2;f=f+j*g;d=math.floor(d/2)e=math.floor(e/2)g=g*2 end;return f%a end;local function k(d,e,l,...)local m;if e then d=d%a;e=e%a;m=c(d,e)if l then m=k(m,l,...)end;return m elseif d then return d%a else return 0 end end;local function n(d,e,l,...)local m;if e then d=d%a;e=e%a;m=(d+e-c(d,e))/2;if l then m=n(m,l,...)end;return m elseif d then return d%a else return b end end;local function o(p)return b-p end;local lshift;local function q(d,r)if r<0 then return lshift(d,-r)end;return math.floor(d%2^32/2^r)end;local function s(p,r)if r>31 or r<-31 then return 0 end;return q(p%a,r)end;lshift=function(d,r)if r<0 then return s(d,-r)end;return d*2^r%2^32 end;local function t(p,r)p=p%a;r=r%32;local u=n(p,2^r-1)return s(p,r)+lshift(u,32-r)end;local v={0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2}local function w(x)return string.gsub(x,".",function(l)return string.format("%02x",string.byte(l))end)end;local function y(z,A)local x=""for B=1,A do local C=z%256;x=string.char(C)..x;z=(z-C)/256 end;return x end;local function D(x,B)local A=0;for B=B,B+3 do A=A*256+string.byte(x,B)end;return A end;local function E(F,G)local H=64-(G+9)%64;G=y(8*G,8)F=F.."\128"..string.rep("\0",H)..G;assert(#F%64==0)return F end;local function I(J)J[1]=0x6a09e667;J[2]=0xbb67ae85;J[3]=0x3c6ef372;J[4]=0xa54ff53a;J[5]=0x510e527f;J[6]=0x9b05688c;J[7]=0x1f83d9ab;J[8]=0x5be0cd19;return J end;local function K(F,B,J)local L={}for M=1,16 do L[M]=D(F,B+(M-1)*4)end;for M=17,64 do local N=L[M-15]local O=k(t(N,7),t(N,18),s(N,3))N=L[M-2]L[M]=(L[M-16]+O+L[M-7]+k(t(N,17),t(N,19),s(N,10)))%a end;local d,e,l,P,Q,R,S,T=J[1],J[2],J[3],J[4],J[5],J[6],J[7],J[8]for B=1,64 do local O=k(t(d,2),t(d,13),t(d,22))local U=k(n(d,e),n(d,l),n(e,l))local V=(O+U)%a;local W=k(t(Q,6),t(Q,11),t(Q,25))local X=k(n(Q,R),n(o(Q),S))local Y=(T+W+X+v[B]+L[B])%a;T=S;S=R;R=Q;Q=(P+Y)%a;P=l;l=e;e=d;d=(Y+V)%a end;J[1]=(J[1]+d)%a;J[2]=(J[2]+e)%a;J[3]=(J[3]+l)%a;J[4]=(J[4]+P)%a;J[5]=(J[5]+Q)%a;J[6]=(J[6]+R)%a;J[7]=(J[7]+S)%a;J[8]=(J[8]+T)%a end;local function Z(F)F=tostring(F or "")F=E(F,#F)local J=I({})for B=1,#F,64 do K(F,B,J)end;return w(y(J[1],4)..y(J[2],4)..y(J[3],4)..y(J[4],4)..y(J[5],4)..y(J[6],4)..y(J[7],4)..y(J[8],4))end;local e;local l={["\\"]="\\",["\""]="\"",["\b"]="b",["\f"]="f",["\n"]="n",["\r"]="r",["\t"]="t"}local P={["/"]="/"}for Q,R in pairs(l)do P[R]=Q end;local S=function(T)return"\\"..(l[T]or string.format("u%04x",T:byte()))end;local B=function(M)return"null"end;local v2=function(M,z)local _={}z=z or{}if z[M]then error("circular reference")end;z[M]=true;if rawget(M,1)~=nil or next(M)==nil then local A=0;for Q in pairs(M)do if type(Q)~="number"then error("invalid table: mixed or invalid key types")end;A=A+1 end;if A~=#M then error("invalid table: sparse array")end;for a0,R in ipairs(M)do table.insert(_,e(R,z))end;z[M]=nil;return"["..table.concat(_,",").."]"else for Q,R in pairs(M)do if type(Q)~="string"then error("invalid table: mixed or invalid key types")end;table.insert(_,e(Q,z)..":"..e(R,z))end;z[M]=nil;return"{"..table.concat(_,",").."}"end end;local g=function(M)return'"'..M:gsub('[%z\1-\31\\"]',S)..'"'end;local a1=function(M)if M~=M or M<=-math.huge or M>=math.huge then error("unexpected number value '"..tostring(M).."'")end;return string.format("%.14g",M)end;local j={["nil"]=B,["table"]=v2,["string"]=g,["number"]=a1,["boolean"]=tostring}e=function(M,z)local x=type(M)local a2=j[x]if a2 then return a2(M,z)end;error("unexpected type '"..x.."'")end;local a3=function(M)return e(M)end;local a4;local N=function(...)local _={}for a0=1,select("#",...)do _[select(a0,...)]=true end;return _ end;local L=N(" ","\t","\r","\n")local p=N(" ","\t","\r","\n","]","}",",")local a5=N("\\","/",'"',"b","f","n","r","t","u")local m=N("true","false","null")local a6={["true"]=true,["false"]=false,["null"]=nil}local a7=function(a8,a9,aa,ab)for a0=a9,#a8 do if aa[a8:sub(a0,a0)]~=ab then return a0 end end;return#a8+1 end;local ac=function(a8,a9,J)local ad=1;local ae=1;for a0=1,a9-1 do ae=ae+1;if a8:sub(a0,a0)=="\n"then ad=ad+1;ae=1 end end;error(string.format("%s at line %d col %d",J,ad,ae))end;local af=function(A)local a2=math.floor;if A<=0x7f then return string.char(A)elseif A<=0x7ff then return string.char(a2(A/64)+192,A%64+128)elseif A<=0xffff then return string.char(a2(A/4096)+224,a2(A%4096/64)+128,A%64+128)elseif A<=0x10ffff then return string.char(a2(A/262144)+240,a2(A%262144/4096)+128,a2(A%4096/64)+128,A%64+128)end;error(string.format("invalid unicode codepoint '%x'",A))end;local ag=function(ah)local ai=tonumber(ah:sub(1,4),16)local aj=tonumber(ah:sub(7,10),16)if aj then return af((ai-0xd800)*0x400+aj-0xdc00+0x10000)else return af(ai)end end;local ak=function(a8,a0)local _=""local al=a0+1;local Q=al;while al<=#a8 do local am=a8:byte(al)if am<32 then ac(a8,al,"control character in string")elseif am==92 then _=_..a8:sub(Q,al-1)al=al+1;local T=a8:sub(al,al)if T=="u"then local an=a8:match("^[dD][89aAbB]%x%x\\u%x%x%x%x",al+1)or a8:match("^%x%x%x%x",al+1)or ac(a8,al-1,"invalid unicode escape in string")_=_..ag(an)al=al+#an else if not a5[T]then ac(a8,al-1,"invalid escape char '"..T.."' in string")end;_=_..P[T]end;Q=al+1 elseif am==34 then _=_..a8:sub(Q,al-1)return _,al+1 end;al=al+1 end;ac(a8,a0,"expected closing quote for string")end;local ao=function(a8,a0)local am=a7(a8,a0,p)local ah=a8:sub(a0,am-1)local A=tonumber(ah)if not A then ac(a8,a0,"invalid number '"..ah.."'")end;return A,am end;local ap=function(a8,a0)local am=a7(a8,a0,p)local aq=a8:sub(a0,am-1)if not m[aq]then ac(a8,a0,"invalid literal '"..aq.."'")end;return a6[aq],am end;local ar=function(a8,a0)local _={}local A=1;a0=a0+1;while 1 do local am;a0=a7(a8,a0,L,true)if a8:sub(a0,a0)=="]"then a0=a0+1;break end;am,a0=a4(a8,a0)_[A]=am;A=A+1;a0=a7(a8,a0,L,true)local as=a8:sub(a0,a0)a0=a0+1;if as=="]"then break end;if as~=","then ac(a8,a0,"expected ']' or ','")end end;return _,a0 end;local at=function(a8,a0)local _={}a0=a0+1;while 1 do local au,M;a0=a7(a8,a0,L,true)if a8:sub(a0,a0)=="}"then a0=a0+1;break end;if a8:sub(a0,a0)~='"'then ac(a8,a0,"expected string for key")end;au,a0=a4(a8,a0)a0=a7(a8,a0,L,true)if a8:sub(a0,a0)~=":"then ac(a8,a0,"expected ':' after key")end;a0=a7(a8,a0+1,L,true)M,a0=a4(a8,a0)_[au]=M;a0=a7(a8,a0,L,true)local as=a8:sub(a0,a0)a0=a0+1;if as=="}"then break end;if as~=","then ac(a8,a0,"expected '}' or ','")end end;return _,a0 end;local av={['"']=ak,["0"]=ao,["1"]=ao,["2"]=ao,["3"]=ao,["4"]=ao,["5"]=ao,["6"]=ao,["7"]=ao,["8"]=ao,["9"]=ao,["-"]=ao,["t"]=ap,["f"]=ap,["n"]=ap,["["]=ar,["{"]=at}a4=function(a8,a9)local as=a8:sub(a9,a9)local a2=av[as]if a2 then return a2(a8,a9)end;ac(a8,a9,"unexpected character '"..as.."'")end;local aw=function(a8)if type(a8)~="string"then error("expected argument of type string, got "..type(a8))end;local _,a9=a4(a8,a7(a8,1,L,true))a9=a7(a8,a9,L,true)if a9<=#a8 then ac(a8,a9,"trailing garbage")end;return _ end;
+    local lEncode, lDecode, lDigest = a3, aw, Z
+
+    --! platoboost configuration
+    local service = 36271
+    local secret = "993b9964-e0c4-4c5d-878b-82cf17ddef9f"
+    local useNonce = true
+    local DEFAULT_KEY_DURATION = 86400 -- 24h standard Platoboost key cycle
+
+    local onMessage = function(_) end
+    local requestSending = false
+    local fSetClipboard = Env.setclipboard
+    local fStringChar = string.char
+    local fToString = tostring
+    local fStringSub = string.sub
+    local fOsTime = os.time
+    local fMathRandom = math.random
+    local fMathFloor = math.floor
+
+    local function fGetHwid()
+        if type(Env.gethwid) == "function" then
+            local ok, res = pcall(Env.gethwid)
+            if ok and res and fToString(res) ~= "" then
+                return fToString(res)
+            end
+        end
+        return fToString(LocalPlayer.UserId or 1)
+    end
+
+    local function fRequest(reqOpts)
+        if type(Env.request) == "function" then
+            local ok, res = pcall(Env.request, reqOpts)
+            if ok and type(res) == "table" then
+                return res
+            end
+        end
+        if reqOpts and reqOpts.Method == "GET" and reqOpts.Url then
+            local okGet, body = pcall(function()
+                return game:HttpGet(reqOpts.Url)
+            end)
+            if okGet and type(body) == "string" and body ~= "" then
+                return { StatusCode = 200, Body = body }
+            end
+        end
+        return { StatusCode = 0, Body = "" }
+    end
+
+    local host = "https://api.platoboost.com"
+    local cachedLink, cachedTime = "", 0
+    local hostChecked = false
+
+    local function ensureHost()
+        if hostChecked then
+            return
+        end
+        hostChecked = true
+        local hostResponse = fRequest({
+            Url = host .. "/public/connectivity",
+            Method = "GET",
+        })
+        if not hostResponse or (hostResponse.StatusCode ~= 200 and hostResponse.StatusCode ~= 429) then
+            host = "https://api.platoboost.net"
+        end
+    end
+
+    local function generateNonce()
+        local str = ""
+        for _ = 1, 16 do
+            str = str .. fStringChar(fMathFloor(fMathRandom() * (122 - 97 + 1)) + 97)
+        end
+        return str
+    end
+
+    local function cacheLink()
+        ensureHost()
+        if cachedLink == "" or (cachedTime + (10 * 60) < fOsTime()) then
+            local response = fRequest({
+                Url = host .. "/public/start",
+                Method = "POST",
+                Body = lEncode({
+                    service = service,
+                    identifier = lDigest(fGetHwid()),
+                }),
+                Headers = {
+                    ["Content-Type"] = "application/json",
+                },
+            })
+
+            if response and response.StatusCode == 200 then
+                local okDec, decoded = pcall(lDecode, response.Body)
+                if okDec and type(decoded) == "table" then
+                    if decoded.success == true and type(decoded.data) == "table" and decoded.data.url then
+                        cachedLink = decoded.data.url
+                        cachedTime = fOsTime()
+                        return true, cachedLink
+                    else
+                        local errMsg = fToString(decoded.message or "Failed to generate link.")
+                        onMessage(errMsg)
+                        return false, errMsg
+                    end
+                end
+            elseif response and response.StatusCode == 429 then
+                local msg = "you are being rate limited, please wait 20 seconds and try again."
+                onMessage(msg)
+                return false, msg
+            end
+
+            local msg = "Failed to cache link."
+            onMessage(msg)
+            return false, msg
+        else
+            return true, cachedLink
+        end
+    end
+
+    local function copyLink()
+        local success, link = cacheLink()
+        if success and link and link ~= "" then
+            if fSetClipboard then
+                pcall(fSetClipboard, link)
+            end
+            onMessage("Key link copied to clipboard! Paste it into your browser.")
+            return true, link
+        end
+        return false, link
+    end
+
+    local function resolveAccurateKeyExpiry(keyStr, apiData, isFreshRedemption)
+        local now = fOsTime()
+        -- 1. Check if Platoboost response includes an explicit expiration timestamp or remaining seconds
+        if type(apiData) == "table" then
+            local rawExp = apiData.expiresAt or apiData.expires_at or apiData.expire or apiData.expiration
+            if type(rawExp) == "number" and rawExp > 0 then
+                if rawExp > 1e12 then
+                    return fMathFloor(rawExp / 1000)
+                elseif rawExp > now then
+                    return fMathFloor(rawExp)
+                else
+                    return now + fMathFloor(rawExp)
+                end
+            end
+            local rawRem = apiData.timeLeft or apiData.time_left or apiData.remaining or apiData.duration
+            if type(rawRem) == "number" and rawRem > 0 then
+                return now + fMathFloor(rawRem)
+            end
+        end
+
+        -- 2. Track exact activation/expiry timestamp per HWID + Key on disk so re-executions show exact live remaining time
+        local keyId = lDigest(fGetHwid() .. "::" .. fToString(keyStr or ""))
+        local hwidId = lDigest(fGetHwid())
+        local savedRaw = safeReadFile(KEY_META_FILE)
+        local meta = nil
+        if savedRaw and savedRaw ~= "" then
+            local okM, parsed = pcall(lDecode, savedRaw)
+            if okM and type(parsed) == "table" then
+                meta = parsed
+            end
+        end
+
+        if not isFreshRedemption and type(meta) == "table" then
+            if (meta.keyId == keyId or meta.hwidId == hwidId) and type(meta.expiresAt) == "number" and meta.expiresAt > now then
+                return meta.expiresAt
+            end
+        end
+
+        local newExpiresAt = now + DEFAULT_KEY_DURATION
+        pcall(function()
+            safeWriteFile(KEY_META_FILE, lEncode({
+                keyId = keyId,
+                hwidId = hwidId,
+                redeemedAt = now,
+                expiresAt = newExpiresAt,
+            }))
+        end)
+        return newExpiresAt
+    end
+
+    local function redeemKey(key)
+        ensureHost()
+        local nonce = generateNonce()
+        local endpoint = host .. "/public/redeem/" .. fToString(service)
+
+        local body = {
+            identifier = lDigest(fGetHwid()),
+            key = key,
+        }
+
+        if useNonce then
+            body.nonce = nonce
+        end
+
+        local response = fRequest({
+            Url = endpoint,
+            Method = "POST",
+            Body = lEncode(body),
+            Headers = {
+                ["Content-Type"] = "application/json",
+            },
+        })
+
+        if response and response.StatusCode == 200 then
+            local okDec, decoded = pcall(lDecode, response.Body)
+            if okDec and type(decoded) == "table" then
+                if decoded.success == true and type(decoded.data) == "table" then
+                    if decoded.data.valid == true then
+                        if useNonce then
+                            if decoded.data.hash == lDigest("true" .. "-" .. nonce .. "-" .. secret) then
+                                local expTs = resolveAccurateKeyExpiry(key, decoded.data, true)
+                                return true, expTs
+                            else
+                                onMessage("failed to verify integrity.")
+                                return false, nil
+                            end
+                        else
+                            local expTs = resolveAccurateKeyExpiry(key, decoded.data, true)
+                            return true, expTs
+                        end
+                    else
+                        onMessage("key is invalid.")
+                        return false, nil
+                    end
+                else
+                    local msg = fToString(decoded.message or "key is invalid.")
+                    if fStringSub(msg, 1, 27) == "unique constraint violation" then
+                        onMessage("you already have an active key, please wait for it to expire before redeeming it.")
+                        return false, nil
+                    else
+                        onMessage(msg)
+                        return false, nil
+                    end
+                end
+            end
+        elseif response and response.StatusCode == 429 then
+            onMessage("you are being rate limited, please wait 20 seconds and try again.")
+            return false, nil
+        end
+
+        onMessage("server returned an invalid status code, please try again later.")
+        return false, nil
+    end
+
+    local function verifyKey(key)
+        if requestSending == true then
+            onMessage("a request is already being sent, please slow down.")
+            return false, nil
+        else
+            requestSending = true
+        end
+
+        ensureHost()
+        local nonce = generateNonce()
+        local endpoint = host .. "/public/whitelist/" .. fToString(service) .. "?identifier=" .. lDigest(fGetHwid()) .. "&key=" .. key
+
+        if useNonce then
+            endpoint = endpoint .. "&nonce=" .. nonce
+        end
+
+        local response = fRequest({
+            Url = endpoint,
+            Method = "GET",
+        })
+
+        requestSending = false
+
+        if response and response.StatusCode == 200 then
+            local okDec, decoded = pcall(lDecode, response.Body)
+            if okDec and type(decoded) == "table" then
+                if decoded.success == true and type(decoded.data) == "table" then
+                    if decoded.data.valid == true then
+                        if useNonce then
+                            if decoded.data.hash == lDigest("true" .. "-" .. nonce .. "-" .. secret) then
+                                local expTs = resolveAccurateKeyExpiry(key, decoded.data, false)
+                                return true, expTs
+                            else
+                                onMessage("failed to verify integrity.")
+                                return false, nil
+                            end
+                        else
+                            local expTs = resolveAccurateKeyExpiry(key, decoded.data, false)
+                            return true, expTs
+                        end
+                    else
+                        if fStringSub(key, 1, 4) == "KEY_" then
+                            return redeemKey(key)
+                        else
+                            onMessage("key is invalid.")
+                            return false, nil
+                        end
+                    end
+                else
+                    onMessage(fToString(decoded.message or "key is invalid."))
+                    return false, nil
+                end
+            end
+        elseif response and response.StatusCode == 429 then
+            onMessage("you are being rate limited, please wait 20 seconds and try again.")
+            return false, nil
+        end
+
+        onMessage("server returned an invalid status code, please try again later.")
+        return false, nil
+    end
+
+    local function getFlag(name)
+        ensureHost()
+        local nonce = generateNonce()
+        local endpoint = host .. "/public/flag/" .. fToString(service) .. "?name=" .. name
+
+        if useNonce then
+            endpoint = endpoint .. "&nonce=" .. nonce
+        end
+
+        local response = fRequest({
+            Url = endpoint,
+            Method = "GET",
+        })
+
+        if response and response.StatusCode == 200 then
+            local okDec, decoded = pcall(lDecode, response.Body)
+            if okDec and type(decoded) == "table" and decoded.success == true and type(decoded.data) == "table" then
+                if useNonce then
+                    if decoded.data.hash == lDigest(fToString(decoded.data.value) .. "-" .. nonce .. "-" .. secret) then
+                        return decoded.data.value
+                    else
+                        onMessage("failed to verify integrity.")
+                        return nil
+                    end
+                else
+                    return decoded.data.value
+                end
+            end
+        end
+        return nil
+    end
+
+    return {
+        service = service,
+        encode = lEncode,
+        decode = lDecode,
+        digest = lDigest,
+        cacheLink = cacheLink,
+        copyLink = copyLink,
+        verifyKey = verifyKey,
+        redeemKey = redeemKey,
+        getFlag = getFlag,
+        setOnMessage = function(fn)
+            if type(fn) == "function" then
+                onMessage = fn
+            end
+        end,
+    }
+end)()
+
 local function safeJsonEncode(tbl)
     local ok, res = pcall(function()
         return HttpService:JSONEncode(tbl)
     end)
-    return ok and res or "{}"
+    if ok and res then
+        return res
+    end
+    local okP, resP = pcall(PlatoBoost.encode, tbl)
+    return (okP and resP) or "{}"
 end
 
 local function safeJsonDecode(str)
@@ -134,7 +483,11 @@ local function safeJsonDecode(str)
     local ok, res = pcall(function()
         return HttpService:JSONDecode(str)
     end)
-    return ok and res or nil
+    if ok and res then
+        return res
+    end
+    local okP, resP = pcall(PlatoBoost.decode, str)
+    return (okP and resP) or nil
 end
 
 --------------------------------------------------------------------------------
@@ -890,7 +1243,7 @@ do
     LoaderStatus.Size = UDim2.new(1, -40, 0, 18)
     LoaderStatus.BackgroundTransparency = 1
     LoaderStatus.Font = Enum.Font.Code
-    LoaderStatus.Text = "Initializing Core.xyz Universal v4.0..."
+    LoaderStatus.Text = "Starting Core.xyz..."
     LoaderStatus.TextColor3 = Theme.Silver
     LoaderStatus.TextTransparency = 1
     LoaderStatus.TextSize = 11
@@ -944,14 +1297,14 @@ do
 end
 
 --------------------------------------------------------------------------------
--- 7. STAGE 2: LIVE-ANIMATED KEY SYSTEM ("FEYKSECURED" + REMEMBER KEY)
+-- 7. STAGE 2: POLISHED KEY SYSTEM (PLATOBOOST · 2 BUTTONS: SUBMIT & GET KEY)
 --------------------------------------------------------------------------------
 do
     local KeyCard = Instance.new("Frame")
     KeyCard.Name = "CoreKeySystem"
     KeyCard.AnchorPoint = Vector2.new(0.5, 0.5)
     KeyCard.Position = UDim2.fromScale(0.5, 0.5)
-    KeyCard.Size = UDim2.fromOffset(420, 292)
+    KeyCard.Size = UDim2.fromOffset(420, 266)
     KeyCard.BackgroundColor3 = Theme.Black
     KeyCard.BackgroundTransparency = 1
     KeyCard.Visible = false
@@ -1006,24 +1359,38 @@ do
 
     local KeyHeader = Instance.new("TextLabel")
     KeyHeader.Position = UDim2.fromOffset(56, 20)
-    KeyHeader.Size = UDim2.new(1, -80, 0, 24)
+    KeyHeader.Size = UDim2.new(1, -155, 0, 24)
     KeyHeader.BackgroundTransparency = 1
     KeyHeader.Font = Enum.Font.GothamBlack
-    KeyHeader.Text = "CORE.XYZ  ·  AUTHORIZATION"
+    KeyHeader.Text = "CORE.XYZ  ·  KEY SYSTEM"
     KeyHeader.TextColor3 = Theme.White
-    KeyHeader.TextSize = 16
+    KeyHeader.TextSize = 15
     KeyHeader.TextXAlignment = Enum.TextXAlignment.Left
     KeyHeader.ZIndex = 32
     KeyHeader.Parent = KeyCard
 
+    local KeyServiceBadge = Instance.new("TextLabel")
+    KeyServiceBadge.AnchorPoint = Vector2.new(1, 0)
+    KeyServiceBadge.Position = UDim2.new(1, -24, 0, 22)
+    KeyServiceBadge.Size = UDim2.fromOffset(88, 20)
+    KeyServiceBadge.BackgroundColor3 = Theme.Surface
+    KeyServiceBadge.Font = Enum.Font.Code
+    KeyServiceBadge.Text = "PLATOBOOST"
+    KeyServiceBadge.TextColor3 = Theme.Silver
+    KeyServiceBadge.TextSize = 9
+    KeyServiceBadge.ZIndex = 32
+    KeyServiceBadge.Parent = KeyCard
+    addCorner(KeyServiceBadge, 5)
+    addStroke(KeyServiceBadge, Theme.Border, 1, 0)
+
     local KeySub = Instance.new("TextLabel")
     KeySub.Position = UDim2.fromOffset(24, 52)
-    KeySub.Size = UDim2.new(1, -48, 0, 28)
+    KeySub.Size = UDim2.new(1, -48, 0, 30)
     KeySub.BackgroundTransparency = 1
     KeySub.Font = Enum.Font.GothamMedium
-    KeySub.Text = "Enter your Core.xyz access key below or tap GET KEY to auto-fill."
+    KeySub.Text = "Click Get Key to copy your verification link, then paste your key below and press Submit."
     KeySub.TextColor3 = Theme.Silver
-    KeySub.TextSize = 12
+    KeySub.TextSize = 11
     KeySub.TextWrapped = true
     KeySub.TextXAlignment = Enum.TextXAlignment.Left
     KeySub.ZIndex = 32
@@ -1043,7 +1410,7 @@ do
     KeyInputBox.Size = UDim2.new(1, -28, 1, 0)
     KeyInputBox.BackgroundTransparency = 1
     KeyInputBox.Font = Enum.Font.Code
-    KeyInputBox.PlaceholderText = "ENTER KEY (FEYKSECURED)..."
+    KeyInputBox.PlaceholderText = "Paste your Platoboost key here..."
     KeyInputBox.PlaceholderColor3 = Theme.Muted
     KeyInputBox.Text = ""
     KeyInputBox.TextColor3 = Theme.White
@@ -1062,75 +1429,56 @@ do
         tween(KeyInputHolder, FastTween, { BackgroundColor3 = Theme.Surface })
     end)
 
-    -- Remember Key Toggle Row inside KeyCard
-    local RememberKeyBtn = Instance.new("TextButton")
-    RememberKeyBtn.Position = UDim2.fromOffset(24, 140)
-    RememberKeyBtn.Size = UDim2.new(1, -48, 0, 26)
-    RememberKeyBtn.BackgroundTransparency = 1
-    RememberKeyBtn.AutoButtonColor = false
-    RememberKeyBtn.Font = Enum.Font.Code
-    RememberKeyBtn.Text = "  [✓] Remember Key on this Device (Auto-Unlock)"
-    RememberKeyBtn.TextColor3 = Theme.White
-    RememberKeyBtn.TextSize = 11
-    RememberKeyBtn.TextXAlignment = Enum.TextXAlignment.Left
-    RememberKeyBtn.ZIndex = 32
-    RememberKeyBtn.Parent = KeyCard
-
-    RememberKeyBtn.MouseButton1Click:Connect(function()
-        ConfigState.RememberKey = not ConfigState.RememberKey
-        RememberKeyBtn.Text = ConfigState.RememberKey
-            and "  [✓] Remember Key on this Device (Auto-Unlock)"
-            or "  [ ] Remember Key on this Device (Auto-Unlock)"
-        RememberKeyBtn.TextColor3 = ConfigState.RememberKey and Theme.White or Theme.Muted
-    end)
-
     local KeyFeedback = Instance.new("TextLabel")
-    KeyFeedback.Position = UDim2.fromOffset(24, 170)
+    KeyFeedback.Position = UDim2.fromOffset(24, 140)
     KeyFeedback.Size = UDim2.new(1, -48, 0, 18)
     KeyFeedback.BackgroundTransparency = 1
     KeyFeedback.Font = Enum.Font.Code
-    KeyFeedback.Text = "STATUS: WAITING FOR AUTHORIZATION"
+    KeyFeedback.Text = "Status: Waiting for key submission..."
     KeyFeedback.TextColor3 = Theme.Muted
     KeyFeedback.TextSize = 11
+    KeyFeedback.TextTruncate = Enum.TextTruncate.AtEnd
     KeyFeedback.TextXAlignment = Enum.TextXAlignment.Left
     KeyFeedback.ZIndex = 32
     KeyFeedback.Parent = KeyCard
 
     local UnlockButton = Instance.new("TextButton")
-    UnlockButton.Position = UDim2.fromOffset(24, 196)
-    UnlockButton.Size = UDim2.new(0.6, -28, 0, 40)
+    UnlockButton.Name = "SubmitKeyButton"
+    UnlockButton.Position = UDim2.fromOffset(24, 168)
+    UnlockButton.Size = UDim2.new(0.5, -28, 0, 42)
     UnlockButton.BackgroundColor3 = Theme.White
     UnlockButton.AutoButtonColor = false
     UnlockButton.Font = Enum.Font.GothamBlack
-    UnlockButton.Text = "AUTHORIZE KEY"
+    UnlockButton.Text = "Submit"
     UnlockButton.TextColor3 = Theme.Black
-    UnlockButton.TextSize = 12
+    UnlockButton.TextSize = 13
     UnlockButton.ClipsDescendants = true
     UnlockButton.ZIndex = 32
     UnlockButton.Parent = KeyCard
     addCorner(UnlockButton, 8)
 
     local CopyKeyButton = Instance.new("TextButton")
-    CopyKeyButton.Position = UDim2.new(0.6, 4, 0, 196)
-    CopyKeyButton.Size = UDim2.new(0.4, -28, 0, 40)
+    CopyKeyButton.Name = "GetKeyButton"
+    CopyKeyButton.Position = UDim2.new(0.5, 4, 0, 168)
+    CopyKeyButton.Size = UDim2.new(0.5, -28, 0, 42)
     CopyKeyButton.BackgroundColor3 = Theme.Surface
     CopyKeyButton.AutoButtonColor = false
     CopyKeyButton.Font = Enum.Font.GothamBold
-    CopyKeyButton.Text = "GET KEY"
+    CopyKeyButton.Text = "Get Key"
     CopyKeyButton.TextColor3 = Theme.White
-    CopyKeyButton.TextSize = 12
+    CopyKeyButton.TextSize = 13
     CopyKeyButton.ClipsDescendants = true
     CopyKeyButton.ZIndex = 32
     CopyKeyButton.Parent = KeyCard
     addCorner(CopyKeyButton, 8)
-    local CopyKeyStroke = addStroke(CopyKeyButton, Theme.Border, 1.2, 0)
+    addStroke(CopyKeyButton, Theme.Border, 1.2, 0)
 
     local KeyFooter = Instance.new("TextLabel")
-    KeyFooter.Position = UDim2.fromOffset(24, 248)
+    KeyFooter.Position = UDim2.fromOffset(24, 226)
     KeyFooter.Size = UDim2.new(1, -48, 0, 18)
     KeyFooter.BackgroundTransparency = 1
     KeyFooter.Font = Enum.Font.Code
-    KeyFooter.Text = "CORE.XYZ V4.0  ·  MONOCHROME ENGINE"
+    KeyFooter.Text = "CORE.XYZ  ·  SECURED BY PLATOBOOST"
     KeyFooter.TextColor3 = Theme.Muted
     KeyFooter.TextSize = 10
     KeyFooter.TextXAlignment = Enum.TextXAlignment.Center
@@ -1146,7 +1494,6 @@ do
     UI.KeyFeedback = KeyFeedback
     UI.UnlockButton = UnlockButton
     UI.CopyKeyButton = CopyKeyButton
-    UI.RememberKeyBtn = RememberKeyBtn
 end
 
 --------------------------------------------------------------------------------
@@ -3743,36 +4090,22 @@ local function getDetectedExecutorName()
 end
 
 local function formatRemainingKeyTime()
-    if State.activeKeyTier == "Developer" then
-        return "Developer"
-    elseif State.activeKeyTier == "Infinite" then
-        return "Infinite"
-    else
-        local rem = math.max(0, (State.keyExpireTimestamp or (os.time() + 86400)) - os.time())
-        local hrs = math.floor(rem / 3600)
-        local mins = math.floor((rem % 3600) / 60)
-        local secs = math.floor(rem % 60)
-        return string.format("%02dh %02dm %02ds", hrs, mins, secs)
+    if State.keyExpireTimestamp == -1 then
+        return "Lifetime"
     end
-end
-
-local function applyKeyTierFromKeyString(keyStr)
-    local clean = string.upper((keyStr or ""):gsub("%s+", ""))
-    local tierInfo = KEY_TIERS[clean]
-    if not tierInfo then
-        return false
+    local now = os.time()
+    local rem = math.max(0, (State.keyExpireTimestamp or (now + 86400)) - now)
+    if rem <= 0 then
+        return "EXPIRED"
     end
-    State.activeKeyString = clean
-    State.activeKeyTier = tierInfo.Tier
-    if tierInfo.Duration and tierInfo.Duration > 0 then
-        State.keyExpireTimestamp = os.time() + tierInfo.Duration
-    else
-        State.keyExpireTimestamp = -1
+    local days = math.floor(rem / 86400)
+    local hrs = math.floor((rem % 86400) / 3600)
+    local mins = math.floor((rem % 3600) / 60)
+    local secs = math.floor(rem % 60)
+    if days > 0 then
+        return string.format("%dd %02dh %02dm %02ds", days, hrs, mins, secs)
     end
-    if State.updateHomeKeyInfo then
-        State.updateHomeKeyInfo()
-    end
-    return true
+    return string.format("%02dh %02dm %02ds", hrs, mins, secs)
 end
 
 --------------------------------------------------------------------------------
@@ -3786,7 +4119,7 @@ local PlayersTab = createTab("Players", 5)
 local WorldTab = createTab("World", 6)
 local SettingsTab = createTab("Settings", 7)
 
--- TAB 1: HOME (INTERACTIVE 3D CHARACTER SHOWCASE BOX + SIDE PROFILE & KEY TIME INFO)
+-- TAB 1: HOME (INTERACTIVE 3D CHARACTER SHOWCASE BOX + SIDE PROFILE & LIVE KEY TIME INFO)
 do
     createLabel(HomeTab, "Operator Showcase & License Status")
 
@@ -3885,9 +4218,9 @@ do
         end
         local formatted = formatRemainingKeyTime()
         UI.HomeKeyTimeValue.Text = formatted
-        if formatted == "Developer" then
-            UI.HomeKeyTimeValue.TextColor3 = Theme.Accent
-        elseif formatted == "Infinite" then
+        if formatted == "EXPIRED" then
+            UI.HomeKeyTimeValue.TextColor3 = Theme.Error
+        elseif formatted == "Lifetime" then
             UI.HomeKeyTimeValue.TextColor3 = Theme.Success
         else
             UI.HomeKeyTimeValue.TextColor3 = Theme.White
@@ -3896,24 +4229,6 @@ do
 
     State.updateHomeKeyInfo = updateHomeKeyInfo
     updateHomeKeyInfo()
-
-    createLabel(HomeTab, "Test Key Tiers (Developer / Permanent / Normal 24h)")
-    createDropdown(HomeTab, "Switch Key Tier (Test)", {
-        "FEYKDEV (Developer)",
-        "FEYKPERM (Infinite / Permanent)",
-        "FEYK24H (Normal 24h Timer)",
-    }, "FEYK24H (Normal 24h Timer)", function(opt)
-        if string.find(opt, "FEYKDEV") then
-            applyKeyTierFromKeyString("FEYKDEV")
-            notify("Key System", "Switched to Developer Key (FEYKDEV) -> Key Time: Developer", 3)
-        elseif string.find(opt, "FEYKPERM") then
-            applyKeyTierFromKeyString("FEYKPERM")
-            notify("Key System", "Switched to Permanent Key (FEYKPERM) -> Key Time: Infinite", 3)
-        else
-            applyKeyTierFromKeyString("FEYK24H")
-            notify("Key System", "Switched to Normal Key (FEYK24H) -> Key Time: 24h Countdown", 3)
-        end
-    end)
 
     createLabel(HomeTab, "Quick Utilities")
     createButton(HomeTab, "Copy Discord Invite", function()
@@ -4974,15 +5289,6 @@ do
         end
     end)
 
-    createToggle(SettingsTab, "Remember Key (Auto-Unlock on Startup)", true, function(val)
-        ConfigState.RememberKey = val
-        if val and State.isAuthorized then
-            safeWriteFile(SAVED_KEY_FILE, State.activeKeyString or REQUIRED_KEY)
-        elseif not val then
-            safeWriteFile(SAVED_KEY_FILE, "")
-        end
-    end)
-
     createLabel(SettingsTab, "UI Theme & RGB Color Freedom")
 
     local RSliderCtrl, GSliderCtrl, BSliderCtrl
@@ -5134,15 +5440,17 @@ do
 end
 
 --------------------------------------------------------------------------------
--- 13. KEY SYSTEM AUTHORIZATION (SUPPORTS FEYKDEV, FEYKPERM, FEYK24H, FEYKSECURED)
+-- 13. PLATOBOOST KEY SYSTEM AUTHORIZATION (SUBMIT + GET KEY · LIVE EXPIRY)
 --------------------------------------------------------------------------------
+PlatoBoost.setOnMessage(function(message)
+    if UI.KeyFeedback and message and tostring(message) ~= "" then
+        UI.KeyFeedback.Text = "Status: " .. tostring(message)
+    end
+end)
+
 local function launchMainHub()
     State.isAuthorized = true
     State.uiVisible = true
-
-    if ConfigState.RememberKey then
-        safeWriteFile(SAVED_KEY_FILE, State.activeKeyString or REQUIRED_KEY)
-    end
 
     if State.updateHomeKeyInfo then
         State.updateHomeKeyInfo()
@@ -5167,47 +5475,72 @@ local function launchMainHub()
         State.loadConfigByName(autoCfg)
     end
 
-    notify("Core.xyz", "Authorized (" .. tostring(State.activeKeyTier) .. ")! Tap CORE.XYZ pill or RightShift to toggle UI.", 5)
+    notify("Core.xyz", "License verified! Key Time Left: " .. formatRemainingKeyTime() .. ".", 5)
+end
+
+local function shakeKeyCardOnError()
+    tween(UI.KeyInputStroke, FastTween, { Color = Theme.Error })
+    local origPos = UI.KeyCard.Position
+    for _, offset in ipairs({ -9, 9, -6, 6, -3, 0 }) do
+        UI.KeyCard.Position = UDim2.new(origPos.X.Scale, origPos.X.Offset + offset, origPos.Y.Scale, origPos.Y.Offset)
+        task.wait(0.028)
+    end
+    tween(UI.KeyInputStroke, SmoothTween, { Color = Theme.Border })
 end
 
 local function attemptAuthorization()
     if State.isAuthorizing or State.isAuthorized then
         return
     end
-    local entered = string.upper((UI.KeyInputBox.Text or ""):gsub("%s+", ""))
-    if applyKeyTierFromKeyString(entered) then
-        State.isAuthorizing = true
-        UI.KeyFeedback.Text = "ACCESS GRANTED (" .. string.upper(State.activeKeyTier) .. ") — LAUNCHING..."
-        UI.KeyFeedback.TextColor3 = Theme.Accent
+    local entered = ((UI.KeyInputBox and UI.KeyInputBox.Text) or ""):gsub("^%s*(.-)%s*$", "%1")
+    if entered == "" then
+        UI.KeyFeedback.Text = "Status: Please paste your key before pressing Submit."
+        UI.KeyFeedback.TextColor3 = Theme.Error
+        shakeKeyCardOnError()
+        return
+    end
+
+    State.isAuthorizing = true
+    UI.UnlockButton.Text = "Verifying..."
+    UI.KeyFeedback.Text = "Status: Verifying license with Platoboost..."
+    UI.KeyFeedback.TextColor3 = Theme.Silver
+
+    local okVerify, expireTs = PlatoBoost.verifyKey(entered)
+    if okVerify then
+        State.activeKeyString = entered
+        State.activeKeyTier = "Licensed"
+        State.keyExpireTimestamp = expireTs or (os.time() + 86400)
+        UI.UnlockButton.Text = "Submit"
+        UI.KeyFeedback.Text = "Status: Key verified! Launching Core.xyz..."
+        UI.KeyFeedback.TextColor3 = Theme.Success
         tween(UI.KeyScale, FastTween, { Scale = 0.9 })
         tween(UI.KeyCard, FastTween, { BackgroundTransparency = 1 })
         tween(UI.KeyCardStroke, FastTween, { Transparency = 1 })
         task.wait(0.22)
         UI.KeyCard.Visible = false
+        State.isAuthorizing = false
         launchMainHub()
     else
-        UI.KeyFeedback.Text = "INVALID KEY! Try: FEYKDEV | FEYKPERM | FEYK24H"
+        State.isAuthorizing = false
+        UI.UnlockButton.Text = "Submit"
         UI.KeyFeedback.TextColor3 = Theme.Error
-        tween(UI.KeyInputStroke, FastTween, { Color = Theme.Error })
-        local origPos = UI.KeyCard.Position
-        for _, offset in ipairs({ -9, 9, -6, 6, -3, 0 }) do
-            UI.KeyCard.Position = UDim2.new(origPos.X.Scale, origPos.X.Offset + offset, origPos.Y.Scale, origPos.Y.Offset)
-            task.wait(0.028)
-        end
-        tween(UI.KeyInputStroke, SmoothTween, { Color = Theme.Border })
+        shakeKeyCardOnError()
     end
 end
 
 UI.CopyKeyButton.MouseButton1Click:Connect(function()
     spawnRipple(UI.CopyKeyButton)
-    if Env.setclipboard then
-        pcall(function()
-            Env.setclipboard(REQUIRED_KEY)
-        end)
+    UI.KeyFeedback.Text = "Status: Generating Platoboost key link..."
+    UI.KeyFeedback.TextColor3 = Theme.Silver
+    local ok, linkOrErr = PlatoBoost.copyLink()
+    if ok then
+        UI.KeyFeedback.Text = "Status: Key link copied! Paste it into your browser."
+        UI.KeyFeedback.TextColor3 = Theme.Success
+        notify("Key System", "Platoboost key link copied to clipboard!", 4)
+    else
+        UI.KeyFeedback.Text = "Status: " .. tostring(linkOrErr or "Failed to copy key link.")
+        UI.KeyFeedback.TextColor3 = Theme.Error
     end
-    UI.KeyInputBox.Text = REQUIRED_KEY
-    UI.KeyFeedback.Text = "Key copied & auto-filled: " .. REQUIRED_KEY .. " (Or use FEYKDEV / FEYKPERM / FEYK24H)"
-    UI.KeyFeedback.TextColor3 = Theme.White
 end)
 
 UI.UnlockButton.MouseButton1Click:Connect(function()
@@ -5691,7 +6024,7 @@ do
 end
 
 --------------------------------------------------------------------------------
--- 15. START-TO-END ANIMATED BOOT SEQUENCE (WITH REMEMBER KEY AUTO-UNLOCK)
+-- 15. START-TO-END ANIMATED BOOT SEQUENCE (6-STEP SAAS LOADER -> MANDATORY KEY GATE)
 --------------------------------------------------------------------------------
 task.spawn(function()
     local targetScale = getResponsiveScale()
@@ -5707,22 +6040,27 @@ task.spawn(function()
     tween(UI.LoaderPercent, SmoothTween, { TextTransparency = 0 })
 
     local stages = {
-        { pct = 28, text = "Allocating Object Pool & Ultra-FPS Core..." },
-        { pct = 64, text = "Loading Camera+Character Aimbot, Korblox & Pro Crosshair..." },
-        { pct = 92, text = "Verifying 3-Tier Security Gate..." },
-        { pct = 100, text = "Core.xyz v4.5 Ultra-FPS Ready." },
+        { pct = 16, text = "Starting Core.xyz..." },
+        { pct = 34, text = "Preparing graphics & overlay engine..." },
+        { pct = 52, text = "Optimizing frame pacing & memory pool..." },
+        { pct = 70, text = "Loading saved profile & preferences..." },
+        { pct = 88, text = "Verifying license status..." },
+        { pct = 100, text = "Finalizing workspace..." },
     }
 
     local currentPct = 0
-    for _, stage in ipairs(stages) do
+    for idx, stage in ipairs(stages) do
         UI.LoaderStatus.Text = stage.text
+        if idx == 5 then
+            pcall(PlatoBoost.cacheLink)
+        end
         tween(UI.LoaderBarFill, SlowTween, { Size = UDim2.fromScale(stage.pct / 100, 1) })
         while currentPct < stage.pct do
             currentPct = math.min(stage.pct, currentPct + 3)
             UI.LoaderPercent.Text = tostring(currentPct) .. "%"
-            task.wait(0.022)
+            task.wait(0.018)
         end
-        task.wait(0.16)
+        task.wait(0.12)
     end
 
     tween(UI.LoaderScale, FastTween, { Scale = targetScale * 0.9 })
@@ -5739,17 +6077,14 @@ task.spawn(function()
     task.wait(0.2)
     UI.LoaderCard.Visible = false
 
-    -- Check Remember Key
-    local savedKey = safeReadFile(SAVED_KEY_FILE)
-    if savedKey and applyKeyTierFromKeyString(savedKey) then
-        launchMainHub()
-    else
-        UI.KeyCard.Visible = true
-        UI.KeyScale.Scale = targetScale * 0.88
-        tween(UI.KeyCard, SmoothTween, { BackgroundTransparency = 0.03 })
-        tween(UI.KeyCardStroke, SmoothTween, { Transparency = 0.08 })
-        tween(UI.KeyScale, SpringTween, { Scale = targetScale })
-    end
+    -- Always display the polished Key System on every launch (No auto-save key bypass)
+    UI.KeyFeedback.Text = "Status: Waiting for key submission..."
+    UI.KeyFeedback.TextColor3 = Theme.Muted
+    UI.KeyCard.Visible = true
+    UI.KeyScale.Scale = targetScale * 0.88
+    tween(UI.KeyCard, SmoothTween, { BackgroundTransparency = 0.03 })
+    tween(UI.KeyCardStroke, SmoothTween, { Transparency = 0.08 })
+    tween(UI.KeyScale, SpringTween, { Scale = targetScale })
 end)
 end)
 

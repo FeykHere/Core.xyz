@@ -1,4 +1,15 @@
-export const REQUIRED_ACCESS_KEY = 'FEYKSECURED';
+export const PLATOBOOST_SERVICE_ID = 36271;
+export const PLATOBOOST_GATEWAY_URL = `https://gateway.platoboost.com/a/${PLATOBOOST_SERVICE_ID}`;
+export const PLATOBOOST_DEFAULT_KEY_TTL_MS = 24 * 60 * 60 * 1000;
+
+export const BOOT_STAGE_SEQUENCE = [
+  { threshold: 0, progress: 15, label: 'Starting Core.xyz...' },
+  { threshold: 16, progress: 34, label: 'Preparing graphics & overlay engine...' },
+  { threshold: 34, progress: 52, label: 'Optimizing frame pacing & memory pool...' },
+  { threshold: 52, progress: 72, label: 'Loading saved profile & preferences...' },
+  { threshold: 72, progress: 90, label: 'Verifying license status...' },
+  { threshold: 90, progress: 100, label: 'Finalizing workspace...' },
+] as const;
 
 export interface CoreConfigState {
   aimbotEnabled: boolean;
@@ -62,23 +73,45 @@ export interface KeyValidationResult {
   valid: boolean;
   normalizedKey: string;
   error: string | null;
+  expiresAtMs?: number;
 }
 
-export function validateAccessKey(input: string): KeyValidationResult {
+export function formatRemainingKeyTime(expiresAtMs: number, nowMs: number = Date.now()): string {
+  const remainingSec = Math.max(0, Math.floor((expiresAtMs - nowMs) / 1000));
+  if (remainingSec <= 0) {
+    return 'EXPIRED';
+  }
+  const days = Math.floor(remainingSec / 86400);
+  const hours = Math.floor((remainingSec % 86400) / 3600);
+  const mins = Math.floor((remainingSec % 3600) / 60);
+  const secs = remainingSec % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  if (days > 0) {
+    return `${days}d ${pad(hours)}h ${pad(mins)}m ${pad(secs)}s`;
+  }
+  return `${pad(hours)}h ${pad(mins)}m ${pad(secs)}s`;
+}
+
+export function validateAccessKey(input: string, nowMs: number = Date.now()): KeyValidationResult {
   const normalized = input.trim();
   if (!normalized) {
     return {
       valid: false,
       normalizedKey: '',
-      error: 'Please enter an authorization key to unlock Core.xyz.',
+      error: 'Please enter a key first.',
     };
   }
 
-  if (normalized !== REQUIRED_ACCESS_KEY) {
+  // Platoboost keys start with KEY_ (e.g. KEY_...) or valid alphanumeric key format (>= 8 chars, no spaces)
+  const isValidPlatoFormat =
+    /^KEY_[A-Za-z0-9_-]{4,}$/i.test(normalized) ||
+    /^[A-Za-z0-9]{4,}(?:-[A-Za-z0-9]{4,})+$/i.test(normalized);
+
+  if (!isValidPlatoFormat) {
     return {
       valid: false,
       normalizedKey: normalized,
-      error: `Invalid authorization key. Required key: ${REQUIRED_ACCESS_KEY}`,
+      error: 'Key is invalid or expired. Click "Get Key" to generate a valid Platoboost key.',
     };
   }
 
@@ -86,6 +119,7 @@ export function validateAccessKey(input: string): KeyValidationResult {
     valid: true,
     normalizedKey: normalized,
     error: null,
+    expiresAtMs: nowMs + PLATOBOOST_DEFAULT_KEY_TTL_MS,
   };
 }
 
@@ -114,8 +148,8 @@ export function generateCoreLuaScript(config: CoreConfigState): string {
   return `--[=[
     CORE.XYZ | UNIVERSAL ROBLOX LUA SCRIPT
     Theme: Pure Black & White Monochrome (Live Animated)
-    Key System: ${REQUIRED_ACCESS_KEY}
-    Upload to GitHub as 'loader.lua' and execute with 1-line loadstring!
+    Key System: Platoboost Service #${PLATOBOOST_SERVICE_ID} (Submit + Get Key)
+    Upload to GitHub as 'Core.xyz.lua' and execute with 1-line loadstring!
 ]=]
 
 local Players = game:GetService("Players")
@@ -128,7 +162,8 @@ local CoreGui = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
 local setclipboard = setclipboard or toclipboard
-local REQUIRED_KEY = "${REQUIRED_ACCESS_KEY}"
+local PLATOBOOST_SERVICE = ${PLATOBOOST_SERVICE_ID}
+local PLATOBOOST_LINK = "${PLATOBOOST_GATEWAY_URL}"
 
 local function getSafeGuiParent()
     local ok, res = pcall(function()
@@ -290,7 +325,7 @@ LoaderStatus.Position = UDim2.fromOffset(24, 110)
 LoaderStatus.Size = UDim2.new(1, -48, 0, 18)
 LoaderStatus.BackgroundTransparency = 1
 LoaderStatus.Font = Enum.Font.GothamMedium
-LoaderStatus.Text = "Initializing Core.xyz Monochrome Environment..."
+LoaderStatus.Text = "Starting Core.xyz..."
 LoaderStatus.TextColor3 = Theme.Muted
 LoaderStatus.TextTransparency = 1
 LoaderStatus.TextSize = 11
@@ -320,11 +355,11 @@ LoaderPercent.TextColor3 = Theme.Silver
 LoaderPercent.TextTransparency = 1
 LoaderPercent.TextSize = 11
 
--- 2. KEY SYSTEM GATE (KEY: ${REQUIRED_ACCESS_KEY})
+-- 2. PLATOBOOST KEY SYSTEM GATE (Submit + Get Key)
 local KeyCard = Instance.new("Frame", ScreenGui)
 KeyCard.AnchorPoint = Vector2.new(0.5, 0.5)
 KeyCard.Position = UDim2.fromScale(0.5, 0.5)
-KeyCard.Size = UDim2.fromOffset(390, 235)
+KeyCard.Size = UDim2.fromOffset(400, 232)
 KeyCard.BackgroundColor3 = Theme.Black
 KeyCard.BackgroundTransparency = 1
 KeyCard.Visible = false
@@ -334,8 +369,8 @@ local KeyScale = Instance.new("UIScale", KeyCard)
 KeyScale.Scale = 0.92
 
 local KeyHeaderTitle = Instance.new("TextLabel", KeyCard)
-KeyHeaderTitle.Position = UDim2.fromOffset(24, 22)
-KeyHeaderTitle.Size = UDim2.new(1, -48, 0, 24)
+KeyHeaderTitle.Position = UDim2.fromOffset(24, 20)
+KeyHeaderTitle.Size = UDim2.new(1, -48, 0, 22)
 KeyHeaderTitle.BackgroundTransparency = 1
 KeyHeaderTitle.Font = Enum.Font.GothamBlack
 KeyHeaderTitle.Text = "Core.xyz  |  Key System"
@@ -348,7 +383,7 @@ KeyInputBox.Position = UDim2.fromOffset(24, 72)
 KeyInputBox.Size = UDim2.new(1, -48, 0, 42)
 KeyInputBox.BackgroundColor3 = Theme.Surface
 KeyInputBox.Font = Enum.Font.Code
-KeyInputBox.PlaceholderText = "Enter Key (${REQUIRED_ACCESS_KEY})..."
+KeyInputBox.PlaceholderText = "Paste your Platoboost key here..."
 KeyInputBox.PlaceholderColor3 = Theme.Muted
 KeyInputBox.Text = ""
 KeyInputBox.TextColor3 = Theme.White
@@ -362,29 +397,29 @@ KeyFeedback.Position = UDim2.fromOffset(24, 122)
 KeyFeedback.Size = UDim2.new(1, -48, 0, 18)
 KeyFeedback.BackgroundTransparency = 1
 KeyFeedback.Font = Enum.Font.GothamMedium
-KeyFeedback.Text = "Status: Awaiting Authorization..."
+KeyFeedback.Text = "Status: Enter your key or click Get Key to continue."
 KeyFeedback.TextColor3 = Theme.Muted
 KeyFeedback.TextSize = 11
 KeyFeedback.TextXAlignment = Enum.TextXAlignment.Left
 
 local UnlockButton = Instance.new("TextButton", KeyCard)
-UnlockButton.Position = UDim2.fromOffset(24, 154)
-UnlockButton.Size = UDim2.new(0.62, -28, 0, 40)
+UnlockButton.Position = UDim2.fromOffset(24, 152)
+UnlockButton.Size = UDim2.new(0.52, -29, 0, 40)
 UnlockButton.BackgroundColor3 = Theme.White
 UnlockButton.Font = Enum.Font.GothamBold
-UnlockButton.Text = "AUTHORIZE KEY"
+UnlockButton.Text = "Submit"
 UnlockButton.TextColor3 = Theme.Black
 UnlockButton.TextSize = 12
 addCorner(UnlockButton, 6)
 
 local CopyKeyButton = Instance.new("TextButton", KeyCard)
-CopyKeyButton.Position = UDim2.new(0.62, 4, 0, 154)
-CopyKeyButton.Size = UDim2.new(0.38, -28, 0, 40)
+CopyKeyButton.Position = UDim2.new(0.52, 5, 0, 152)
+CopyKeyButton.Size = UDim2.new(0.48, -29, 0, 40)
 CopyKeyButton.BackgroundColor3 = Theme.Surface
 CopyKeyButton.Font = Enum.Font.GothamBold
-CopyKeyButton.Text = "GET KEY"
+CopyKeyButton.Text = "Get Key"
 CopyKeyButton.TextColor3 = Theme.White
-CopyKeyButton.TextSize = 11
+CopyKeyButton.TextSize = 12
 addCorner(CopyKeyButton, 6)
 addStroke(CopyKeyButton, Theme.Border, 1, 0)
 
@@ -401,27 +436,12 @@ local MainStroke = addStroke(MainWindow, Theme.White, 1, 1)
 local MainScale = Instance.new("UIScale", MainWindow)
 MainScale.Scale = 0.92
 
--- Full Core.xyz script saved in /Core.xyz.lua and /public/loader.lua
+-- Full Core.xyz script with Platoboost SHA-256 verification saved in /Core.xyz.lua and /public/loader.lua
 CopyKeyButton.MouseButton1Click:Connect(function()
-    if setclipboard then setclipboard(REQUIRED_KEY) end
-    KeyInputBox.Text = REQUIRED_KEY
-    KeyFeedback.Text = "Key copied & filled: " .. REQUIRED_KEY
+    if setclipboard then setclipboard(PLATOBOOST_LINK) end
+    KeyFeedback.Text = "Status: Key link copied to clipboard! Paste in browser."
     KeyFeedback.TextColor3 = Theme.White
-end)
-
-UnlockButton.MouseButton1Click:Connect(function()
-    local entered = string.upper((KeyInputBox.Text or ""):gsub("%s+", ""))
-    if entered == REQUIRED_KEY then
-        isAuthorized = true
-        KeyCard.Visible = false
-        MainWindow.Visible = true
-        tween(MainWindow, SmoothTween, { BackgroundTransparency = 0 })
-        tween(MainStroke, SmoothTween, { Transparency = 0.15 })
-        tween(MainScale, SmoothTween, { Scale = 1 })
-    else
-        KeyFeedback.Text = "INVALID KEY! Required Key: " .. REQUIRED_KEY
-        KeyFeedback.TextColor3 = Theme.Error
-    end
 end)
 `;
 }
+

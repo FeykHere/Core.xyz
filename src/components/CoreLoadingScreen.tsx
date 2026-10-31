@@ -1,18 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { ArrowRight } from 'lucide-react';
+import { BOOT_STAGE_SEQUENCE } from '../utils/coreAuth';
 
 interface CoreLoadingScreenProps {
   onComplete: () => void;
 }
-
-const BOOT_STAGES = [
-  { threshold: 0, label: 'Initializing Core.xyz Monochrome Environment' },
-  { threshold: 28, label: 'Calibrating Frame-Rate Independent Render Loop' },
-  { threshold: 58, label: 'Configuring R6 / R15 Target Resolution & Raycast Filter' },
-  { threshold: 84, label: 'Mounting FEYKSECURED Authorization Gate' },
-  { threshold: 100, label: 'Environment Ready' },
-];
 
 export const CoreLoadingScreen: React.FC<CoreLoadingScreenProps> = ({ onComplete }) => {
   const [progress, setProgress] = useState(0);
@@ -42,7 +35,8 @@ export const CoreLoadingScreen: React.FC<CoreLoadingScreenProps> = ({ onComplete
   }, [progress, onComplete]);
 
   const currentStage =
-    [...BOOT_STAGES].reverse().find((s) => progress >= s.threshold) || BOOT_STAGES[0];
+    [...BOOT_STAGE_SEQUENCE].reverse().find((s) => progress >= s.threshold) ||
+    BOOT_STAGE_SEQUENCE[0];
 
   return (
     <div
@@ -127,6 +121,7 @@ export const CoreLoadingScreen: React.FC<CoreLoadingScreenProps> = ({ onComplete
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.12 }}
             className="truncate"
+            data-testid="boot-stage-label"
           >
             {currentStage.label}
           </motion.span>
@@ -139,7 +134,7 @@ export const CoreLoadingScreen: React.FC<CoreLoadingScreenProps> = ({ onComplete
         {/* Skip Intro Action for Instant Access */}
         <div className="mt-7 pt-5 border-t border-white/10 flex items-center justify-between">
           <span className="text-xs text-neutral-400">
-            Key System: <strong className="text-white font-mono">FEYKSECURED</strong>
+            License Gate: <strong className="text-white font-mono">PLATOBOOST</strong>
           </span>
           <button
             type="button"
@@ -154,3 +149,4 @@ export const CoreLoadingScreen: React.FC<CoreLoadingScreenProps> = ({ onComplete
     </div>
   );
 };
+

@@ -20,13 +20,16 @@ import {
   GithubRepoConfig,
   LIVE_LOADSTRING_SNIPPET,
   LIVE_RAW_SCRIPT_URL,
-  REQUIRED_ACCESS_KEY,
+  PLATOBOOST_DEFAULT_KEY_TTL_MS,
+  PLATOBOOST_SERVICE_ID,
   buildGithubRawUrl,
   buildLoadstringSnippet,
+  formatRemainingKeyTime,
   generateCoreLuaScript,
 } from '../utils/coreAuth';
 
 interface CoreWorkspaceProps {
+  keyExpiresAtMs?: number;
   onReplayIntro: () => void;
   onLockSession: () => void;
 }
@@ -48,6 +51,7 @@ const SIMULATED_PLAYERS = [
 ];
 
 export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
+  keyExpiresAtMs,
   onReplayIntro,
   onLockSession,
 }) => {
@@ -59,6 +63,24 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
   const [copiedLoadstring, setCopiedLoadstring] = useState(false);
   const [copiedLua, setCopiedLua] = useState(false);
   const [fullLuaFile, setFullLuaFile] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+
+  const effectiveExpiresAt = useMemo(
+    () => keyExpiresAtMs ?? Date.now() + PLATOBOOST_DEFAULT_KEY_TTL_MS,
+    [keyExpiresAtMs]
+  );
+
+  React.useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const liveKeyTimeLeft = useMemo(
+    () => formatRemainingKeyTime(effectiveExpiresAt, nowMs),
+    [effectiveExpiresAt, nowMs]
+  );
 
   React.useEffect(() => {
     fetch('/loader.lua')
@@ -229,9 +251,11 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
               <div className="flex items-center gap-2 text-xs text-neutral-400">
                 <span>Delta Executor Compatible</span>
                 <span aria-hidden="true">·</span>
-                <span>Authorized Key: {REQUIRED_ACCESS_KEY}</span>
+                <span>Platoboost Service #{PLATOBOOST_SERVICE_ID}</span>
                 <span aria-hidden="true">·</span>
-                <span>HTTP 200 Live Hosted</span>
+                <span className="font-mono text-white" data-testid="live-key-time-left">
+                  Key Time Left: {liveKeyTimeLeft}
+                </span>
               </div>
               <h2 className="text-xl font-bold text-white">
                 Working 1-Line Loadstring (Fixed HTTP 404 for Delta Executor)
@@ -306,8 +330,8 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
                 <span className="font-mono text-sm font-bold tracking-tight text-white">
                   CORE.XYZ
                 </span>
-                <div className="flex items-center gap-3 text-xs text-neutral-400 font-mono">
-                  <span>Key: {REQUIRED_ACCESS_KEY}</span>
+                <div className="flex items-center gap-3 text-xs text-neutral-400 font-mono tabular-nums">
+                  <span>Key Time Left: {liveKeyTimeLeft}</span>
                   <span>·</span>
                   <span>[R-SHIFT] Toggle</span>
                 </div>
@@ -579,7 +603,7 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
                               className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold bg-[#161616] text-white hover:bg-[#222222] border border-white/15 transition-colors cursor-pointer"
                             >
                               <Lock className="w-3.5 h-3.5" />
-                              <span>Test Key Gate ({REQUIRED_ACCESS_KEY})</span>
+                              <span>Open Key System</span>
                             </button>
                           </div>
                         </>
@@ -886,11 +910,12 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               <div className="p-5 rounded-lg bg-[#101010] border border-white/10 space-y-2">
                 <h4 className="text-sm font-bold text-white">
-                  01. FEYKSECURED Key Gate & Loader
+                  01. Platoboost Key System &amp; 6-Step Loader
                 </h4>
                 <p className="text-xs text-neutral-400 leading-relaxed">
-                  Added a native TweenService monochrome loading sequence that transitions into an
-                  interactive key verification prompt requiring <code className="text-white">FEYKSECURED</code>.
+                  Sleek 6-step SaaS boot sequence transitioning into a 2-button Platoboost Key System (
+                  <code className="text-white">Submit</code> + <code className="text-white">Get Key</code>)
+                  with SHA-256 nonce verification and live countdown timer.
                 </p>
               </div>
 

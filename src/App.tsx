@@ -3,6 +3,7 @@ import { AnimatePresence } from 'motion/react';
 import { CoreLoadingScreen } from './components/CoreLoadingScreen';
 import { KeySystemModal } from './components/KeySystemModal';
 import { CoreWorkspace } from './components/CoreWorkspace';
+import { PLATOBOOST_DEFAULT_KEY_TTL_MS } from './utils/coreAuth';
 
 type AppStage = 'loading' | 'key_gate' | 'workspace';
 
@@ -20,6 +21,10 @@ export default function App() {
     return 'loading';
   });
 
+  const [keyExpiresAtMs, setKeyExpiresAtMs] = useState<number>(
+    () => Date.now() + PLATOBOOST_DEFAULT_KEY_TTL_MS
+  );
+
   return (
     <div className="min-h-screen bg-[#050505] text-white">
       <AnimatePresence mode="wait">
@@ -33,7 +38,10 @@ export default function App() {
         {stage === 'key_gate' && (
           <KeySystemModal
             key="key_gate"
-            onAuthorized={() => setStage('workspace')}
+            onAuthorized={(_verifiedKey, expiresAtMs) => {
+              setKeyExpiresAtMs(expiresAtMs ?? Date.now() + PLATOBOOST_DEFAULT_KEY_TTL_MS);
+              setStage('workspace');
+            }}
             onReplayIntro={() => setStage('loading')}
           />
         )}
@@ -41,6 +49,7 @@ export default function App() {
         {stage === 'workspace' && (
           <CoreWorkspace
             key="workspace"
+            keyExpiresAtMs={keyExpiresAtMs}
             onReplayIntro={() => setStage('loading')}
             onLockSession={() => setStage('key_gate')}
           />
@@ -49,3 +58,4 @@ export default function App() {
     </div>
   );
 }
+

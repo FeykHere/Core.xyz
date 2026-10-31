@@ -172,9 +172,11 @@ end
 local ConfigState = {
     -- Combat & Hitbox
     Aimbot = false,
+    AimbotLockCharacter = true,
+    AimbotWallCheck = false,
     ShowFOV = false,
     FOVRadius = 85,
-    Smoothness = 0.4,
+    Smoothness = 0.9,
     TeamCheck = true,
     UseWhitelist = true,
     TargetPart = "Head",
@@ -333,10 +335,16 @@ local State = {
     Tabs = {},
     activeTab = nil,
     refreshPlayerListUI = nil,
+    updatePlayerDistances = nil,
     refreshWhitelistDropdown = nil,
     loadConfigByName = nil,
-    updateEspPreview = nil,
     updateHomeKeyInfo = nil,
+    lastPillText = "",
+    lastPillWidth = 0,
+    cachedLocalChar = nil,
+    cachedLocalHRP = nil,
+    cachedLocalHum = nil,
+    cachedLocalParts = {},
 }
 
 local function bindConnection(key, signal, callback)
@@ -454,7 +462,8 @@ local function createParticleCanvas(parent, count)
     holder.ZIndex = parent.ZIndex
     holder.Parent = parent
 
-    for i = 1, (count or 18) do
+    local particleCount = math.min(count or 6, 8)
+    for i = 1, particleCount do
         local dot = Instance.new("Frame")
         local sz = (i % 3 == 0) and 3 or 2
         dot.Size = UDim2.fromOffset(sz, sz)
@@ -640,10 +649,10 @@ do
     CrosshairH.Parent = OverlayContainer
     UI.CrosshairH = CrosshairH
 
-    local function makeCrosshairArm(name, ax, ay)
+    local function makeCrosshairArm(name)
         local arm = Instance.new("Frame")
         arm.Name = name
-        arm.AnchorPoint = Vector2.new(ax, ay)
+        arm.AnchorPoint = Vector2.new(0.5, 0.5)
         arm.BackgroundColor3 = State.crosshairColor
         arm.BorderSizePixel = 0
         arm.ZIndex = 8
@@ -651,10 +660,10 @@ do
         return arm
     end
 
-    UI.CrosshairArmTop = makeCrosshairArm("ArmTop", 0.5, 1)
-    UI.CrosshairArmBottom = makeCrosshairArm("ArmBottom", 0.5, 0)
-    UI.CrosshairArmLeft = makeCrosshairArm("ArmLeft", 1, 0.5)
-    UI.CrosshairArmRight = makeCrosshairArm("ArmRight", 0, 0.5)
+    UI.CrosshairArmTop = makeCrosshairArm("ArmTop")
+    UI.CrosshairArmBottom = makeCrosshairArm("ArmBottom")
+    UI.CrosshairArmLeft = makeCrosshairArm("ArmLeft")
+    UI.CrosshairArmRight = makeCrosshairArm("ArmRight")
 
     local CrosshairDotFrame = Instance.new("Frame")
     CrosshairDotFrame.Name = "CrosshairDot"
@@ -1239,6 +1248,10 @@ local function updateFloatingPillTelemetry()
     end
 
     local fullText = table.concat(segments, " | ")
+    if fullText == State.lastPillText then
+        return
+    end
+    State.lastPillText = fullText
     UI.FloatLabel.Text = fullText
 
     -- Measure exact pixel width so there is NEVER dead space on the right or text clipping
@@ -1256,52 +1269,15 @@ local function updateFloatingPillTelemetry()
 
     -- 28px left offset (10px pad + 12px icon + 6px gap) + textPixelWidth + 11px right pad = textPixelWidth + 39
     local targetWidth = math.clamp(textPixelWidth + 39, 64, 540)
-    tween(UI.FloatingToggle, FastTween, {
-        Size = UDim2.fromOffset(targetWidth, 34),
-    })
+    if math.abs(targetWidth - (State.lastPillWidth or 0)) >= 1 then
+        State.lastPillWidth = targetWidth
+        UI.FloatingToggle.Size = UDim2.fromOffset(targetWidth, 34)
+    end
 end
 
 --------------------------------------------------------------------------------
 -- 9. STAGE 3: LIVE-ANIMATED MAIN HUB ("Core.xyz")
 --------------------------------------------------------------------------------
-local function syncDockedPreviewPosition()
-    if not UI.MainWindow or not UI.EspPreviewWindow then
-        return
-    end
-    local mp = UI.MainWindow.Position
-    local scale = (UI.MainScale and UI.MainScale.Scale) or 1
-    if UI.EspPreviewScale then
-        UI.EspPreviewScale.Scale = scale
-    end
-    -- MainWindow width = 560, EspPreviewWindow width = 240, gap = 12 => center-to-center offset = (280 + 12 + 120) * scale = 412 * scale
-    local offsetX = math.floor(412 * scale)
-    UI.EspPreviewWindow.Position = UDim2.new(
-        mp.X.Scale,
-        mp.X.Offset + offsetX,
-        mp.Y.Scale,
-        mp.Y.Offset
-    )
-end
-
-local function syncEspPreviewVisibility()
-    if not UI.EspPreviewWindow then
-        return
-    end
-    local shouldShow = State.isAuthorized
-        and State.uiVisible
-        and UI.MainWindow
-        and UI.MainWindow.Visible
-        and State.activeTab
-        and State.activeTab.Name == "Visuals"
-    UI.EspPreviewWindow.Visible = shouldShow and true or false
-    if shouldShow then
-        syncDockedPreviewPosition()
-        if State.updateEspPreview then
-            State.updateEspPreview()
-        end
-    end
-end
-
 local function toggleMainHub()
     if not State.isAuthorized then
         return
@@ -1311,16 +1287,11 @@ local function toggleMainHub()
     if State.uiVisible then
         UI.MainWindow.Visible = true
         UI.MainScale.Scale = targetScale
-        syncDockedPreviewPosition()
-        syncEspPreviewVisibility()
         tween(UI.MainScale, SpringTween, { Scale = targetScale })
         tween(UI.MainWindow, FastTween, { BackgroundTransparency = ConfigState.WindowTransparency })
         tween(UI.MainStroke, FastTween, { Transparency = 0.08 })
         tween(UI.FloatingToggle, FastTween, { BackgroundColor3 = Theme.Black })
     else
-        if UI.EspPreviewWindow then
-            UI.EspPreviewWindow.Visible = false
-        end
         tween(UI.MainScale, FastTween, { Scale = targetScale * 0.9 })
         tween(UI.MainWindow, FastTween, { BackgroundTransparency = 1 })
         tween(UI.MainStroke, FastTween, { Transparency = 1 })
@@ -1328,14 +1299,13 @@ local function toggleMainHub()
         task.delay(0.18, function()
             if not State.uiVisible then
                 UI.MainWindow.Visible = false
-                syncEspPreviewVisibility()
             end
         end)
     end
 end
 
--- Interactive 1:1 Character Clone + Draggable Rotation Helper for Home & Visuals Preview
-local function buildInteractiveAvatarViewport(container, isHome)
+-- Interactive 1:1 Character Clone + Draggable Rotation Helper for Home Showcase
+local function buildInteractiveAvatarViewport(container)
     local fallbackImg = Instance.new("ImageLabel")
     fallbackImg.Name = "AvatarPreviewImage"
     fallbackImg.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -1348,7 +1318,7 @@ local function buildInteractiveAvatarViewport(container, isHome)
     fallbackImg.Parent = container
 
     local vp = Instance.new("ViewportFrame")
-    vp.Name = isHome and "HomeAvatarViewport" or "PreviewAvatarViewport"
+    vp.Name = "HomeAvatarViewport"
     vp.Size = UDim2.fromScale(1, 1)
     vp.BackgroundTransparency = 1
     vp.Ambient = Color3.fromRGB(215, 215, 225)
@@ -1391,7 +1361,6 @@ local function buildInteractiveAvatarViewport(container, isHome)
         local rootPos = hrp.Position
         baseCenter = Vector3.new(0, 0, 0)
 
-        -- Clone the exact live Character Model (preserving SpecialMesh head, MeshParts, Shirt, Pants, Accessories/Hair, Face Decal)
         local okClone, exactClone = pcall(function()
             local prevArch = char.Archivable
             char.Archivable = true
@@ -1451,13 +1420,10 @@ local function buildInteractiveAvatarViewport(container, isHome)
         local lookTarget = baseCenter + Vector3.new(0, 0.15, 0)
         local camPos = baseCenter + Vector3.new(math.sin(rad) * camDist, 0.35, math.cos(rad) * camDist)
         vpCam.CFrame = CFrame.new(camPos, lookTarget)
-        if not isHome and State.updateEspPreview then
-            State.updateEspPreview()
-        end
     end
 
     refreshCharacterClone()
-    applyYawRotation(isHome and State.homeAvatarYaw or State.previewAvatarYaw)
+    applyYawRotation(State.homeAvatarYaw)
 
     local dragBtn = Instance.new("TextButton")
     dragBtn.Name = "AvatarRotateDragZone"
@@ -1482,13 +1448,8 @@ local function buildInteractiveAvatarViewport(container, isHome)
         if draggingYaw and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             local dx = input.Position.X - lastInputX
             lastInputX = input.Position.X
-            if isHome then
-                State.homeAvatarYaw = (State.homeAvatarYaw + dx * 0.9) % 360
-                applyYawRotation(State.homeAvatarYaw)
-            else
-                State.previewAvatarYaw = (State.previewAvatarYaw + dx * 0.9) % 360
-                applyYawRotation(State.previewAvatarYaw)
-            end
+            State.homeAvatarYaw = (State.homeAvatarYaw + dx * 0.9) % 360
+            applyYawRotation(State.homeAvatarYaw)
         end
     end)
 
@@ -1598,7 +1559,7 @@ do
     HeaderSub.Size = UDim2.fromOffset(260, 14)
     HeaderSub.BackgroundTransparency = 1
     HeaderSub.Font = Enum.Font.Code
-    HeaderSub.Text = "UNIVERSAL V4.3  ·  STEALTH ENGINE"
+    HeaderSub.Text = "UNIVERSAL V4.5  ·  ULTRA-FPS STEALTH"
     HeaderSub.TextColor3 = Theme.Muted
     HeaderSub.TextSize = 9
     HeaderSub.TextXAlignment = Enum.TextXAlignment.Left
@@ -1620,15 +1581,7 @@ do
     addCorner(MinimizeBtn, 6)
     addStroke(MinimizeBtn, Theme.Border, 1, 0)
 
-    -- Moving MainWindow automatically keeps CoreESPPreviewWindow locked to its right side on every frame
-    makeDraggable(HeaderBar, MainWindow, function()
-        syncDockedPreviewPosition()
-    end)
-    MainWindow.Changed:Connect(function(prop)
-        if prop == "Position" then
-            syncDockedPreviewPosition()
-        end
-    end)
+    makeDraggable(HeaderBar, MainWindow)
 
     UI.FloatingToggle.MouseButton1Click:Connect(function()
         spawnRipple(UI.FloatingToggle)
@@ -1711,7 +1664,7 @@ do
     UserStatusLbl.Size = UDim2.new(1, -20, 0, 12)
     UserStatusLbl.BackgroundTransparency = 1
     UserStatusLbl.Font = Enum.Font.Code
-    UserStatusLbl.Text = "● STEALTH · V4.3"
+    UserStatusLbl.Text = "● STEALTH · V4.5"
     UserStatusLbl.TextColor3 = Theme.Silver
     UserStatusLbl.TextSize = 9
     UserStatusLbl.TextXAlignment = Enum.TextXAlignment.Left
@@ -1735,211 +1688,6 @@ do
     UI.ActiveTabIndicator = ActiveTabIndicator
     UI.NavList = NavList
     UI.PagesHolder = PagesHolder
-end
-
--- RIGHT-SIDE COMPANION WINDOW: WIDER (240px) & DOCK-LOCKED TO MAIN WINDOW WITH 1:1 CHARACTER + FULL-SIZE ESP PREVIEW
-do
-    local EspPreviewWindow = Instance.new("Frame")
-    EspPreviewWindow.Name = "CoreESPPreviewWindow"
-    EspPreviewWindow.AnchorPoint = Vector2.new(0.5, 0.5)
-    EspPreviewWindow.Position = UDim2.new(0.5, 412, 0.52, 0)
-    EspPreviewWindow.Size = UDim2.fromOffset(240, 365)
-    EspPreviewWindow.BackgroundColor3 = Theme.Black
-    EspPreviewWindow.BackgroundTransparency = 0.03
-    EspPreviewWindow.Active = true
-    EspPreviewWindow.Visible = false
-    EspPreviewWindow.ClipsDescendants = true
-    EspPreviewWindow.ZIndex = 10
-    EspPreviewWindow.Parent = UI.ScreenGui
-    addCorner(EspPreviewWindow, 12)
-    addLiveBorder(EspPreviewWindow, 1.5, 65, 0.08)
-
-    local EspPreviewScale = Instance.new("UIScale")
-    EspPreviewScale.Scale = 0.88
-    EspPreviewScale.Parent = EspPreviewWindow
-
-    local PrevHeader = Instance.new("Frame")
-    PrevHeader.Size = UDim2.new(1, 0, 0, 40)
-    PrevHeader.BackgroundColor3 = Theme.Deep
-    PrevHeader.BackgroundTransparency = 0.08
-    PrevHeader.BorderSizePixel = 0
-    PrevHeader.ZIndex = 12
-    PrevHeader.Parent = EspPreviewWindow
-    addCorner(PrevHeader, 12)
-    -- Dragging PrevHeader moves MainWindow and keeps both windows locked together
-    makeDraggable(PrevHeader, UI.MainWindow, function()
-        syncDockedPreviewPosition()
-    end)
-
-    local PrevTitle = Instance.new("TextLabel")
-    PrevTitle.Position = UDim2.fromOffset(12, 6)
-    PrevTitle.Size = UDim2.new(1, -24, 0, 16)
-    PrevTitle.BackgroundTransparency = 1
-    PrevTitle.Font = Enum.Font.GothamBlack
-    PrevTitle.Text = "ESP LIVE PREVIEW  ·  LOCKED"
-    PrevTitle.TextColor3 = Theme.White
-    PrevTitle.TextSize = 11
-    PrevTitle.TextXAlignment = Enum.TextXAlignment.Left
-    PrevTitle.ZIndex = 13
-    PrevTitle.Parent = PrevHeader
-
-    local PrevSub = Instance.new("TextLabel")
-    PrevSub.Position = UDim2.fromOffset(12, 21)
-    PrevSub.Size = UDim2.new(1, -24, 0, 13)
-    PrevSub.BackgroundTransparency = 1
-    PrevSub.Font = Enum.Font.Code
-    PrevSub.Text = "⇄ DRAG AVATAR SIDEWAYS TO ROTATE"
-    PrevSub.TextColor3 = Theme.Muted
-    PrevSub.TextSize = 9
-    PrevSub.TextXAlignment = Enum.TextXAlignment.Left
-    PrevSub.ZIndex = 13
-    PrevSub.Parent = PrevHeader
-
-    -- Stage is 216x278 inside the 240x365 preview window
-    local PreviewStage = Instance.new("Frame")
-    PreviewStage.Name = "PreviewStage"
-    PreviewStage.Position = UDim2.fromOffset(12, 46)
-    PreviewStage.Size = UDim2.fromOffset(216, 278)
-    PreviewStage.BackgroundColor3 = Theme.Deep
-    PreviewStage.ClipsDescendants = true
-    PreviewStage.ZIndex = 12
-    PreviewStage.Parent = EspPreviewWindow
-    addCorner(PreviewStage, 8)
-    addStroke(PreviewStage, Theme.Border, 1, 0)
-
-    local previewAvatarCtrl = buildInteractiveAvatarViewport(PreviewStage, false)
-
-    -- 1. Chams Highlight Tint Overlay (Full Character Height 114x192 inside 216x278 Stage)
-    local PreviewChams = Instance.new("Frame")
-    PreviewChams.Name = "PreviewChams"
-    PreviewChams.AnchorPoint = Vector2.new(0.5, 0.5)
-    PreviewChams.Position = UDim2.fromOffset(108, 144)
-    PreviewChams.Size = UDim2.fromOffset(114, 192)
-    PreviewChams.BackgroundColor3 = State.espColor
-    PreviewChams.BackgroundTransparency = 0.74
-    PreviewChams.Visible = false
-    PreviewChams.ZIndex = 15
-    PreviewChams.Parent = PreviewStage
-    addCorner(PreviewChams, 8)
-    local PreviewChamsStroke = addStroke(PreviewChams, Theme.White, 1.3, 0.15)
-
-    -- 2. Floating Name & HP Tag inside PreviewStage
-    local PreviewNameTag = Instance.new("TextLabel")
-    PreviewNameTag.Name = "PreviewNameTag"
-    PreviewNameTag.AnchorPoint = Vector2.new(0.5, 0)
-    PreviewNameTag.Position = UDim2.new(0.5, 0, 0, 12)
-    PreviewNameTag.Size = UDim2.new(1, -8, 0, 18)
-    PreviewNameTag.BackgroundTransparency = 1
-    PreviewNameTag.Font = Enum.Font.Code
-    PreviewNameTag.Text = tostring(LocalPlayer.Name) .. " [10m] | HP: 100"
-    PreviewNameTag.TextColor3 = State.espColor
-    PreviewNameTag.TextSize = 10
-    PreviewNameTag.Visible = false
-    PreviewNameTag.ZIndex = 18
-    PreviewNameTag.Parent = PreviewStage
-
-    -- 3. 3D Wireframe Bounding Box (12 Edges) inside PreviewStage
-    local PreviewBox3DFolder = Instance.new("Frame")
-    PreviewBox3DFolder.Name = "PreviewBox3D"
-    PreviewBox3DFolder.Size = UDim2.fromScale(1, 1)
-    PreviewBox3DFolder.BackgroundTransparency = 1
-    PreviewBox3DFolder.Visible = false
-    PreviewBox3DFolder.ZIndex = 16
-    PreviewBox3DFolder.Parent = PreviewStage
-
-    local previewBoxEdges = {}
-    for i = 1, 12 do
-        local eLine = Instance.new("Frame")
-        eLine.Name = "PreviewEdge3D_" .. i
-        eLine.AnchorPoint = Vector2.new(0.5, 0.5)
-        eLine.BackgroundColor3 = State.espColor
-        eLine.BorderSizePixel = 0
-        eLine.ZIndex = 16
-        eLine.Parent = PreviewBox3DFolder
-        table.insert(previewBoxEdges, eLine)
-    end
-
-    -- 4. 3D Skeleton Rig (10 Bones) inside PreviewStage
-    local PreviewSkeletonFolder = Instance.new("Frame")
-    PreviewSkeletonFolder.Name = "PreviewSkeleton"
-    PreviewSkeletonFolder.Size = UDim2.fromScale(1, 1)
-    PreviewSkeletonFolder.BackgroundTransparency = 1
-    PreviewSkeletonFolder.Visible = false
-    PreviewSkeletonFolder.ZIndex = 17
-    PreviewSkeletonFolder.Parent = PreviewStage
-
-    local previewSkelBones = {}
-    for i = 1, 10 do
-        local bLine = Instance.new("Frame")
-        bLine.Name = "PreviewBone_" .. i
-        bLine.AnchorPoint = Vector2.new(0.5, 0.5)
-        bLine.BackgroundColor3 = Theme.White
-        bLine.BorderSizePixel = 0
-        bLine.ZIndex = 17
-        bLine.Parent = PreviewSkeletonFolder
-        table.insert(previewSkelBones, bLine)
-    end
-
-    -- 5. Vertical Health Bar inside PreviewStage (Aligned to full-height character box)
-    local PreviewHealthBarBg = Instance.new("Frame")
-    PreviewHealthBarBg.Name = "PreviewHealthBar"
-    PreviewHealthBarBg.Position = UDim2.fromOffset(38, 46)
-    PreviewHealthBarBg.Size = UDim2.fromOffset(4, 192)
-    PreviewHealthBarBg.BackgroundColor3 = Theme.Black
-    PreviewHealthBarBg.BorderSizePixel = 0
-    PreviewHealthBarBg.Visible = false
-    PreviewHealthBarBg.ZIndex = 18
-    PreviewHealthBarBg.Parent = PreviewStage
-    addCorner(PreviewHealthBarBg, 99)
-
-    local PreviewHealthBarFill = Instance.new("Frame")
-    PreviewHealthBarFill.AnchorPoint = Vector2.new(0, 1)
-    PreviewHealthBarFill.Position = UDim2.fromScale(0, 1)
-    PreviewHealthBarFill.Size = UDim2.fromScale(1, 1)
-    PreviewHealthBarFill.BackgroundColor3 = Theme.Success
-    PreviewHealthBarFill.BorderSizePixel = 0
-    PreviewHealthBarFill.ZIndex = 19
-    PreviewHealthBarFill.Parent = PreviewHealthBarBg
-    addCorner(PreviewHealthBarFill, 99)
-
-    -- 6. Snapline Tracer inside PreviewStage
-    local PreviewTracer = Instance.new("Frame")
-    PreviewTracer.Name = "PreviewTracer"
-    PreviewTracer.AnchorPoint = Vector2.new(0.5, 0.5)
-    PreviewTracer.BackgroundColor3 = State.espColor
-    PreviewTracer.BorderSizePixel = 0
-    PreviewTracer.Visible = false
-    PreviewTracer.ZIndex = 18
-    PreviewTracer.Parent = PreviewStage
-
-    local PreviewFooter = Instance.new("TextLabel")
-    PreviewFooter.Position = UDim2.new(0, 12, 1, -30)
-    PreviewFooter.Size = UDim2.new(1, -24, 0, 22)
-    PreviewFooter.BackgroundTransparency = 1
-    PreviewFooter.Font = Enum.Font.Code
-    PreviewFooter.Text = "ACTIVE: NONE"
-    PreviewFooter.TextColor3 = Theme.Silver
-    PreviewFooter.TextSize = 9
-    PreviewFooter.TextTruncate = Enum.TextTruncate.AtEnd
-    PreviewFooter.TextXAlignment = Enum.TextXAlignment.Center
-    PreviewFooter.ZIndex = 13
-    PreviewFooter.Parent = EspPreviewWindow
-
-    UI.EspPreviewWindow = EspPreviewWindow
-    UI.EspPreviewScale = EspPreviewScale
-    UI.PreviewStage = PreviewStage
-    UI.PreviewChams = PreviewChams
-    UI.PreviewChamsStroke = PreviewChamsStroke
-    UI.PreviewNameTag = PreviewNameTag
-    UI.PreviewBox3DFolder = PreviewBox3DFolder
-    UI.PreviewBoxEdges = previewBoxEdges
-    UI.PreviewSkeletonFolder = PreviewSkeletonFolder
-    UI.PreviewSkelBones = previewSkelBones
-    UI.PreviewHealthBarBg = PreviewHealthBarBg
-    UI.PreviewHealthBarFill = PreviewHealthBarFill
-    UI.PreviewTracer = PreviewTracer
-    UI.PreviewFooter = PreviewFooter
-    UI.PreviewAvatarCtrl = previewAvatarCtrl
 end
 
 --------------------------------------------------------------------------------
@@ -1995,7 +1743,6 @@ local function createTab(name, order)
 
     local function selectTab()
         if State.activeTab == tabObj then
-            syncEspPreviewVisibility()
             return
         end
         for _, t in ipairs(State.Tabs) do
@@ -2021,7 +1768,6 @@ local function createTab(name, order)
         page.Position = UDim2.fromOffset(14, 0)
         page.Visible = true
         tween(page, SmoothTween, { Position = UDim2.fromOffset(0, 0) })
-        syncEspPreviewVisibility()
     end
 
     btn.MouseButton1Click:Connect(function()
@@ -2886,10 +2632,16 @@ local function preallocatePlayerESP(player)
         CachedChar = nil,
         CachedHRP = nil,
         CachedHum = nil,
+        CachedHead = nil,
         CachedJointPairs = nil,
         LastDist = -1,
         LastHP = -1,
         LastPriority = nil,
+        Box3DVisible = false,
+        SkeletonVisible = false,
+        LastHLAdornee = nil,
+        LastHLEnabled = false,
+        LastHLColor = nil,
     }
     State.espObjects[player] = tagData
     return tagData
@@ -2900,35 +2652,39 @@ local function hidePlayerESP(player)
     if not data then
         return
     end
-    if data.Billboard then
+    if data.Billboard and data.Billboard.Enabled then
         data.Billboard.Enabled = false
         data.Billboard.Adornee = nil
     end
-    if data.ScreenTag then
+    if data.ScreenTag and data.ScreenTag.Visible then
         data.ScreenTag.Visible = false
     end
-    if data.Tracer then
+    if data.Tracer and data.Tracer.Visible then
         data.Tracer.Visible = false
     end
-    if data.Overlay3D then
+    if data.Overlay3D and data.Overlay3D.Visible then
         data.Overlay3D.Visible = false
     end
-    if data.Box3DLines then
+    if data.Box3DVisible and data.Box3DLines then
         for i = 1, #data.Box3DLines do
             data.Box3DLines[i].Visible = false
         end
+        data.Box3DVisible = false
     end
-    if data.SkeletonLines then
+    if data.SkeletonVisible and data.SkeletonLines then
         for i = 1, #data.SkeletonLines do
             data.SkeletonLines[i].Visible = false
         end
+        data.SkeletonVisible = false
     end
-    if data.HealthBarBg then
+    if data.HealthBarBg and data.HealthBarBg.Visible then
         data.HealthBarBg.Visible = false
     end
-    if data.Highlight then
+    if data.Highlight and data.LastHLEnabled then
         data.Highlight.Enabled = false
         data.Highlight.Adornee = nil
+        data.LastHLEnabled = false
+        data.LastHLAdornee = nil
     end
 end
 
@@ -3004,7 +2760,9 @@ local function updateESP(camera)
                     tagData.CachedChar = char
                     tagData.CachedHRP = char:FindFirstChild("HumanoidRootPart")
                     tagData.CachedHum = char:FindFirstChildOfClass("Humanoid")
+                    tagData.CachedHead = char:FindFirstChild("Head")
                     tagData.CachedJointPairs = cacheCharacterBones(char)
+                    tagData.LastHLAdornee = nil
                 end
 
                 local hrp = tagData.CachedHRP
@@ -3022,6 +2780,9 @@ local function updateESP(camera)
                         hl.Adornee = char
                         hl.Parent = UI.HighlightContainer
                         tagData.Highlight = hl
+                        tagData.LastHLAdornee = char
+                        tagData.LastHLEnabled = true
+                        tagData.LastHLColor = State.espColor
                         State.activeHighlightCount = State.activeHighlightCount + 1
                     end
 
@@ -3046,26 +2807,50 @@ local function updateESP(camera)
                         end
                     end
 
-                    tagData.Text.TextColor3 = displayCol
                     if tagData.ScreenTag then
-                        tagData.ScreenTag.TextColor3 = displayCol
-                        tagData.ScreenTag.Position = UDim2.fromOffset(screenPos.X, screenPos.Y - 38)
-                        tagData.ScreenTag.Visible = visibleOnScreen and ConfigState.ESP
+                        local showScreenTag = visibleOnScreen and ConfigState.ESP
+                        if showScreenTag then
+                            tagData.ScreenTag.TextColor3 = displayCol
+                            tagData.ScreenTag.Position = UDim2.fromOffset(screenPos.X, screenPos.Y - 38)
+                        end
+                        tagData.ScreenTag.Visible = showScreenTag
                     end
 
                     -- Stealth Protection: avoid setting BillboardGui.Adornee on enemy HRP when StealthBypass is enabled
                     if ConfigState.StealthBypass then
-                        tagData.Billboard.Adornee = nil
-                        tagData.Billboard.Enabled = false
+                        if tagData.Billboard.Enabled then
+                            tagData.Billboard.Adornee = nil
+                            tagData.Billboard.Enabled = false
+                        end
                     else
-                        tagData.Billboard.Adornee = hrp
-                        tagData.Billboard.Enabled = visibleOnScreen and ConfigState.ESP
+                        local showBB = visibleOnScreen and ConfigState.ESP
+                        if showBB then
+                            tagData.Text.TextColor3 = displayCol
+                            if tagData.Billboard.Adornee ~= hrp then
+                                tagData.Billboard.Adornee = hrp
+                            end
+                        end
+                        if tagData.Billboard.Enabled ~= showBB then
+                            tagData.Billboard.Enabled = showBB
+                        end
                     end
 
+                    -- Only update Highlight properties when changed (prevents Roblox Highlight mesh rebuild lag!)
                     if tagData.Highlight then
-                        tagData.Highlight.Adornee = ConfigState.ESP and char or nil
-                        tagData.Highlight.FillColor = displayCol
-                        tagData.Highlight.Enabled = ConfigState.ESP
+                        local wantHL = ConfigState.ESP
+                        local wantAdornee = wantHL and char or nil
+                        if tagData.LastHLAdornee ~= wantAdornee then
+                            tagData.Highlight.Adornee = wantAdornee
+                            tagData.LastHLAdornee = wantAdornee
+                        end
+                        if wantHL and tagData.LastHLColor ~= displayCol then
+                            tagData.Highlight.FillColor = displayCol
+                            tagData.LastHLColor = displayCol
+                        end
+                        if tagData.LastHLEnabled ~= wantHL then
+                            tagData.Highlight.Enabled = wantHL
+                            tagData.LastHLEnabled = wantHL
+                        end
                     end
 
                     -- 3D Bounding Box + Skeleton Rig + Health Bar Overlay (Synchronized to Camera Frame with Pooled Corners)
@@ -3089,21 +2874,25 @@ local function updateESP(camera)
                             end
 
                             if ConfigState.Box3DESP then
+                                tagData.Box3DVisible = true
                                 for eIdx, edge in ipairs(BOX_3D_EDGES) do
                                     drawLineFrame(tagData.Box3DLines[eIdx], projectedCorners[edge[1]], projectedCorners[edge[2]], displayCol, 1.1)
                                 end
-                            else
+                            elseif tagData.Box3DVisible then
                                 for i = 1, #tagData.Box3DLines do
                                     tagData.Box3DLines[i].Visible = false
                                 end
+                                tagData.Box3DVisible = false
                             end
-                        else
+                        elseif tagData.Box3DVisible then
                             for i = 1, #tagData.Box3DLines do
                                 tagData.Box3DLines[i].Visible = false
                             end
+                            tagData.Box3DVisible = false
                         end
 
                         if ConfigState.SkeletonESP then
+                            tagData.SkeletonVisible = true
                             local cachedJoints = tagData.CachedJointPairs
                             for bIdx = 1, #SKELETON_JOINTS do
                                 local pair = cachedJoints and cachedJoints[bIdx]
@@ -3115,10 +2904,11 @@ local function updateESP(camera)
                                     tagData.SkeletonLines[bIdx].Visible = false
                                 end
                             end
-                        else
+                        elseif tagData.SkeletonVisible then
                             for i = 1, #tagData.SkeletonLines do
                                 tagData.SkeletonLines[i].Visible = false
                             end
+                            tagData.SkeletonVisible = false
                         end
 
                         if ConfigState.HealthBarESP then
@@ -3134,10 +2924,10 @@ local function updateESP(camera)
                                 math.floor(255 * hpRatio),
                                 90
                             )
-                        else
+                        elseif tagData.HealthBarBg.Visible then
                             tagData.HealthBarBg.Visible = false
                         end
-                    else
+                    elseif tagData.Overlay3D.Visible then
                         tagData.Overlay3D.Visible = false
                     end
 
@@ -3151,7 +2941,7 @@ local function updateESP(camera)
                             fromPos = Vector2.new(vp.X / 2, 0)
                         end
                         drawLineFrame(tagData.Tracer, fromPos, Vector2.new(screenPos.X, screenPos.Y), displayCol, 1.1)
-                    else
+                    elseif tagData.Tracer.Visible then
                         tagData.Tracer.Visible = false
                     end
                 end
@@ -3161,12 +2951,6 @@ local function updateESP(camera)
 end
 
 local function hsvToColor3(h, s, v)
-    if Color3.fromHSV then
-        local ok, col = pcall(Color3.fromHSV, h, s, v)
-        if ok and col then
-            return col
-        end
-    end
     local i = math.floor(h * 6)
     local f = h * 6 - i
     local p = v * (1 - s)
@@ -3193,15 +2977,20 @@ local function updateCrosshair(animClock)
     end
 
     local clock = animClock or 0
-    local col = ConfigState.CrosshairRainbow and hsvToColor3((clock * 0.35) % 1, 0.85, 1) or State.crosshairColor
-    -- Smooth pulse between 0.84x and 1.16x (never too small and never too big!)
-    local pulseFactor = ConfigState.CrosshairPulse
-        and (1 + 0.16 * math.sin(clock * (ConfigState.CrosshairPulseSpeed or 4)))
-        or 1.0
+    local col = ConfigState.CrosshairRainbow and hsvToColor3((clock * 0.45) % 1, 0.92, 1) or State.crosshairColor
 
-    local lineLen = math.max(2, math.floor((ConfigState.CrosshairSize or 10) * pulseFactor + 0.5))
+    -- Smooth, unmistakable pulse (oscillates arm length & center gap smoothly without getting too small or too huge)
+    local baseLen = ConfigState.CrosshairSize or 10
+    local baseGap = ConfigState.CrosshairGap or 4
+    local lineLen = baseLen
+    local gap = baseGap
+    if ConfigState.CrosshairPulse then
+        local wave = math.sin(clock * (ConfigState.CrosshairPulseSpeed or 4) * 1.6)
+        lineLen = math.clamp(math.floor(baseLen + ( math.max(baseLen * 0.30, 3) * wave ) + 0.5), 4, 48)
+        gap = math.clamp(math.floor(baseGap + ( math.max(baseGap * 0.45, 3.5) * wave ) + 0.5), 2, 28)
+    end
+
     local lineWid = math.max(1, math.floor(ConfigState.CrosshairWidth or 2))
-    local gap = math.max(2, math.floor((ConfigState.CrosshairGap or 4) * pulseFactor + 0.5))
     local dotSz = math.max(1, math.floor(ConfigState.CrosshairDotSize or 3))
     local preset = ConfigState.CrosshairPreset or "Plus (+)"
 
@@ -3219,30 +3008,39 @@ local function updateCrosshair(animClock)
 
     local showArms = (preset ~= "Dot Only")
     local showTopArm = showArms and (preset ~= "T-Shape")
+    local centerDist = gap + (lineLen * 0.5)
+    local rad = math.rad(rot)
+    local sinR = math.sin(rad)
+    local cosR = math.cos(rad)
 
+    -- Position & rotate each arm directly so Spin, Pulse, and Rainbow render 100% reliably across all executors
     if UI.CrosshairArmTop then
         UI.CrosshairArmTop.Visible = showTopArm
         UI.CrosshairArmTop.BackgroundColor3 = col
-        UI.CrosshairArmTop.Position = UDim2.new(0.5, 0, 0.5, -gap)
+        UI.CrosshairArmTop.Position = UDim2.new(0.5, math.floor(sinR * centerDist + 0.5), 0.5, math.floor(-cosR * centerDist + 0.5))
         UI.CrosshairArmTop.Size = UDim2.fromOffset(lineWid, lineLen)
+        UI.CrosshairArmTop.Rotation = rot
     end
     if UI.CrosshairArmBottom then
         UI.CrosshairArmBottom.Visible = showArms
         UI.CrosshairArmBottom.BackgroundColor3 = col
-        UI.CrosshairArmBottom.Position = UDim2.new(0.5, 0, 0.5, gap)
+        UI.CrosshairArmBottom.Position = UDim2.new(0.5, math.floor(-sinR * centerDist + 0.5), 0.5, math.floor(cosR * centerDist + 0.5))
         UI.CrosshairArmBottom.Size = UDim2.fromOffset(lineWid, lineLen)
+        UI.CrosshairArmBottom.Rotation = rot
     end
     if UI.CrosshairArmLeft then
         UI.CrosshairArmLeft.Visible = showArms
         UI.CrosshairArmLeft.BackgroundColor3 = col
-        UI.CrosshairArmLeft.Position = UDim2.new(0.5, -gap, 0.5, 0)
+        UI.CrosshairArmLeft.Position = UDim2.new(0.5, math.floor(-cosR * centerDist + 0.5), 0.5, math.floor(-sinR * centerDist + 0.5))
         UI.CrosshairArmLeft.Size = UDim2.fromOffset(lineLen, lineWid)
+        UI.CrosshairArmLeft.Rotation = rot
     end
     if UI.CrosshairArmRight then
         UI.CrosshairArmRight.Visible = showArms
         UI.CrosshairArmRight.BackgroundColor3 = col
-        UI.CrosshairArmRight.Position = UDim2.new(0.5, gap, 0.5, 0)
+        UI.CrosshairArmRight.Position = UDim2.new(0.5, math.floor(cosR * centerDist + 0.5), 0.5, math.floor(sinR * centerDist + 0.5))
         UI.CrosshairArmRight.Size = UDim2.fromOffset(lineLen, lineWid)
+        UI.CrosshairArmRight.Rotation = rot
     end
 
     if UI.CrosshairDotFrame then
@@ -3255,8 +3053,9 @@ local function updateCrosshair(animClock)
         local showRing = (preset == "Circle + Cross" or preset == "Box Reticle")
         UI.CrosshairRingFrame.Visible = showRing
         if showRing then
-            local ringDia = math.max(12, (gap + lineLen) * 1.55)
+            local ringDia = math.max(12, math.floor((gap + lineLen) * 1.55))
             UI.CrosshairRingFrame.Size = UDim2.fromOffset(ringDia, ringDia)
+            UI.CrosshairRingFrame.Rotation = rot
             if UI.CrosshairRingCorner then
                 UI.CrosshairRingCorner.CornerRadius = UDim.new(0, preset == "Box Reticle" and 3 or 999)
             end
@@ -3279,146 +3078,35 @@ local function updateCrosshair(animClock)
     UI.CrosshairH.Visible = false
 end
 
--- Live ESP Preview Updater (Full-Size 1:1 Perspective Projection on Your Cloned Character inside 216x278 Stage)
-local function updateEspPreviewWindow()
-    if not UI.EspPreviewWindow then
-        return
-    end
-    local col = State.espColor or Theme.White
-
-    -- 1. Chams & Name Tag Preview
-    if UI.PreviewChams then
-        UI.PreviewChams.Visible = ConfigState.ESP
-        UI.PreviewChams.BackgroundColor3 = col
-    end
-    if UI.PreviewNameTag then
-        UI.PreviewNameTag.Visible = ConfigState.ESP
-        UI.PreviewNameTag.TextColor3 = col
-        UI.PreviewNameTag.Text = string.format("%s [10m] | HP: 100", tostring(LocalPlayer.Name))
-    end
-
-    -- Stage is 216x278 (cx = 108, cy = 144). vpCam is at FOV = 38, camDist = 6.8 => focal = 215 (~31.6 px/stud)
-    local cx, cy = 108, 144
-    local yawRad = math.rad(State.previewAvatarYaw or 180)
-    local cosY = math.cos(yawRad)
-    local sinY = math.sin(yawRad)
-
-    local function projectPreviewPoint(x3d, y3d, z3d)
-        local rx = x3d * cosY - z3d * sinY
-        local rz = x3d * sinY + z3d * cosY
-        local depthScale = 215 / math.max(6.8 + rz * 0.35, 2.5)
-        return Vector2.new(cx + rx * depthScale, cy - (y3d - 0.15) * depthScale)
-    end
-
-    local minX, maxX = 48, 168
-    local minY, maxY = 48, 240
-
-    -- 2. 3D Bounding Box Preview (12 Edges, Full Character Size)
-    if UI.PreviewBox3DFolder then
-        UI.PreviewBox3DFolder.Visible = ConfigState.Box3DESP
-        if ConfigState.Box3DESP then
-            minX, maxX = 9999, -9999
-            minY, maxY = 9999, -9999
-            local pCorners = {}
-            for idx, c in ipairs(BOX_3D_CORNERS) do
-                local pt = projectPreviewPoint(c.X * 0.92, c.Y * 0.94, c.Z * 0.92)
-                pCorners[idx] = pt
-                if pt.X < minX then minX = pt.X end
-                if pt.X > maxX then maxX = pt.X end
-                if pt.Y < minY then minY = pt.Y end
-                if pt.Y > maxY then maxY = pt.Y end
-            end
-            for eIdx, edge in ipairs(BOX_3D_EDGES) do
-                drawLineFrame(UI.PreviewBoxEdges[eIdx], pCorners[edge[1]], pCorners[edge[2]], col, 1.3)
-            end
-        end
-    end
-
-    -- 3. 3D Skeleton Rig Preview (10 Bones aligned 1:1 with the full-height cloned avatar)
-    if UI.PreviewSkeletonFolder then
-        UI.PreviewSkeletonFolder.Visible = ConfigState.SkeletonESP
-        if ConfigState.SkeletonESP then
-            local previewJoints3D = {
-                { Vector3.new(0, 2.15, 0), Vector3.new(0, 1.15, 0) },         -- Head to UpperTorso
-                { Vector3.new(0, 1.15, 0), Vector3.new(0, -0.15, 0) },        -- UpperTorso to LowerTorso
-                { Vector3.new(0, 1.10, 0), Vector3.new(-1.15, 0.85, 0) },     -- Left Shoulder
-                { Vector3.new(-1.15, 0.85, 0), Vector3.new(-1.35, -0.55, 0) },-- Left Arm
-                { Vector3.new(0, 1.10, 0), Vector3.new(1.15, 0.85, 0) },      -- Right Shoulder
-                { Vector3.new(1.15, 0.85, 0), Vector3.new(1.35, -0.55, 0) },  -- Right Arm
-                { Vector3.new(0, -0.15, 0), Vector3.new(-0.58, -1.35, 0) },   -- Left Hip
-                { Vector3.new(-0.58, -1.35, 0), Vector3.new(-0.62, -2.65, 0) },-- Left Leg
-                { Vector3.new(0, -0.15, 0), Vector3.new(0.58, -1.35, 0) },    -- Right Hip
-                { Vector3.new(0.58, -1.35, 0), Vector3.new(0.62, -2.65, 0) }, -- Right Leg
-            }
-            for bIdx, jPair in ipairs(previewJoints3D) do
-                local ptA = projectPreviewPoint(jPair[1].X, jPair[1].Y, jPair[1].Z)
-                local ptB = projectPreviewPoint(jPair[2].X, jPair[2].Y, jPair[2].Z)
-                drawLineFrame(UI.PreviewSkelBones[bIdx], ptA, ptB, Theme.White, 1.5)
-            end
-        end
-    end
-
-    -- 4. Animated Health Bar Preview (Aligned dynamically next to left edge of 3D Box)
-    if UI.PreviewHealthBarBg then
-        UI.PreviewHealthBarBg.Visible = ConfigState.HealthBarESP
-        if ConfigState.HealthBarESP then
-            local hbLeft = math.clamp(math.floor(minX) - 8, 10, 52)
-            local hbTop = math.clamp(math.floor(minY), 38, 65)
-            local hbHeight = math.clamp(math.floor(maxY - minY), 160, 205)
-            UI.PreviewHealthBarBg.Position = UDim2.fromOffset(hbLeft, hbTop)
-            UI.PreviewHealthBarBg.Size = UDim2.fromOffset(4, hbHeight)
-        end
-    end
-
-    -- 5. Snapline Tracer Preview
-    if UI.PreviewTracer then
-        UI.PreviewTracer.Visible = ConfigState.Tracers
-        if ConfigState.Tracers then
-            local originPt = Vector2.new(cx, cy)
-            if ConfigState.TracerOrigin == "Bottom" then
-                originPt = Vector2.new(cx, 272)
-            elseif ConfigState.TracerOrigin == "Top" then
-                originPt = Vector2.new(cx, 6)
-            else
-                originPt = Vector2.new(cx, 215)
-            end
-            drawLineFrame(UI.PreviewTracer, originPt, Vector2.new(cx, cy), col, 1.4)
-        end
-    end
-
-    -- 6. Footer Summary
-    if UI.PreviewFooter then
-        local activeList = {}
-        if ConfigState.ESP then table.insert(activeList, "ESP") end
-        if ConfigState.Box3DESP then table.insert(activeList, "3D BOX") end
-        if ConfigState.SkeletonESP then table.insert(activeList, "SKELETON") end
-        if ConfigState.HealthBarESP then table.insert(activeList, "HP BAR") end
-        if ConfigState.Tracers then table.insert(activeList, "TRACER") end
-        UI.PreviewFooter.Text = #activeList > 0 and ("ACTIVE: " .. table.concat(activeList, " · ")) or "ACTIVE: NONE (TOGGLE ESP)"
-    end
-end
-
-State.updateEspPreview = updateEspPreviewWindow
-
 local function getClosestTarget(camera)
     local closestNormal, shortestNormal = nil, ConfigState.FOVRadius
     local closestPriority, shortestPriority = nil, ConfigState.FOVRadius
     local center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+    local useWallCheck = ConfigState.AimbotWallCheck
 
-    rayParams.FilterDescendantsInstances = LocalPlayer.Character and { LocalPlayer.Character } or {}
+    if useWallCheck then
+        rayParams.FilterDescendantsInstances = LocalPlayer.Character and { LocalPlayer.Character } or {}
+    end
 
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character and passesTeamCheck(player) then
-            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+            local tagData = State.espObjects[player]
+            local humanoid = (tagData and tagData.CachedChar == player.Character and tagData.CachedHum)
+                or player.Character:FindFirstChildOfClass("Humanoid")
             local checkPart = getTargetPartFromCharacter(player.Character, ConfigState.TargetPart)
             if humanoid and humanoid.Health > 0 and checkPart then
                 local screenPos, onScreen = camera:WorldToViewportPoint(checkPart.Position)
-                if onScreen then
+                local isFront = (not screenPos.Z) or (screenPos.Z > 0)
+                if onScreen and isFront then
                     local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
                     if dist <= ConfigState.FOVRadius then
-                        local dir = checkPart.Position - camera.CFrame.Position
-                        local ray = workspace:Raycast(camera.CFrame.Position, dir.Unit * 999, rayParams)
-                        if ray and ray.Instance and ray.Instance:IsDescendantOf(player.Character) then
+                        local visiblePass = true
+                        if useWallCheck then
+                            local dir = checkPart.Position - camera.CFrame.Position
+                            local ray = workspace:Raycast(camera.CFrame.Position, dir.Unit * 999, rayParams)
+                            visiblePass = (ray and ray.Instance and ray.Instance:IsDescendantOf(player.Character)) and true or false
+                        end
+                        if visiblePass then
                             if State.prioritizedPlayers[player.Name] then
                                 if dist <= shortestPriority then
                                     shortestPriority = dist
@@ -3692,25 +3380,100 @@ local function applyKorblox(state)
     local r6Leg = char:FindFirstChild("Right Leg")
 
     if state then
+        -- Remove any previous Korblox attachments first
+        local oldPeg = char:FindFirstChild("KorbloxPeg")
+        if oldPeg then pcall(function() oldPeg:Destroy() end) end
+        local oldCharMesh = char:FindFirstChild("KorbloxCharacterMesh")
+        if oldCharMesh then pcall(function() oldCharMesh:Destroy() end) end
+
         if rLower then
-            State.korbloxCache[rLower] = rLower.Transparency
+            if State.korbloxCache[rLower] == nil then
+                State.korbloxCache[rLower] = rLower.Transparency
+            end
             rLower.Transparency = 1
         end
         if rFoot then
-            State.korbloxCache[rFoot] = rFoot.Transparency
+            if State.korbloxCache[rFoot] == nil then
+                State.korbloxCache[rFoot] = rFoot.Transparency
+            end
             rFoot.Transparency = 1
         end
         if rUpper then
+            if State.korbloxCache[rUpper] == nil then
+                State.korbloxCache[rUpper] = rUpper.Transparency
+            end
+            local appliedDirectMesh = false
             pcall(function()
                 rUpper.MeshId = "http://www.roblox.com/asset/?id=902942096"
                 rUpper.TextureID = "http://www.roblox.com/asset/?id=902843398"
+                if string.find(tostring(rUpper.MeshId), "902942096") then
+                    appliedDirectMesh = true
+                end
             end)
+            if not appliedDirectMesh then
+                rUpper.Transparency = 1
+                pcall(function()
+                    local peg = Instance.new("Part")
+                    peg.Name = "KorbloxPeg"
+                    peg.Size = Vector3.new(0.85, 1.65, 0.85)
+                    peg.Color = Color3.fromRGB(26, 30, 44)
+                    peg.Material = Enum.Material.SmoothPlastic
+                    peg.CanCollide = false
+                    peg.Anchored = false
+                    peg.CFrame = rUpper.CFrame * CFrame.new(0, -0.15, 0)
+                    peg.Parent = char
+
+                    local sm = Instance.new("SpecialMesh")
+                    sm.Name = "KorbloxSpecialMesh"
+                    sm.MeshId = "rbxassetid://101851696"
+                    sm.TextureId = "rbxassetid://101851254"
+                    sm.Scale = Vector3.new(0.95, 0.95, 0.95)
+                    sm.Parent = peg
+
+                    local weld = Instance.new("Weld")
+                    weld.Name = "KorbloxWeld"
+                    weld.Part0 = rUpper
+                    weld.Part1 = peg
+                    weld.C0 = CFrame.new(0, -0.15, 0)
+                    weld.Parent = peg
+                end)
+            else
+                rUpper.Transparency = 0
+            end
         end
         if r6Leg then
-            State.korbloxCache[r6Leg] = r6Leg.Transparency
-            r6Leg.Transparency = 0.45
+            if State.korbloxCache[r6Leg] == nil then
+                State.korbloxCache[r6Leg] = r6Leg.Transparency
+            end
+            -- Keep R6 leg opaque (0) and apply Korblox SpecialMesh + CharacterMesh instead of making it half-transparent!
+            r6Leg.Transparency = 0
+            pcall(function()
+                local oldMesh = r6Leg:FindFirstChild("KorbloxR6Mesh")
+                if oldMesh then oldMesh:Destroy() end
+                local sm = Instance.new("SpecialMesh")
+                sm.Name = "KorbloxR6Mesh"
+                sm.MeshId = "rbxassetid://101851696"
+                sm.TextureId = "rbxassetid://101851254"
+                sm.Scale = Vector3.new(1, 1, 1)
+                sm.Offset = Vector3.new(0, 0.25, 0)
+                sm.Parent = r6Leg
+
+                local cm = Instance.new("CharacterMesh")
+                cm.Name = "KorbloxCharacterMesh"
+                cm.MeshId = 101851696
+                cm.OverlayTextureId = 101851254
+                cm.Parent = char
+            end)
         end
     else
+        local oldPeg = char:FindFirstChild("KorbloxPeg")
+        if oldPeg then pcall(function() oldPeg:Destroy() end) end
+        local oldCharMesh = char:FindFirstChild("KorbloxCharacterMesh")
+        if oldCharMesh then pcall(function() oldCharMesh:Destroy() end) end
+        if r6Leg then
+            local oldR6Mesh = r6Leg:FindFirstChild("KorbloxR6Mesh")
+            if oldR6Mesh then pcall(function() oldR6Mesh:Destroy() end) end
+        end
         for part, origT in pairs(State.korbloxCache) do
             if part and part.Parent then
                 pcall(function() part.Transparency = origT end)
@@ -3922,7 +3685,7 @@ do
     local HomeAvatarStroke = addStroke(HomeAvatarBox, Theme.Accent, 1.2, 0.25)
     registerAccentObject(HomeAvatarStroke, "Color")
 
-    UI.HomeAvatarCtrl = buildInteractiveAvatarViewport(HomeAvatarBox, true)
+    UI.HomeAvatarCtrl = buildInteractiveAvatarViewport(HomeAvatarBox)
 
     local DragHintLbl = Instance.new("TextLabel")
     DragHintLbl.AnchorPoint = Vector2.new(0.5, 1)
@@ -4047,14 +3810,20 @@ do
     end)
 end
 
--- TAB 2: COMBAT (CAMERA AIMBOT + SINGLE-RING ANIMATED FOV + HITBOX EXPANDER + MULTI-TEAM + WHITELIST)
+-- TAB 2: COMBAT (CAMERA + CHARACTER LOCK-IN AIMBOT + SINGLE-RING ANIMATED FOV + HITBOX EXPANDER + MULTI-TEAM + WHITELIST)
 do
-    createLabel(CombatTab, "Camera Aimbot & Single-Ring Animated FOV")
+    createLabel(CombatTab, "Camera & Character Lock-In Aimbot")
     createToggle(CombatTab, "Aimbot", false, function(val)
         ConfigState.Aimbot = val
         if not val then
             State.cachedAimTarget = nil
         end
+    end)
+    createToggle(CombatTab, "Aimbot Lock Character (Face Target)", true, function(val)
+        ConfigState.AimbotLockCharacter = val
+    end)
+    createToggle(CombatTab, "Aimbot WallCheck (Raycast)", false, function(val)
+        ConfigState.AimbotWallCheck = val
     end)
     createToggle(CombatTab, "FOV Circle", false, function(val)
         ConfigState.ShowFOV = val
@@ -4064,7 +3833,7 @@ do
         ConfigState.FOVRadius = val
         UI.FovCircle.Size = UDim2.fromOffset(val * 2, val * 2)
     end)
-    createSlider(CombatTab, "Aimbot Smoothness", 0.05, 1, 0.4, 0.01, "", function(val)
+    createSlider(CombatTab, "Aimbot Smoothness", 0.05, 1, 0.9, 0.01, "", function(val)
         ConfigState.Smoothness = val
     end)
     createDropdown(CombatTab, "Aimbot Target Bone", {
@@ -4152,17 +3921,21 @@ do
     end)
 end
 
--- TAB 3: VISUALS (LIVE ESP PREVIEW + SCREEN RESOLUTION STRETCH + 3D BOX + SKELETON + X-RAY + FREECAM)
+-- TAB 3: VISUALS (3D BOX + SKELETON + SCREEN RESOLUTION STRETCH + PRO CROSSHAIR + X-RAY + FREECAM)
 do
-    createLabel(VisualsTab, "3D ESP & Skeleton Overlays (See Right-Side Live Preview)")
+    createLabel(VisualsTab, "3D ESP & Skeleton Overlays")
     createToggle(VisualsTab, "Player ESP (Highlight + Tag)", false, function(val)
         ConfigState.ESP = val
-        updateEspPreviewWindow()
         if not val then
             for _, data in pairs(State.espObjects) do
                 if data.ScreenTag then data.ScreenTag.Visible = false end
                 if data.Billboard then data.Billboard.Enabled = false; data.Billboard.Adornee = nil end
-                if data.Highlight then data.Highlight.Enabled = false; data.Highlight.Adornee = nil end
+                if data.Highlight then
+                    data.Highlight.Enabled = false
+                    data.Highlight.Adornee = nil
+                    data.LastHLEnabled = false
+                    data.LastHLAdornee = nil
+                end
             end
             if not ConfigState.Box3DESP and not ConfigState.SkeletonESP and not ConfigState.HealthBarESP and not ConfigState.Tracers then
                 clearESP()
@@ -4171,11 +3944,11 @@ do
     end)
     createToggle(VisualsTab, "3D Bounding Box Overlay", false, function(val)
         ConfigState.Box3DESP = val
-        updateEspPreviewWindow()
         if not val then
             for _, data in pairs(State.espObjects) do
                 if data.Box3DLines then
                     for i = 1, #data.Box3DLines do data.Box3DLines[i].Visible = false end
+                    data.Box3DVisible = false
                 end
             end
             if not ConfigState.ESP and not ConfigState.SkeletonESP and not ConfigState.HealthBarESP and not ConfigState.Tracers then
@@ -4185,11 +3958,11 @@ do
     end)
     createToggle(VisualsTab, "3D Skeleton Rig Overlay", false, function(val)
         ConfigState.SkeletonESP = val
-        updateEspPreviewWindow()
         if not val then
             for _, data in pairs(State.espObjects) do
                 if data.SkeletonLines then
                     for i = 1, #data.SkeletonLines do data.SkeletonLines[i].Visible = false end
+                    data.SkeletonVisible = false
                 end
             end
             if not ConfigState.ESP and not ConfigState.Box3DESP and not ConfigState.HealthBarESP and not ConfigState.Tracers then
@@ -4199,7 +3972,6 @@ do
     end)
     createToggle(VisualsTab, "Animated Health Bar Overlay", false, function(val)
         ConfigState.HealthBarESP = val
-        updateEspPreviewWindow()
         if not val then
             for _, data in pairs(State.espObjects) do
                 if data.HealthBarBg then data.HealthBarBg.Visible = false end
@@ -4211,7 +3983,6 @@ do
     end)
     createToggle(VisualsTab, "Snapline Tracers", false, function(val)
         ConfigState.Tracers = val
-        updateEspPreviewWindow()
         if not val then
             for _, data in pairs(State.espObjects) do
                 if data.Tracer then
@@ -4225,7 +3996,6 @@ do
     end)
     createDropdown(VisualsTab, "Tracer Origin", { "Center", "Bottom", "Top" }, "Center", function(opt)
         ConfigState.TracerOrigin = opt
-        updateEspPreviewWindow()
     end)
 
     local ColorMap = {
@@ -4238,7 +4008,6 @@ do
     createDropdown(VisualsTab, "ESP Color", { "White", "Silver", "Red", "Cyan", "Green" }, "White", function(opt)
         ConfigState.ESPColorName = opt
         State.espColor = ColorMap[opt] or Theme.White
-        updateEspPreviewWindow()
     end)
 
     createLabel(VisualsTab, "Screen Resolution & Custom Stretch")
@@ -4509,10 +4278,37 @@ do
 
     local playerCardsUI = {}
 
+    local function formatPlayerHeaderLine(p, myHRP)
+        local isWhite = State.whitelistedPlayers[p.Name] == true
+        local isPrio = State.prioritizedPlayers[p.Name] == true
+        local isSpec = (State.spectatingPlayerName == p.Name)
+        local isOrbit = (State.orbitingPlayerName == p.Name)
+        local distStr = ""
+        local tHRP = p.Character and p.Character:FindFirstChild("HumanoidRootPart")
+        if myHRP and tHRP then
+            distStr = string.format(" [%dm]", math.floor((tHRP.Position - myHRP.Position).Magnitude))
+        end
+        local badges = ""
+        if isWhite then badges = badges .. " [WHITELIST]" end
+        if isPrio then badges = badges .. " [PRIORITY]" end
+        if isSpec then badges = badges .. " [SPECTATING]" end
+        if isOrbit then badges = badges .. " [ORBITING]" end
+        return string.format("%s (@%s)%s%s", tostring(p.DisplayName or p.Name), p.Name, distStr, badges)
+    end
+
+    local function updatePlayerDistancesInPlace()
+        local myHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        for _, entry in ipairs(playerCardsUI) do
+            if entry.Player and entry.NameLabel and entry.NameLabel.Parent then
+                entry.NameLabel.Text = formatPlayerHeaderLine(entry.Player, myHRP)
+            end
+        end
+    end
+
     local function refreshPlayerListUI()
-        for _, card in ipairs(playerCardsUI) do
-            if card and card.Parent then
-                card:Destroy()
+        for _, entry in ipairs(playerCardsUI) do
+            if entry.Card and entry.Card.Parent then
+                entry.Card:Destroy()
             end
         end
         table.clear(playerCardsUI)
@@ -4560,24 +4356,12 @@ do
                 addCorner(avatarImg, 99)
                 addStroke(avatarImg, isPrio and Theme.Success or Theme.Border, 1, 0)
 
-                local distStr = ""
-                local tHRP = p.Character and p.Character:FindFirstChild("HumanoidRootPart")
-                if myHRP and tHRP then
-                    distStr = string.format(" [%dm]", math.floor((tHRP.Position - myHRP.Position).Magnitude))
-                end
-
-                local badges = ""
-                if isWhite then badges = badges .. " [WHITELIST]" end
-                if isPrio then badges = badges .. " [PRIORITY]" end
-                if isSpec then badges = badges .. " [SPECTATING]" end
-                if isOrbit then badges = badges .. " [ORBITING]" end
-
                 local nameLbl = Instance.new("TextLabel")
                 nameLbl.Position = UDim2.fromOffset(46, 0)
                 nameLbl.Size = UDim2.new(1, -72, 1, 0)
                 nameLbl.BackgroundTransparency = 1
                 nameLbl.Font = Enum.Font.Code
-                nameLbl.Text = string.format("%s (@%s)%s%s", tostring(p.DisplayName or p.Name), p.Name, distStr, badges)
+                nameLbl.Text = formatPlayerHeaderLine(p, myHRP)
                 nameLbl.TextColor3 = isExpanded and Theme.White or Theme.Silver
                 nameLbl.TextSize = 11
                 nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
@@ -4710,12 +4494,13 @@ do
                     flingTargetPlayer(p)
                 end, true)
 
-                table.insert(playerCardsUI, card)
+                table.insert(playerCardsUI, { Card = card, Player = p, NameLabel = nameLbl })
             end
         end
     end
 
     State.refreshPlayerListUI = refreshPlayerListUI
+    State.updatePlayerDistances = updatePlayerDistancesInPlace
     refreshPlayerListUI()
 
     createLabel(PlayersTab, "Orbit Player Settings")
@@ -5117,9 +4902,6 @@ do
     createSlider(SettingsTab, "UI Scale Override", 0.70, 1.15, 1.00, 0.01, "x", function(val)
         State.customUIScaleOverride = val
         UI.MainScale.Scale = val
-        if UI.EspPreviewScale then
-            UI.EspPreviewScale.Scale = val
-        end
     end)
 
     createToggle(SettingsTab, "Live Particle Starfield", true, function(val)
@@ -5188,9 +4970,9 @@ do
         UI.MainWindow.BackgroundTransparency = ConfigState.WindowTransparency or 0.03
         updateMovement()
         updateLightingEnvironment()
-        updateCrosshair()
+        updateCrosshair(0)
+        State.lastPillText = ""
         updateFloatingPillTelemetry()
-        updateEspPreviewWindow()
         notify("Config System", "Loaded configuration '" .. cleanName .. "'!", 4)
         return true
     end
@@ -5237,6 +5019,7 @@ local function launchMainHub()
     end
 
     local targetScale = getResponsiveScale()
+    State.lastPillText = ""
     updateFloatingPillTelemetry()
     if UI.FloatingToggle then
         UI.FloatingToggle.Visible = true
@@ -5248,10 +5031,6 @@ local function launchMainHub()
         tween(UI.MainStroke, SmoothTween, { Transparency = 0.08 })
         tween(UI.MainScale, SpringTween, { Scale = targetScale })
     end
-    if UI.EspPreviewScale then
-        UI.EspPreviewScale.Scale = targetScale
-    end
-    syncEspPreviewVisibility()
 
     local autoCfg = safeReadFile(AUTO_LOAD_FILE)
     if autoCfg and autoCfg ~= "" and State.loadConfigByName then
@@ -5313,13 +5092,30 @@ UI.KeyInputBox.FocusLost:Connect(function(enterPressed)
 end)
 
 --------------------------------------------------------------------------------
--- 14. RUNTIME LOOPS (60FPS LIVE UI + SPIDER CLIMB + ORBIT + RESOLUTION STRETCH)
+-- 14. RUNTIME LOOPS (ULTRA-FPS OPTIMIZED + CAMERA & CHARACTER AIMBOT LOCK-IN)
 --------------------------------------------------------------------------------
+local function refreshLocalCharacterCache(char)
+    State.cachedLocalChar = char
+    State.cachedLocalHRP = char and char:FindFirstChild("HumanoidRootPart") or nil
+    State.cachedLocalHum = char and char:FindFirstChildOfClass("Humanoid") or nil
+    table.clear(State.cachedLocalParts)
+    if char then
+        for _, desc in ipairs(char:GetDescendants()) do
+            if desc:IsA("BasePart") then
+                table.insert(State.cachedLocalParts, desc)
+            end
+        end
+    end
+end
+
+refreshLocalCharacterCache(LocalPlayer.Character)
+
 LocalPlayer.CharacterAdded:Connect(function(character)
     table.clear(State.noclipCollideCache)
     table.clear(State.headlessCache)
     table.clear(State.korbloxCache)
     local humanoid = character:WaitForChild("Humanoid", 5)
+    refreshLocalCharacterCache(character)
     if humanoid then
         State.defaultWalkSpeed = humanoid.WalkSpeed
         State.defaultJumpPower = humanoid.JumpPower
@@ -5337,14 +5133,11 @@ LocalPlayer.CharacterAdded:Connect(function(character)
     if UI.HomeAvatarCtrl and UI.HomeAvatarCtrl.RefreshClone then
         task.delay(0.5, function() UI.HomeAvatarCtrl.RefreshClone() end)
     end
-    if UI.PreviewAvatarCtrl and UI.PreviewAvatarCtrl.RefreshClone then
-        task.delay(0.5, function() UI.PreviewAvatarCtrl.RefreshClone() end)
-    end
 end)
 
 UserInputService.JumpRequest:Connect(function()
     if State.isAuthorized and ConfigState.InfJump and LocalPlayer.Character then
-        local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        local hum = State.cachedLocalHum or LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
         if hum then
             hum:ChangeState(Enum.HumanoidStateType.Jumping)
         end
@@ -5361,6 +5154,7 @@ end)
 
 do
     local interactCooldown = 0
+    local antiFlingCooldown = 0
     RunService.Stepped:Connect(function(_, stepDt)
         if not State.isAuthorized then
             return
@@ -5369,9 +5163,12 @@ do
         if not char then
             return
         end
+        if State.cachedLocalChar ~= char then
+            refreshLocalCharacterCache(char)
+        end
 
-        local myHRP = char:FindFirstChild("HumanoidRootPart")
-        local myHum = char:FindFirstChildOfClass("Humanoid")
+        local myHRP = State.cachedLocalHRP
+        local myHum = State.cachedLocalHum
         local dt = (stepDt and stepDt > 0) and stepDt or 0.016
 
         -- Save last safe CFrame for Anti-Void
@@ -5438,10 +5235,11 @@ do
             end)
         end
 
-        -- Character NoClip
+        -- Character NoClip (Uses cached local parts array -> Zero GetDescendants per frame!)
         if ConfigState.NoClip then
-            for _, part in ipairs(char:GetDescendants()) do
-                if part:IsA("BasePart") then
+            for i = 1, #State.cachedLocalParts do
+                local part = State.cachedLocalParts[i]
+                if part and part.Parent then
                     if State.noclipCollideCache[part] == nil then
                         State.noclipCollideCache[part] = part.CanCollide
                     end
@@ -5450,31 +5248,30 @@ do
             end
         end
 
-        -- Anti-Fling (Disable collision on all other players' characters)
+        -- Anti-Fling (Disable collision on other players' characters)
         if ConfigState.AntiFling then
-            for _, p in ipairs(Players:GetPlayers()) do
-                if p ~= LocalPlayer and p.Character then
-                    for _, part in ipairs(p.Character:GetDescendants()) do
-                        if part:IsA("BasePart") then
-                            if State.antiFlingCollideCache[part] == nil then
-                                State.antiFlingCollideCache[part] = part.CanCollide
+            antiFlingCooldown = antiFlingCooldown + dt
+            if antiFlingCooldown >= 0.08 then
+                antiFlingCooldown = 0
+                for _, p in ipairs(Players:GetPlayers()) do
+                    if p ~= LocalPlayer and p.Character then
+                        for _, part in ipairs(p.Character:GetDescendants()) do
+                            if part:IsA("BasePart") then
+                                if State.antiFlingCollideCache[part] == nil then
+                                    State.antiFlingCollideCache[part] = part.CanCollide
+                                end
+                                part.CanCollide = false
                             end
-                            part.CanCollide = false
                         end
                     end
                 end
             end
         end
 
-        -- Hitbox Expander live update
-        if ConfigState.HitboxExpander then
-            updateHitboxExpander()
-        end
-
         -- Auto-Interact
         if ConfigState.AutoInteract and myHRP then
             interactCooldown = interactCooldown + dt
-            if interactCooldown >= 0.25 then
+            if interactCooldown >= 0.35 then
                 interactCooldown = 0
                 for _, desc in ipairs(workspace:GetDescendants()) do
                     if desc:IsA("ProximityPrompt") and desc.Enabled then
@@ -5507,6 +5304,7 @@ do
     local telemetryTimer = 0
     local playerListRefreshTimer = 0
     local keyCountdownTimer = 0
+    local uiAnimTimer = 0
     local boundCameraStep = false
 
     local function runPostCameraRenderPass(safeDt)
@@ -5514,9 +5312,14 @@ do
             return
         end
 
+        local myChar = LocalPlayer.Character
+        if myChar and State.cachedLocalChar ~= myChar then
+            refreshLocalCharacterCache(myChar)
+        end
+        local myHRP = State.cachedLocalHRP
+
         -- Orbit Player Movement
-        if State.orbitingPlayerName and LocalPlayer.Character then
-            local myHRP = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if State.orbitingPlayerName and myHRP then
             local targetPlayer = nil
             for _, p in ipairs(Players:GetPlayers()) do
                 if p.Name == State.orbitingPlayerName then
@@ -5525,7 +5328,7 @@ do
                 end
             end
             local tHRP = targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if myHRP and tHRP then
+            if tHRP then
                 State.orbitAngle = (State.orbitAngle or 0) + safeDt * (ConfigState.OrbitSpeed or 4.5)
                 local rad = ConfigState.OrbitRadius or 8
                 local offset = Vector3.new(math.cos(State.orbitAngle) * rad, 0, math.sin(State.orbitAngle) * rad)
@@ -5534,13 +5337,10 @@ do
             end
         end
 
-        if ConfigState.Spinbot and LocalPlayer.Character then
-            local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if hrp and CFrame.Angles then
-                pcall(function()
-                    hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(ConfigState.SpinSpeed), 0)
-                end)
-            end
+        if ConfigState.Spinbot and myHRP and CFrame.Angles then
+            pcall(function()
+                myHRP.CFrame = myHRP.CFrame * CFrame.Angles(0, math.rad(ConfigState.SpinSpeed), 0)
+            end)
         end
 
         local camera = workspace.CurrentCamera
@@ -5551,7 +5351,7 @@ do
         -- Glitch-Free Freecam movement & Camera Subject Safeguard
         if ConfigState.Freecam then
             camera.CameraType = Enum.CameraType.Scriptable
-            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            local hum = State.cachedLocalHum
             local moveDir = (hum and hum.MoveDirection) or Vector3.zero
             local curPos = State.freecamPos or camera.CFrame.Position
             local nextPos = curPos + (moveDir * (ConfigState.FreecamSpeed * safeDt))
@@ -5561,7 +5361,7 @@ do
             if camera.CameraType == Enum.CameraType.Scriptable then
                 camera.CameraType = Enum.CameraType.Custom
             end
-            local myHum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            local myHum = State.cachedLocalHum
             if myHum and camera.CameraSubject ~= myHum then
                 camera.CameraSubject = myHum
             end
@@ -5576,27 +5376,38 @@ do
             UI.FovOuterStroke.Thickness = 1.6 + 0.45 * math.sin(animClock * 4.2)
         end
 
-    -- Passive Viewport Targeting: Throttled 25Hz spatial target scan + 144Hz+ camera Lerp
-    if ConfigState.Aimbot then
-        State.targetScanAccumulator = (State.targetScanAccumulator or 0) + safeDt
-        if State.targetScanAccumulator >= 0.04 or not State.cachedAimTarget or not State.cachedAimTarget.Parent then
-            State.targetScanAccumulator = 0
-            State.cachedAimTarget = getClosestTarget(camera)
-        end
-        local target = State.cachedAimTarget
-        if target and target.Parent then
-            local alpha = 1 - ((1 - math.clamp(ConfigState.Smoothness, 0.01, 0.99)) ^ (safeDt * 60))
-            camera.CFrame = camera.CFrame:Lerp(CFrame.new(camera.CFrame.Position, target.Position), alpha)
-        end
-    else
-        State.cachedAimTarget = nil
-    end
+        -- Accurate Frame-Synchronized Aimbot Lock-In (Locks Camera AND Rotates Local Character to Face Target!)
+        if ConfigState.Aimbot then
+            local target = getClosestTarget(camera)
+            State.cachedAimTarget = target
+            if target and target.Parent then
+                local targetPos = target.Position
+                local camGoal = CFrame.new(camera.CFrame.Position, targetPos)
+                local smooth = math.clamp(ConfigState.Smoothness or 0.9, 0.05, 1)
+                if smooth >= 0.92 then
+                    camera.CFrame = camGoal
+                else
+                    local alpha = 1 - ((1 - smooth) ^ (safeDt * 60))
+                    camera.CFrame = camera.CFrame:Lerp(camGoal, math.clamp(alpha, 0.12, 1))
+                end
 
-        -- Screen Resolution Stretch (Runs at RenderPriority.Camera + 1 so Roblox CameraModule never overwrites it!)
+                -- Rotate LocalPlayer's Character horizontally toward the locked target so your character aims with your screen!
+                if ConfigState.AimbotLockCharacter and myHRP and not ConfigState.Spinbot and not State.orbitingPlayerName then
+                    local myPos = myHRP.Position
+                    local flatTarget = Vector3.new(targetPos.X, myPos.Y, targetPos.Z)
+                    if (flatTarget - myPos).Magnitude > 0.05 then
+                        myHRP.CFrame = CFrame.new(myPos, flatTarget)
+                    end
+                end
+            end
+        else
+            State.cachedAimTarget = nil
+        end
+
+        -- Screen Resolution Stretch (Runs at RenderPriority.Camera + 1; never writes custom fields onto Camera userdata!)
         if ConfigState.ResolutionEnabled then
             local stretch = math.clamp(ConfigState.CustomStretch or 0.75, 0.35, 1.35)
             State.appliedStretchRatio = stretch
-            camera.__stretchRatio = stretch
             pcall(function()
                 local cf = camera.CFrame
                 if cf and cf.GetComponents then
@@ -5606,7 +5417,6 @@ do
             end)
         else
             State.appliedStretchRatio = 1.0
-            camera.__stretchRatio = 1.0
         end
 
         -- Frame-Synchronized ESP Projection (Runs AFTER Camera update so there is ZERO 1-frame lag behind players!)
@@ -5616,8 +5426,8 @@ do
 
         if ConfigState.Crosshair then
             updateCrosshair(animClock)
-        else
-            if UI.CrosshairContainer then UI.CrosshairContainer.Visible = false end
+        elseif UI.CrosshairContainer and UI.CrosshairContainer.Visible then
+            UI.CrosshairContainer.Visible = false
             UI.CrosshairV.Visible = false
             UI.CrosshairH.Visible = false
         end
@@ -5641,6 +5451,7 @@ do
         telemetryTimer = telemetryTimer + safeDt
         playerListRefreshTimer = playerListRefreshTimer + safeDt
         keyCountdownTimer = keyCountdownTimer + safeDt
+        uiAnimTimer = uiAnimTimer + safeDt
 
         if keyCountdownTimer >= 1.0 then
             keyCountdownTimer = 0
@@ -5649,19 +5460,20 @@ do
             end
         end
 
-        if playerListRefreshTimer >= 2.0 then
+        -- Lightweight in-place distance update ONLY when Players tab is open (Never destroys/rebuilds UI cards on timer!)
+        if playerListRefreshTimer >= 1.5 then
             playerListRefreshTimer = 0
-            if State.isAuthorized and UI.MainWindow.Visible and State.refreshPlayerListUI then
-                State.refreshPlayerListUI()
+            if State.isAuthorized and UI.MainWindow.Visible and State.activeTab and State.activeTab.Name == "Players" and State.updatePlayerDistances then
+                State.updatePlayerDistances()
             end
         end
 
         local instantFps = math.floor(1 / safeDt)
         table.insert(State.frameHistory, instantFps)
-        if #State.frameHistory > 60 then
+        if #State.frameHistory > 45 then
             table.remove(State.frameHistory, 1)
         end
-        if telemetryTimer >= 0.4 then
+        if telemetryTimer >= 0.6 then
             telemetryTimer = 0
             local sum = 0
             local minFps = 999
@@ -5678,9 +5490,12 @@ do
             end
         end
 
-        -- Only animate UI gradients & particles while UI cards are visible on screen (High-FPS Optimization!)
-        local anyUiCardVisible = UI.LoaderCard.Visible or UI.KeyCard.Visible or UI.MainWindow.Visible or UI.FloatingToggle.Visible
-        if anyUiCardVisible then
+        -- Only animate UI gradients & particles while a main menu card is actually open, throttled to ~30Hz (Zero FPS drop during gameplay!)
+        local menuCardOpen = UI.LoaderCard.Visible or UI.KeyCard.Visible or UI.MainWindow.Visible
+        if menuCardOpen and uiAnimTimer >= 0.033 then
+            local animDt = uiAnimTimer
+            uiAnimTimer = 0
+
             if ConfigState.ShimmerEnabled then
                 for _, item in ipairs(State.liveGradients) do
                     if item.Gradient and item.Gradient.Parent then
@@ -5698,28 +5513,31 @@ do
             if ConfigState.ParticlesEnabled then
                 for _, p in ipairs(State.liveParticles) do
                     if p.Instance and p.Container and p.Container.Visible then
-                        p.Y = p.Y - (p.SpeedY * safeDt)
-                        p.X = p.X + math.sin(animClock * 1.5 + p.Phase) * (p.DriftX * safeDt)
+                        p.Y = p.Y - (p.SpeedY * animDt)
+                        p.X = p.X + math.sin(animClock * 1.5 + p.Phase) * (p.DriftX * animDt)
                         if p.Y < -0.04 then
                             p.Y = 1.04
                             p.X = math.random(5, 95) / 100
                         end
                         p.Instance.Position = UDim2.fromScale(p.X, p.Y)
-                        p.Instance.BackgroundTransparency = 0.55 + 0.35 * math.sin(animClock * 3 + p.Phase)
                     end
                 end
             end
+
+            local pulse = 1 + 0.22 * math.sin(animClock * 4.5)
+            if UI.LoaderCard.Visible then
+                UI.EmblemCore.Size = UDim2.fromOffset(8 * pulse, 8 * pulse)
+            end
+            if UI.KeyCard.Visible then
+                UI.KeyTopGrad.Offset = Vector2.new(math.sin(animClock * 2.2) * 0.45, 0)
+            end
+            if UI.MainWindow.Visible then
+                UI.HeaderLineGrad.Offset = Vector2.new(math.sin(animClock * 1.8) * 0.42, 0)
+            end
         end
 
-        local pulse = 1 + 0.22 * math.sin(animClock * 4.5)
-        if UI.LoaderCard.Visible then
-            UI.EmblemCore.Size = UDim2.fromOffset(8 * pulse, 8 * pulse)
-        end
-        if UI.KeyCard.Visible then
-            UI.KeyTopGrad.Offset = Vector2.new(math.sin(animClock * 2.2) * 0.45, 0)
-        end
-        if UI.MainWindow.Visible then
-            UI.HeaderLineGrad.Offset = Vector2.new(math.sin(animClock * 1.8) * 0.42, 0)
+        if ConfigState.Crosshair then
+            updateCrosshair(animClock)
         end
 
         if not boundCameraStep then
@@ -5745,10 +5563,10 @@ task.spawn(function()
     tween(UI.LoaderPercent, SmoothTween, { TextTransparency = 0 })
 
     local stages = {
-        { pct = 28, text = "Allocating Object Pool & Passive Viewport Core..." },
-        { pct = 64, text = "Loading Avatar Showcase, Spider Climb & Orbit..." },
+        { pct = 28, text = "Allocating Object Pool & Ultra-FPS Core..." },
+        { pct = 64, text = "Loading Camera+Character Aimbot, Korblox & Pro Crosshair..." },
         { pct = 92, text = "Verifying 3-Tier Security Gate..." },
-        { pct = 100, text = "Core.xyz v4.4 Stealth Ready." },
+        { pct = 100, text = "Core.xyz v4.5 Ultra-FPS Ready." },
     }
 
     local currentPct = 0

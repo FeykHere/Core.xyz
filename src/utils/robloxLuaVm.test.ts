@@ -455,6 +455,8 @@ local function createInstance(className)
             elseif k == "Position" and isPart and type(v) == "table" and v.X then
                 props.Position = v
                 props.CFrame = CFrame.new(v)
+            elseif props.ClassName == "MeshPart" and (k == "MeshId" or k == "TextureID") then
+                error("Unable to assign property " .. tostring(k) .. ". Script write access is restricted")
             else
                 props[k] = v
             end
@@ -726,7 +728,7 @@ local StatsService = {
     }
 }
 
-local Camera = {
+local cameraProps = {
     FieldOfView = 70,
     CameraSubject = LocalHum,
     CameraType = Enum.CameraType.Custom,
@@ -736,6 +738,17 @@ local Camera = {
         return Vector3.new(400 + (worldPos.X or 0) * 4, 210 - (worldPos.Y or 0) * 6, 25), true
     end
 }
+local Camera = setmetatable({}, {
+    __index = function(_, k)
+        return cameraProps[k]
+    end,
+    __newindex = function(_, k, v)
+        if cameraProps[k] == nil then
+            error(tostring(k) .. " is not a valid member of Camera 'Workspace.Camera'")
+        end
+        cameraProps[k] = v
+    end,
+})
 
 -- Create World Interactive Objects (ProximityPrompt, ClickDetector, Map Part, ParticleEmitter)
 local WorkspaceObj = createInstance("Workspace")
@@ -812,7 +825,7 @@ local espPreviewWindow = screenGui:FindFirstChild("CoreESPPreviewWindow")
 
 assert(loaderCard.Visible == false, "LoaderCard should hide after boot sequence")
 assert(keyCard.Visible == true, "KeyCard should be visible after boot sequence")
-assert(espPreviewWindow ~= nil and espPreviewWindow.Visible == false, "CoreESPPreviewWindow must exist and start hidden")
+assert(espPreviewWindow == nil, "CoreESPPreviewWindow must be completely removed to eliminate FPS drops")
 
 -- Unlock with GET KEY + AUTHORIZE KEY (and verify Remember Key saves FEYKDEV)
 local keyInputBox, unlockBtn, copyKeyBtn
@@ -1052,7 +1065,7 @@ assert(chest.Material == Enum.Material.SmoothPlastic, "FPS Booster must set part
 assert(chest:FindFirstChildOfClass("ProximityPrompt").HoldDuration == 0, "Instant Interact must set HoldDuration = 0")
 assert(_G.__FPS_CAP == 240, "Uncap FPS with Custom FPS 240 must call setfpscap(240)")
 
--- 5. Test Visuals Tab Right-Side Companion ESP Preview Window + Screen Resolution Preset resetting Custom Stretch
+-- 5. Test Visuals Tab (ESP Preview Removed + Pro Crosshair Spin/Pulse/Rainbow + Korblox R15 & R6 + Screen Resolution)
 local visualsTabBtn, homeTabBtn
 for _, desc in ipairs(mainWindow:GetDescendants()) do
     if desc.Name == "Visuals_TabBtn" then visualsTabBtn = desc end
@@ -1060,7 +1073,7 @@ for _, desc in ipairs(mainWindow:GetDescendants()) do
 end
 assert(visualsTabBtn ~= nil, "Visuals_TabBtn must exist in sidebar")
 visualsTabBtn.MouseButton1Click:Fire()
-assert(espPreviewWindow.Visible == true, "Clicking Visuals_TabBtn must show CoreESPPreviewWindow on the right side of the main UI")
+assert(screenGui:FindFirstChild("CoreESPPreviewWindow") == nil, "CoreESPPreviewWindow must remain completely absent")
 
 -- Verify Silent Aim was removed from Combat_Page
 local combatPage
@@ -1085,6 +1098,8 @@ for _, pageName in ipairs({ "Combat_Page", "Visuals_Page", "Movement_Page" }) do
                     if lText ~= ""
                         and lText ~= "Team Check"
                         and lText ~= "Ignore Whitelisted Players"
+                        and lText ~= "Aimbot Lock Character (Face Target)"
+                        and lText ~= "Aimbot WallCheck (Raycast)"
                         and lText ~= "Crosshair Center Dot"
                         and lText ~= "Stealth Anti-Kick Bypass (99% Undetected)" then
                         ctrl.MouseButton1Click:Fire()
@@ -1095,31 +1110,18 @@ for _, pageName in ipairs({ "Combat_Page", "Visuals_Page", "Movement_Page" }) do
     end
 end
 
--- Verify wider CoreESPPreviewWindow (240px width) and Dock-Locking with CoreMainWindow!
-assert(espPreviewWindow.Size.X.Offset == 240, "CoreESPPreviewWindow must be widened to 240px")
-mainWindow.Position = UDim2.new(0, 120, 0, 80)
-mainWindow.Changed:Fire("Position")
-local mScale = mainWindow:FindFirstChildOfClass("UIScale").Scale
-assert(espPreviewWindow.Position.X.Offset == 120 + math.floor(412 * mScale), "Moving CoreMainWindow must automatically move docked CoreESPPreviewWindow with it")
-assert(espPreviewWindow.Position.Y.Offset == 80, "CoreESPPreviewWindow Y position must stay locked with CoreMainWindow")
+-- Verify Korblox Right Leg properly hides RightLowerLeg & RightFoot (Transparency == 1) and attaches KorbloxPeg + SpecialMesh on R15!
+local localChar = game:GetService("Players").LocalPlayer.Character
+local rLower = localChar:FindFirstChild("RightLowerLeg")
+local rFoot = localChar:FindFirstChild("RightFoot")
+local rUpper = localChar:FindFirstChild("RightUpperLeg")
+local korbloxPeg = localChar:FindFirstChild("KorbloxPeg")
+assert(rLower.Transparency == 1 and rFoot.Transparency == 1, "Korblox must set RightLowerLeg and RightFoot Transparency to 1")
+assert(rUpper.Transparency == 1 and korbloxPeg ~= nil, "Korblox must hide read-only R15 RightUpperLeg and attach welded KorbloxPeg")
+local korbloxMesh = korbloxPeg:FindFirstChild("KorbloxSpecialMesh")
+assert(korbloxMesh ~= nil and string.find(korbloxMesh.MeshId, "101851696") ~= nil, "KorbloxPeg must contain KorbloxSpecialMesh (101851696)")
 
--- Verify live ESP Preview Window reflects enabled ESP toggles on user's cloned character with full-size bounds!
-local previewStage = espPreviewWindow:FindFirstChild("PreviewStage")
-assert(previewStage ~= nil, "PreviewStage must exist inside CoreESPPreviewWindow")
-local previewBox3D = previewStage:FindFirstChild("PreviewBox3D")
-local previewSkeleton = previewStage:FindFirstChild("PreviewSkeleton")
-local previewHealthBar = previewStage:FindFirstChild("PreviewHealthBar")
-local previewTracer = previewStage:FindFirstChild("PreviewTracer")
-local previewNameTag = previewStage:FindFirstChild("PreviewNameTag")
-local previewChams = previewStage:FindFirstChild("PreviewChams")
-assert(previewBox3D.Visible == true, "PreviewBox3D must be visible in CoreESPPreviewWindow when 3D Bounding Box is enabled")
-assert(previewSkeleton.Visible == true, "PreviewSkeleton must be visible in CoreESPPreviewWindow when 3D Skeleton Rig is enabled")
-assert(previewHealthBar.Visible == true and previewHealthBar.Size.Y.Offset >= 150, "PreviewHealthBar must be visible and full-height (>=150px) matching avatar")
-assert(previewTracer.Visible == true, "PreviewTracer must be visible in CoreESPPreviewWindow when Snapline Tracers is enabled")
-assert(previewNameTag.Visible == true and previewChams.Visible == true, "PreviewNameTag & PreviewChams must be visible when Player ESP is enabled")
-assert(previewChams.Size.Y.Offset >= 150 and previewChams.Size.X.Offset >= 90, "PreviewChams must fit full-height cloned avatar in PreviewStage")
-
--- Verify Pro Crosshair Suite (Presets, Spin, Pulse, Rainbow, Center Dot, Line Length/Width)
+-- Verify Pro Crosshair Suite (Spin, Pulse, Rainbow, Center Dot, Line Length/Width) dynamically animates across frames!
 local overlaysFolder = screenGui:FindFirstChild("Overlays")
 local crosshairContainer = overlaysFolder:FindFirstChild("CrosshairContainer")
 assert(crosshairContainer ~= nil and crosshairContainer.Visible == true, "CrosshairContainer must exist and be visible when Custom Crosshair is enabled")
@@ -1128,7 +1130,20 @@ local armBottom = crosshairContainer:FindFirstChild("ArmBottom")
 local chDot = crosshairContainer:FindFirstChild("CrosshairDot")
 assert(armTop ~= nil and armBottom ~= nil and chDot ~= nil and chDot.Visible == true, "Crosshair arms and CrosshairDot must exist and be visible")
 
--- Test Screen Resolution Preset dropdown resetting Custom Stretch
+local rotBefore = armTop.Rotation
+local colRBefore = armTop.BackgroundColor3.R
+local colGBefore = armTop.BackgroundColor3.G
+local lenBefore = armTop.Size.Y.Offset
+game:GetService("RunService").RenderStepped:Fire(0.22)
+local rotAfter = armTop.Rotation
+local colRAfter = armTop.BackgroundColor3.R
+local colGAfter = armTop.BackgroundColor3.G
+local lenAfter = armTop.Size.Y.Offset
+assert(rotAfter ~= rotBefore, "Spin Crosshair must dynamically rotate Crosshair arms across frames")
+assert(colRAfter ~= colRBefore or colGAfter ~= colGBefore, "Rainbow Crosshair must dynamically cycle arm RGB color across frames")
+assert(lenAfter ~= lenBefore, "Crosshair Pulse must dynamically oscillate arm length across frames")
+
+-- Test Screen Resolution Preset dropdown resetting Custom Stretch AND verify Aimbot Locks BOTH Camera AND Character onto Prioritized Enemy_3!
 local visualsPage
 for _, desc in ipairs(mainWindow:GetDescendants()) do
     if desc.Name == "Visuals_Page" then visualsPage = desc end
@@ -1148,9 +1163,38 @@ res1728x1080Btn.MouseButton1Click:Fire()
 game:GetService("RunService").RenderStepped:Fire(0.016)
 assert(math.abs(workspace.CurrentCamera.CFrame.R11 - 0.90) < 0.02, "Selecting 1728x1080 must reset Custom Stretch to 0.90 stretch ratio")
 
--- Verify switching back to Home tab hides the right-side CoreESPPreviewWindow
+-- Verify Aimbot locks LocalPlayer's Character (myHRP.CFrame.LookAt) horizontally toward prioritized Enemy_3 when Spinbot is off!
+local spinbotToggleBtn
+for _, desc in ipairs(mainWindow:GetDescendants()) do
+    if desc.Name == "Movement_Page" then
+        for _, ctrl in ipairs(desc:GetDescendants()) do
+            if ctrl.ClassName == "TextButton" and ctrl.Text == "" then
+                local lbl = ctrl:FindFirstChildOfClass("TextLabel")
+                if lbl and lbl.Text == "Spinbot" then
+                    spinbotToggleBtn = ctrl
+                end
+            end
+        end
+    end
+end
+assert(spinbotToggleBtn ~= nil, "Spinbot toggle button must exist")
+spinbotToggleBtn.MouseButton1Click:Fire() -- Turn Spinbot OFF briefly to test Aimbot Character Lock-In
+local freecamToggleBtn
+for _, desc in ipairs(visualsPage:GetDescendants()) do
+    if desc.ClassName == "TextButton" and desc.Text == "" then
+        local lbl = desc:FindFirstChildOfClass("TextLabel")
+        if lbl and lbl.Text == "Freecam (Drone Camera)" then
+            freecamToggleBtn = desc
+        end
+    end
+end
+freecamToggleBtn.MouseButton1Click:Fire() -- Turn Freecam OFF so Camera locks onto target
+game:GetService("RunService").RenderStepped:Fire(0.016)
+local enemy3Head = _G.__ALL_PLAYERS[4].Character:FindFirstChild("Head")
+assert(myHRP.CFrame.LookAt.X == enemy3Head.Position.X and myHRP.CFrame.LookAt.Z == enemy3Head.Position.Z, "Aimbot must rotate LocalPlayer Character (HumanoidRootPart) horizontally toward locked target Enemy_3")
+spinbotToggleBtn.MouseButton1Click:Fire() -- Turn Spinbot back ON
+
 homeTabBtn.MouseButton1Click:Fire()
-assert(espPreviewWindow.Visible == false, "CoreESPPreviewWindow must hide when leaving Visuals tab")
 
 -- Verify X-Ray Vision made ChestPart translucent (0.6) while keeping player parts untouched
 assert(math.abs(chest.Transparency - 0.6) < 0.05, "X-Ray Vision must set map part transparency to 0.6")

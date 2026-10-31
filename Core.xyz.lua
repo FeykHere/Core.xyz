@@ -521,6 +521,21 @@ do
             existingGui:Destroy()
         end)
     end
+    pcall(function()
+        local oldWeatherPart = workspace and workspace:FindFirstChild("CoreXyz_WeatherEmitterPart")
+        if oldWeatherPart then oldWeatherPart:Destroy() end
+        local oldRays = Lighting and Lighting:FindFirstChild("CoreXyz_WeatherSunRays")
+        if oldRays then oldRays:Destroy() end
+        local oldCC = Lighting and Lighting:FindFirstChild("CoreXyz_WeatherColorCorrection")
+        if oldCC then oldCC:Destroy() end
+        local soundSvc = safeGetService("SoundService")
+        if soundSvc then
+            local oldAmb = soundSvc:FindFirstChild("CoreXyz_WeatherAmbienceSound")
+            if oldAmb then oldAmb:Destroy() end
+            local oldThun = soundSvc:FindFirstChild("CoreXyz_WeatherThunderSound")
+            if oldThun then oldThun:Destroy() end
+        end
+    end)
 end
 
 --------------------------------------------------------------------------------
@@ -567,6 +582,9 @@ local ConfigState = {
     XRay = false,
     XRayTransparency = 0.6,
     SkyPreset = "Game Default",
+    WeatherPreset = "Default",
+    WeatherSoundEnabled = true,
+    WeatherSoundVolume = 0.5,
     Fullbright = false,
     NoFog = false,
     TimeOfDay = 14,
@@ -3652,7 +3670,7 @@ end
 local function applyXRayVision(enabled)
     if enabled then
         for _, desc in ipairs(workspace:GetDescendants()) do
-            if desc:IsA("BasePart") then
+            if desc:IsA("BasePart") and desc.Name ~= "CoreXyz_WeatherEmitterPart" then
                 local isPlayerPart = false
                 for _, p in ipairs(Players:GetPlayers()) do
                     if p.Character and desc:IsDescendantOf(p.Character) then
@@ -3721,8 +3739,30 @@ local SKY_PRESETS = {
 }
 
 local function updateLightingEnvironment()
+    local weatherMode = ConfigState.WeatherPreset or "Default"
     local preset = SKY_PRESETS[ConfigState.SkyPreset]
-    if preset then
+    if weatherMode == "Rain" then
+        Lighting.ClockTime = 15.0
+        Lighting.Brightness = ConfigState.Fullbright and 2.0 or 1.1
+        Lighting.Ambient = Color3.fromRGB(95, 108, 128)
+        Lighting.OutdoorAmbient = Color3.fromRGB(105, 118, 138)
+    elseif weatherMode == "Thunderstorm" then
+        Lighting.ClockTime = 18.5
+        Lighting.Brightness = ConfigState.Fullbright and 2.0 or 0.65
+        Lighting.Ambient = Color3.fromRGB(60, 70, 92)
+        Lighting.OutdoorAmbient = Color3.fromRGB(68, 78, 102)
+    elseif weatherMode == "Snow" then
+        Lighting.ClockTime = 13.0
+        Lighting.Brightness = ConfigState.Fullbright and 2.2 or 1.85
+        Lighting.Ambient = Color3.fromRGB(175, 190, 215)
+        Lighting.OutdoorAmbient = Color3.fromRGB(195, 210, 235)
+    elseif weatherMode == "Sunny" then
+        Lighting.ClockTime = 14.2
+        Lighting.Brightness = 2.85
+        Lighting.GlobalShadows = true
+        Lighting.Ambient = Color3.fromRGB(195, 185, 165)
+        Lighting.OutdoorAmbient = Color3.fromRGB(235, 220, 190)
+    elseif preset then
         Lighting.ClockTime = preset.ClockTime
         Lighting.Brightness = preset.Brightness
         Lighting.Ambient = preset.Ambient
@@ -3739,7 +3779,7 @@ local function updateLightingEnvironment()
         Lighting.OutdoorAmbient = State.origLighting.OutdoorAmbient
     end
 
-    if ConfigState.NoFog then
+    if ConfigState.NoFog or weatherMode == "Sunny" then
         Lighting.FogEnd = 100000
         Lighting.FogStart = 100000
         for _, child in ipairs(Lighting:GetChildren()) do
@@ -3747,10 +3787,256 @@ local function updateLightingEnvironment()
                 pcall(function() child.Density = 0 end)
             end
         end
+    elseif weatherMode == "Rain" then
+        Lighting.FogStart = 20
+        Lighting.FogEnd = 420
+    elseif weatherMode == "Thunderstorm" then
+        Lighting.FogStart = 10
+        Lighting.FogEnd = 280
+    elseif weatherMode == "Snow" then
+        Lighting.FogStart = 25
+        Lighting.FogEnd = 520
     else
         Lighting.FogEnd = State.origLighting.FogEnd
         Lighting.FogStart = State.origLighting.FogStart
     end
+end
+
+-- Pre-Allocated Client Weather & Ambient Sound Engine (Zero Per-Frame Instance Allocations!)
+do
+    local SoundService = safeGetService("SoundService") or Lighting
+    local weatherPart = Instance.new("Part")
+    weatherPart.Name = "CoreXyz_WeatherEmitterPart"
+    weatherPart.Size = Vector3.new(140, 1, 140)
+    weatherPart.Transparency = 1
+    weatherPart.Anchored = true
+    weatherPart.CanCollide = false
+    weatherPart.CastShadow = false
+    pcall(function()
+        weatherPart.CanQuery = false
+        weatherPart.CanTouch = false
+    end)
+    weatherPart.Parent = workspace
+
+    local weatherEmitter = Instance.new("ParticleEmitter")
+    weatherEmitter.Name = "CoreXyz_WeatherEmitter"
+    weatherEmitter.Enabled = false
+    pcall(function()
+        weatherEmitter.LockedToPart = false
+        if Enum.NormalId and Enum.NormalId.Bottom then
+            weatherEmitter.EmissionDirection = Enum.NormalId.Bottom
+        end
+    end)
+    weatherEmitter.Parent = weatherPart
+
+    local sunRays = Instance.new("SunRaysEffect")
+    sunRays.Name = "CoreXyz_WeatherSunRays"
+    sunRays.Enabled = false
+    sunRays.Intensity = 0.32
+    sunRays.Spread = 0.90
+    sunRays.Parent = Lighting
+
+    local colorCorr = Instance.new("ColorCorrectionEffect")
+    colorCorr.Name = "CoreXyz_WeatherColorCorrection"
+    colorCorr.Enabled = false
+    colorCorr.Brightness = 0
+    colorCorr.Contrast = 0
+    colorCorr.Saturation = 0
+    colorCorr.TintColor = Color3.fromRGB(255, 255, 255)
+    colorCorr.Parent = Lighting
+
+    local ambienceSound = Instance.new("Sound")
+    ambienceSound.Name = "CoreXyz_WeatherAmbienceSound"
+    ambienceSound.Looped = true
+    ambienceSound.Volume = ConfigState.WeatherSoundVolume or 0.5
+    ambienceSound.SoundId = ""
+    ambienceSound.Parent = SoundService
+
+    local thunderSound = Instance.new("Sound")
+    thunderSound.Name = "CoreXyz_WeatherThunderSound"
+    thunderSound.Looped = false
+    thunderSound.Volume = 0.75
+    thunderSound.SoundId = "rbxassetid://9114224721"
+    thunderSound.Parent = SoundService
+
+    local WEATHER_SOUND_IDS = {
+        Rain = "rbxassetid://9112794577",
+        Thunderstorm = "rbxassetid://9112794577",
+        Snow = "rbxassetid://9112758096",
+        Sunny = "rbxassetid://9114221580",
+    }
+
+    local function makeNumRange(minV, maxV)
+        if type(NumberRange) == "table" and NumberRange.new then
+            return NumberRange.new(minV, maxV or minV)
+        end
+        return maxV or minV
+    end
+
+    local function makeNumSeq(val)
+        if type(NumberSequence) == "table" and NumberSequence.new then
+            return NumberSequence.new(val)
+        end
+        return val
+    end
+
+    local function syncWeatherAudio()
+        local mode = ConfigState.WeatherPreset or "Default"
+        local soundId = WEATHER_SOUND_IDS[mode]
+        local baseVol = math.clamp(ConfigState.WeatherSoundVolume or 0.5, 0, 1)
+        thunderSound.Volume = math.clamp(baseVol * 1.35, 0, 1)
+
+        if not ConfigState.WeatherSoundEnabled or mode == "Default" or not soundId then
+            ambienceSound.Volume = 0
+            pcall(function() ambienceSound:Stop() end)
+            pcall(function() thunderSound:Stop() end)
+            return
+        end
+
+        local volScale = (mode == "Thunderstorm" and 1.15) or (mode == "Snow" and 0.85) or (mode == "Sunny" and 0.75) or 1.0
+        ambienceSound.Volume = math.clamp(baseVol * volScale, 0, 1)
+        ambienceSound.PlaybackSpeed = (mode == "Thunderstorm" and 0.92) or (mode == "Snow" and 0.88) or 1.0
+
+        if ambienceSound.SoundId ~= soundId then
+            pcall(function() ambienceSound:Stop() end)
+            ambienceSound.SoundId = soundId
+        end
+        pcall(function()
+            if not ambienceSound.IsPlaying then
+                ambienceSound:Play()
+            end
+        end)
+    end
+
+    local function applyWeatherPreset(mode)
+        ConfigState.WeatherPreset = mode or "Default"
+        State.lightningFlashIntensity = 0
+        State.nextLightningTimer = 4.5
+
+        if ConfigState.WeatherPreset == "Rain" then
+            weatherEmitter.Texture = "rbxassetid://241876428"
+            weatherEmitter.Rate = 180
+            pcall(function()
+                weatherEmitter.Speed = makeNumRange(65, 85)
+                weatherEmitter.Lifetime = makeNumRange(0.8, 1.3)
+                weatherEmitter.Size = makeNumSeq(0.45)
+                weatherEmitter.Transparency = makeNumSeq(0.25)
+                weatherEmitter.SpreadAngle = Vector2.new(4, 4)
+                weatherEmitter.Acceleration = Vector3.new(0, -90, 0)
+                weatherEmitter.Color = ColorSequence.new({
+                    ColorSequenceKeypoint.new(0, Color3.fromRGB(175, 205, 255)),
+                    ColorSequenceKeypoint.new(1, Color3.fromRGB(140, 175, 235)),
+                })
+            end)
+            weatherEmitter.Enabled = true
+            sunRays.Enabled = false
+            colorCorr.Enabled = true
+            colorCorr.Brightness = -0.02
+            colorCorr.Contrast = 0.05
+            colorCorr.Saturation = -0.15
+            colorCorr.TintColor = Color3.fromRGB(220, 232, 255)
+        elseif ConfigState.WeatherPreset == "Thunderstorm" then
+            weatherEmitter.Texture = "rbxassetid://241876428"
+            weatherEmitter.Rate = 320
+            pcall(function()
+                weatherEmitter.Speed = makeNumRange(85, 115)
+                weatherEmitter.Lifetime = makeNumRange(0.7, 1.1)
+                weatherEmitter.Size = makeNumSeq(0.55)
+                weatherEmitter.Transparency = makeNumSeq(0.18)
+                weatherEmitter.SpreadAngle = Vector2.new(9, 9)
+                weatherEmitter.Acceleration = Vector3.new(-18, -120, -8)
+                weatherEmitter.Color = ColorSequence.new({
+                    ColorSequenceKeypoint.new(0, Color3.fromRGB(165, 195, 250)),
+                    ColorSequenceKeypoint.new(1, Color3.fromRGB(125, 155, 220)),
+                })
+            end)
+            weatherEmitter.Enabled = true
+            sunRays.Enabled = false
+            colorCorr.Enabled = true
+            colorCorr.Brightness = -0.05
+            colorCorr.Contrast = 0.12
+            colorCorr.Saturation = -0.25
+            colorCorr.TintColor = Color3.fromRGB(200, 215, 245)
+        elseif ConfigState.WeatherPreset == "Snow" then
+            weatherEmitter.Texture = "rbxassetid://258128463"
+            weatherEmitter.Rate = 150
+            pcall(function()
+                weatherEmitter.Speed = makeNumRange(10, 18)
+                weatherEmitter.Lifetime = makeNumRange(3.2, 4.8)
+                weatherEmitter.Size = makeNumSeq(0.38)
+                weatherEmitter.Transparency = makeNumSeq(0.12)
+                weatherEmitter.SpreadAngle = Vector2.new(28, 28)
+                weatherEmitter.Acceleration = Vector3.new(4, -6, 2)
+                weatherEmitter.Color = ColorSequence.new({
+                    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+                    ColorSequenceKeypoint.new(1, Color3.fromRGB(225, 240, 255)),
+                })
+            end)
+            weatherEmitter.Enabled = true
+            sunRays.Enabled = false
+            colorCorr.Enabled = true
+            colorCorr.Brightness = 0.02
+            colorCorr.Contrast = 0.04
+            colorCorr.Saturation = -0.10
+            colorCorr.TintColor = Color3.fromRGB(238, 246, 255)
+        elseif ConfigState.WeatherPreset == "Sunny" then
+            weatherEmitter.Enabled = false
+            sunRays.Enabled = true
+            sunRays.Intensity = 0.32
+            sunRays.Spread = 0.90
+            colorCorr.Enabled = true
+            colorCorr.Brightness = 0.03
+            colorCorr.Contrast = 0.08
+            colorCorr.Saturation = 0.18
+            colorCorr.TintColor = Color3.fromRGB(255, 246, 228)
+        else
+            weatherEmitter.Enabled = false
+            sunRays.Enabled = false
+            colorCorr.Enabled = false
+        end
+
+        updateLightingEnvironment()
+        syncWeatherAudio()
+    end
+
+    local function updateWeatherFrame(camera, safeDt)
+        local mode = ConfigState.WeatherPreset
+        if not mode or mode == "Default" then
+            return
+        end
+        if camera and (mode == "Rain" or mode == "Thunderstorm" or mode == "Snow") then
+            local camPos = camera.CFrame.Position
+            weatherPart.CFrame = CFrame.new(Vector3.new(camPos.X, camPos.Y + 34, camPos.Z))
+        end
+        if mode == "Thunderstorm" then
+            State.nextLightningTimer = (State.nextLightningTimer or 5.0) - safeDt
+            if State.nextLightningTimer <= 0 then
+                State.nextLightningTimer = math.random(45, 95) / 10
+                State.lightningFlashIntensity = 1.0
+                if ConfigState.WeatherSoundEnabled then
+                    pcall(function()
+                        thunderSound.PlaybackSpeed = math.random(88, 112) / 100
+                        thunderSound:Play()
+                    end)
+                end
+            end
+            if (State.lightningFlashIntensity or 0) > 0 then
+                State.lightningFlashIntensity = math.max(0, State.lightningFlashIntensity - safeDt * 3.8)
+                local flashBoost = State.lightningFlashIntensity * 3.2
+                Lighting.Brightness = (ConfigState.Fullbright and 2.0 or 0.65) + flashBoost
+            end
+        end
+    end
+
+    State.applyWeatherPreset = applyWeatherPreset
+    State.syncWeatherAudio = syncWeatherAudio
+    State.updateWeatherFrame = updateWeatherFrame
+    UI.WeatherEmitterPart = weatherPart
+    UI.WeatherEmitter = weatherEmitter
+    UI.WeatherSunRays = sunRays
+    UI.WeatherColorCorrection = colorCorr
+    UI.WeatherAmbienceSound = ambienceSound
+    UI.WeatherThunderSound = thunderSound
 end
 
 -- Glitch-Free Freecam Toggle
@@ -4002,6 +4288,9 @@ local function runUltimateFPSBooster()
     end)
 
     local function optimizeInstance(obj)
+        if obj.Name == "CoreXyz_WeatherEmitterPart" or obj.Name == "CoreXyz_WeatherEmitter" or obj.Name == "CoreXyz_WeatherSunRays" or obj.Name == "CoreXyz_WeatherColorCorrection" then
+            return
+        end
         if obj:IsA("BasePart") then
             pcall(function()
                 obj.Material = Enum.Material.SmoothPlastic
@@ -4248,6 +4537,8 @@ do
         DeepBg = Color3.fromRGB(17, 18, 20),      -- #111214 Discord deep frame
         Blurple = Color3.fromRGB(88, 101, 242),   -- #5865F2 Discord Blurple
         BlurpleDark = Color3.fromRGB(71, 82, 196),-- #4752C4 Discord Blurple hover/gradient
+        SkyWave = Color3.fromRGB(120, 175, 255),  -- #78AFFF Smooth light-blue wave crest
+        CyanWave = Color3.fromRGB(165, 212, 255), -- #A5D4FF Luminous light-blue wave highlight
         OnlineGreen = Color3.fromRGB(35, 165, 90),-- #23A55A Discord online green
         MemberGray = Color3.fromRGB(181, 186, 193),-- #B5BAC1 Discord muted gray
         HeaderWhite = Color3.fromRGB(242, 243, 245),
@@ -4263,31 +4554,58 @@ do
     addCorner(HomeDiscordCard, 10)
     addStroke(HomeDiscordCard, DiscordColors.Blurple, 1.2, 0.2)
 
-    -- Top Discord Blurple Banner Strip
+    -- Top Discord Light-Blue / Blurple Animated Slow Wave Banner Strip
     local DiscordBanner = Instance.new("Frame")
     DiscordBanner.Name = "DiscordBanner"
     DiscordBanner.Size = UDim2.new(1, 0, 0, 34)
     DiscordBanner.BackgroundColor3 = DiscordColors.Blurple
+    DiscordBanner.ClipsDescendants = true
     DiscordBanner.BorderSizePixel = 0
     DiscordBanner.ZIndex = 15
     DiscordBanner.Parent = HomeDiscordCard
     addCorner(DiscordBanner, 10)
 
-    local BannerBottomMask = Instance.new("Frame")
-    BannerBottomMask.Position = UDim2.new(0, 0, 1, -10)
-    BannerBottomMask.Size = UDim2.new(1, 0, 0, 10)
-    BannerBottomMask.BackgroundColor3 = DiscordColors.Blurple
-    BannerBottomMask.BorderSizePixel = 0
-    BannerBottomMask.ZIndex = 15
-    BannerBottomMask.Parent = DiscordBanner
-
     local BannerGrad = Instance.new("UIGradient")
+    BannerGrad.Name = "DiscordWaveGradient"
     BannerGrad.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, DiscordColors.Blurple),
-        ColorSequenceKeypoint.new(1, DiscordColors.BlurpleDark),
+        ColorSequenceKeypoint.new(0.0, DiscordColors.BlurpleDark),
+        ColorSequenceKeypoint.new(0.35, DiscordColors.Blurple),
+        ColorSequenceKeypoint.new(0.68, DiscordColors.SkyWave),
+        ColorSequenceKeypoint.new(1.0, DiscordColors.BlurpleDark),
     })
-    BannerGrad.Rotation = 15
+    BannerGrad.Rotation = 14
     BannerGrad.Parent = DiscordBanner
+
+    local DiscordWaveCrest1 = Instance.new("Frame")
+    DiscordWaveCrest1.Name = "DiscordWaveCrest1"
+    DiscordWaveCrest1.AnchorPoint = Vector2.new(0.5, 0.5)
+    DiscordWaveCrest1.Position = UDim2.fromScale(0.5, 0.72)
+    DiscordWaveCrest1.Size = UDim2.new(1.45, 0, 0, 28)
+    DiscordWaveCrest1.BackgroundColor3 = DiscordColors.SkyWave
+    DiscordWaveCrest1.BackgroundTransparency = 0.68
+    DiscordWaveCrest1.BorderSizePixel = 0
+    DiscordWaveCrest1.ZIndex = 15
+    DiscordWaveCrest1.Parent = DiscordBanner
+    addCorner(DiscordWaveCrest1, 999)
+
+    local DiscordWaveCrest2 = Instance.new("Frame")
+    DiscordWaveCrest2.Name = "DiscordWaveCrest2"
+    DiscordWaveCrest2.AnchorPoint = Vector2.new(0.5, 0.5)
+    DiscordWaveCrest2.Position = UDim2.fromScale(0.5, 0.84)
+    DiscordWaveCrest2.Size = UDim2.new(1.55, 0, 0, 24)
+    DiscordWaveCrest2.BackgroundColor3 = DiscordColors.CyanWave
+    DiscordWaveCrest2.BackgroundTransparency = 0.74
+    DiscordWaveCrest2.BorderSizePixel = 0
+    DiscordWaveCrest2.ZIndex = 15
+    DiscordWaveCrest2.Parent = DiscordBanner
+    addCorner(DiscordWaveCrest2, 999)
+
+    UI.DiscordWave = {
+        Banner = DiscordBanner,
+        Gradient = BannerGrad,
+        Crest1 = DiscordWaveCrest1,
+        Crest2 = DiscordWaveCrest2,
+    }
 
     local BannerTagLbl = Instance.new("TextLabel")
     BannerTagLbl.Position = UDim2.fromOffset(80, 0)
@@ -4943,7 +5261,7 @@ do
         ConfigState.CrosshairPulseSpeed = val
     end)
 
-    createLabel(VisualsTab, "X-Ray, Sky & World Atmosphere")
+    createLabel(VisualsTab, "X-Ray, Weather, Sky & World Atmosphere")
     createToggle(VisualsTab, "X-Ray Vision (See-Through Walls)", false, function(val)
         ConfigState.XRay = val
         applyXRayVision(val)
@@ -4952,6 +5270,30 @@ do
         ConfigState.XRayTransparency = val
         if ConfigState.XRay then
             applyXRayVision(true)
+        end
+    end)
+    createDropdown(VisualsTab, "Weather Preset", {
+        "Default",
+        "Rain",
+        "Thunderstorm",
+        "Snow",
+        "Sunny",
+    }, "Default", function(opt)
+        if State.applyWeatherPreset then
+            State.applyWeatherPreset(opt)
+        end
+        notify("Weather Engine", "Weather set to " .. tostring(opt) .. (ConfigState.WeatherSoundEnabled and " (Sound FX On)" or ""), 3)
+    end)
+    createToggle(VisualsTab, "Weather Sound Effects", true, function(val)
+        ConfigState.WeatherSoundEnabled = val
+        if State.syncWeatherAudio then
+            State.syncWeatherAudio()
+        end
+    end)
+    createSlider(VisualsTab, "Weather Sound Volume", 0, 1, 0.5, 0.05, "", function(val)
+        ConfigState.WeatherSoundVolume = val
+        if State.syncWeatherAudio then
+            State.syncWeatherAudio()
         end
     end)
     createDropdown(VisualsTab, "Sky & Atmosphere Preset", {
@@ -5820,7 +6162,11 @@ do
         if BSliderCtrl then BSliderCtrl.Set(ConfigState.AccentB or 255, false) end
         UI.MainWindow.BackgroundTransparency = ConfigState.WindowTransparency or 0.03
         updateMovement()
-        updateLightingEnvironment()
+        if State.applyWeatherPreset then
+            State.applyWeatherPreset(ConfigState.WeatherPreset or "Default")
+        else
+            updateLightingEnvironment()
+        end
         updateCrosshair(0)
         State.lastPillText = ""
         updateFloatingPillTelemetry()
@@ -6425,7 +6771,19 @@ do
             end
             if UI.MainWindow.Visible then
                 UI.HeaderLineGrad.Offset = Vector2.new(math.sin(animClock * 1.8) * 0.42, 0)
+                if UI.DiscordWave and State.activeTab and State.activeTab.Name == "Home" then
+                    UI.DiscordWave.Gradient.Offset = Vector2.new(math.sin(animClock * 0.65) * 0.38, math.cos(animClock * 0.45) * 0.15)
+                    UI.DiscordWave.Gradient.Rotation = 14 + math.sin(animClock * 0.5) * 8
+                    UI.DiscordWave.Crest1.Position = UDim2.new(0.5 + math.sin(animClock * 0.75) * 0.22, 0, 0.72 + math.cos(animClock * 0.9) * 0.08, 0)
+                    UI.DiscordWave.Crest1.Rotation = math.sin(animClock * 0.55) * 3.5
+                    UI.DiscordWave.Crest2.Position = UDim2.new(0.5 - math.cos(animClock * 0.62) * 0.24, 0, 0.84 + math.sin(animClock * 0.8) * 0.08, 0)
+                    UI.DiscordWave.Crest2.Rotation = -math.cos(animClock * 0.48) * 3.0
+                end
             end
+        end
+
+        if State.updateWeatherFrame then
+            State.updateWeatherFrame(workspace.CurrentCamera, safeDt)
         end
 
         if ConfigState.Crosshair then

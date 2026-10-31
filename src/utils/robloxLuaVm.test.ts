@@ -236,6 +236,12 @@ ColorSequenceKeypoint = {
 ColorSequence = {
     new = function(kps) return { Keypoints = kps } end
 }
+NumberRange = {
+    new = function(minV, maxV) return { Min = minV, Max = maxV or minV } end
+}
+NumberSequence = {
+    new = function(v) return { Value = v } end
+}
 
 CFrame = {}
 CFrame.__index = CFrame
@@ -443,6 +449,17 @@ local function createInstance(className)
 
     function props:ChangeState(st)
         props.__lastState = st
+    end
+
+    function props:Play()
+        props.IsPlaying = true
+        props.Playing = true
+        props.__playCount = (props.__playCount or 0) + 1
+    end
+
+    function props:Stop()
+        props.IsPlaying = false
+        props.Playing = false
     end
 
     function props:Clone()
@@ -829,6 +846,8 @@ end
 
 workspace = WorkspaceObj
 
+local SoundServiceObj = createInstance("SoundService")
+
 game = {
     PlaceId = 55555,
     JobId = "job_current_1",
@@ -846,6 +865,7 @@ game = {
         if name == "VirtualUser" then return VirtualUser end
         if name == "CoreGui" then return CoreGui end
         if name == "Lighting" then return LightingService end
+        if name == "SoundService" then return SoundServiceObj end
         if name == "HttpService" then return HttpService end
         if name == "TeleportService" then return TeleportService end
         if name == "Stats" then return StatsService end
@@ -942,9 +962,21 @@ for _, desc in ipairs(homePage:GetDescendants()) do
     end
 end
 
--- Verify Discord-Themed Community Section ("Core | Beta") in Home_Page with live Members & Active counts and https://discord.gg/TVyFdDwDkn invite
+-- Verify Discord-Themed Community Section ("Core | Beta") in Home_Page with animated Slow Wave Banner, live Members & Active counts and https://discord.gg/TVyFdDwDkn invite
 local homeDiscordCard = homePage:FindFirstChild("HomeDiscordCard")
 assert(homeDiscordCard ~= nil, "HomeDiscordCard must exist in Home_Page")
+local discordBanner = homeDiscordCard:FindFirstChild("DiscordBanner")
+assert(discordBanner ~= nil, "DiscordBanner must exist in HomeDiscordCard")
+local discordWaveGrad = discordBanner:FindFirstChild("DiscordWaveGradient")
+local discordWaveCrest1 = discordBanner:FindFirstChild("DiscordWaveCrest1")
+local discordWaveCrest2 = discordBanner:FindFirstChild("DiscordWaveCrest2")
+assert(discordWaveGrad ~= nil and discordWaveCrest1 ~= nil and discordWaveCrest2 ~= nil, "DiscordBanner must contain DiscordWaveGradient, DiscordWaveCrest1, and DiscordWaveCrest2")
+
+local crest1XBefore = discordWaveCrest1.Position.X.Scale
+local waveGradRotBefore = discordWaveGrad.Rotation
+game:GetService("RunService").RenderStepped:Fire(0.12)
+assert(discordWaveCrest1.Position.X.Scale ~= crest1XBefore and discordWaveGrad.Rotation ~= waveGradRotBefore, "DiscordBanner slow wave crests and gradient must smoothly animate across RenderStepped frames")
+
 local discordLogoBox = homeDiscordCard:FindFirstChild("DiscordLogoBox")
 local discordServerName = homeDiscordCard:FindFirstChild("DiscordServerName")
 local joinDiscordBtn = homeDiscordCard:FindFirstChild("JoinDiscordButton")
@@ -1201,6 +1233,7 @@ for _, pageName in ipairs({ "Combat_Page", "Visuals_Page", "Movement_Page" }) do
                         and lText ~= "Whitelist Check"
                         and lText ~= "Wall Check"
                         and lText ~= "Crosshair Center Dot"
+                        and lText ~= "Weather Sound Effects"
                         and lText ~= "Stealth Anti-Kick Bypass (99% Undetected)" then
                         ctrl.MouseButton1Click:Fire()
                     end
@@ -1249,13 +1282,42 @@ for _, desc in ipairs(mainWindow:GetDescendants()) do
     if desc.Name == "Visuals_Page" then visualsPage = desc end
 end
 local res1280x1024Btn, res1728x1080Btn
+local weatherRainBtn, weatherStormBtn, weatherSnowBtn, weatherSunnyBtn, weatherDefaultBtn
 for _, desc in ipairs(visualsPage:GetDescendants()) do
     if desc.ClassName == "TextButton" then
         if desc.Text == "1280x1024" then res1280x1024Btn = desc end
         if desc.Text == "1728x1080" then res1728x1080Btn = desc end
+        if desc.Text == "Rain" then weatherRainBtn = desc end
+        if desc.Text == "Thunderstorm" then weatherStormBtn = desc end
+        if desc.Text == "Snow" then weatherSnowBtn = desc end
+        if desc.Text == "Sunny" then weatherSunnyBtn = desc end
     end
 end
 assert(res1280x1024Btn ~= nil and res1728x1080Btn ~= nil, "Resolution Preset options (1280x960, 1440x1080, 1280x1024, 1728x1080) must exist")
+assert(weatherRainBtn ~= nil and weatherStormBtn ~= nil and weatherSnowBtn ~= nil and weatherSunnyBtn ~= nil, "Weather Preset options (Default, Rain, Thunderstorm, Snow, Sunny) must exist in Visuals_Page")
+
+-- Test Weather Presets & Sound Effects (Rain, Thunderstorm, Snow, Sunny)
+local weatherPart = workspace:FindFirstChild("CoreXyz_WeatherEmitterPart")
+local weatherEmitter = weatherPart and weatherPart:FindFirstChild("CoreXyz_WeatherEmitter")
+local weatherSunRays = game:GetService("Lighting"):FindFirstChild("CoreXyz_WeatherSunRays")
+local ambienceSound = game:GetService("SoundService"):FindFirstChild("CoreXyz_WeatherAmbienceSound")
+local thunderSound = game:GetService("SoundService"):FindFirstChild("CoreXyz_WeatherThunderSound")
+assert(weatherPart ~= nil and weatherEmitter ~= nil and weatherSunRays ~= nil and ambienceSound ~= nil and thunderSound ~= nil, "Pre-allocated Weather Emitter, SunRaysEffect, and Ambience/Thunder Sounds must exist")
+
+weatherRainBtn.MouseButton1Click:Fire()
+assert(weatherEmitter.Enabled == true and ambienceSound.IsPlaying == true, "Selecting Rain must enable WeatherEmitter and play Rain ambience sound")
+
+weatherStormBtn.MouseButton1Click:Fire()
+assert(weatherEmitter.Enabled == true and weatherEmitter.Rate == 320 and ambienceSound.IsPlaying == true, "Selecting Thunderstorm must enable high-rate storm emitter and play storm ambience")
+game:GetService("RunService").RenderStepped:Fire(5.0)
+assert((thunderSound.__playCount or 0) >= 1, "Thunderstorm must trigger periodic lightning flash & thunder sound strike")
+
+weatherSnowBtn.MouseButton1Click:Fire()
+assert(weatherEmitter.Enabled == true and weatherEmitter.Rate == 150 and ambienceSound.IsPlaying == true, "Selecting Snow must enable snowflake emitter and winter wind sound")
+
+weatherSunnyBtn.MouseButton1Click:Fire()
+assert(weatherEmitter.Enabled == false and weatherSunRays.Enabled == true and ambienceSound.IsPlaying == true, "Selecting Sunny must disable precipitation emitter, enable SunRaysEffect, and play sunny ambience")
+
 res1280x1024Btn.MouseButton1Click:Fire()
 game:GetService("RunService").RenderStepped:Fire(0.016)
 assert(math.abs(workspace.CurrentCamera.CFrame.R11 - 0.70) < 0.02, "Selecting 1280x1024 must reset Custom Stretch and apply 0.70 stretch ratio to Camera CFrame")

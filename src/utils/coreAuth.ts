@@ -65,6 +65,16 @@ export const BOOT_STAGE_SEQUENCE = [
   { threshold: 90, progress: 100, label: 'Finalizing workspace...' },
 ] as const;
 
+export type WeatherPresetType = 'Default' | 'Rain' | 'Thunderstorm' | 'Snow' | 'Sunny';
+
+export const WEATHER_PRESETS: readonly WeatherPresetType[] = [
+  'Default',
+  'Rain',
+  'Thunderstorm',
+  'Snow',
+  'Sunny',
+] as const;
+
 export interface CoreConfigState {
   aimbotEnabled: boolean;
   showFOV: boolean;
@@ -78,6 +88,9 @@ export interface CoreConfigState {
   espAccent: 'White' | 'Silver' | 'Crimson' | 'Cyan';
   crosshairEnabled: boolean;
   crosshairSize: number;
+  weatherPreset: WeatherPresetType;
+  weatherSoundEnabled: boolean;
+  weatherVolume: number;
   walkSpeedEnabled: boolean;
   walkSpeed: number;
   jumpPowerEnabled: boolean;
@@ -107,6 +120,9 @@ export const DEFAULT_CORE_CONFIG: CoreConfigState = {
   espAccent: 'White',
   crosshairEnabled: true,
   crosshairSize: 12,
+  weatherPreset: 'Default',
+  weatherSoundEnabled: true,
+  weatherVolume: 50,
   walkSpeedEnabled: false,
   walkSpeed: 24,
   jumpPowerEnabled: false,

@@ -1,10 +1,10 @@
 --[=[
-    CORE.XYZ | UNIVERSAL ROBLOX LUA SCRIPT (V4.4 MAXIMUM STEALTH & OBJECT-POOLED EDITION)
+    CORE.XYZ | UNIVERSAL ROBLOX LUA SCRIPT (V4.6 ULTRA-FPS STEALTH & ZERO-FLAW EDITION)
     Theme: Pure Black & White Monochrome (With Full RGB & Theme Freedom in Settings)
     Architecture:
       1. Zero Metatable Hooks (No __namecall, __index, hookmetamethod, or restricted C++ telemetry calls)
-      2. Passive Viewport Targeting (Throttled 25Hz WorldToViewportPoint target scan + 144Hz+ camera Lerp)
-      3. Pre-Allocated Object Pooling (Zero per-frame Instance/table creation or destruction in RenderStepped)
+      2. Classic Camera + Character Lock-In Aimbot (Single Toggle + Viewport Targeting + Smooth Lerp)
+      3. Self-Healing Object Pool ESP (Instant refresh on PlayerAdded, Death, Respawn & Limb Streaming)
       4. Isolated Closure Scope (Self-contained task.spawn closure — zero global or getgenv() pollution)
       5. Deterministic Toggle & Lifecycle Cleanup (Instant primitive hide, state restoration, and unbind)
 
@@ -271,6 +271,7 @@ local RESOLUTION_PRESETS = {
 
 local State = {
     connections = {},
+    playerCharConnections = {},
     selectedTeams = { ["All"] = true },
     allTeams = { "All" },
     prioritizedPlayers = {},
@@ -1768,6 +1769,9 @@ local function createTab(name, order)
         page.Position = UDim2.fromOffset(14, 0)
         page.Visible = true
         tween(page, SmoothTween, { Position = UDim2.fromOffset(0, 0) })
+        if name == "Players" and State.refreshPlayerListUI then
+            State.refreshPlayerListUI()
+        end
     end
 
     btn.MouseButton1Click:Connect(function()
@@ -2429,6 +2433,27 @@ local function isPlayerWhitelisted(player)
     return State.whitelistedPlayers[player.Name] == true
 end
 
+local function getPlayerTeamName(player)
+    if not player then
+        return nil
+    end
+    local t = player.Team
+    if not t then
+        return nil
+    end
+    if type(t) == "string" then
+        return t ~= "" and t or nil
+    end
+    local ok, name = pcall(function()
+        return t.Name
+    end)
+    if ok and type(name) == "string" and name ~= "" then
+        return name
+    end
+    local str = tostring(t)
+    return (str ~= "" and str ~= "nil") and str or nil
+end
+
 local function passesTeamCheck(player)
     if isPlayerWhitelisted(player) then
         return false
@@ -2436,11 +2461,18 @@ local function passesTeamCheck(player)
     if not ConfigState.TeamCheck then
         return true
     end
+    local myTeam = getPlayerTeamName(LocalPlayer)
+    local plrTeam = getPlayerTeamName(player)
+    if myTeam and plrTeam and myTeam == plrTeam then
+        return false
+    end
     if State.selectedTeams["All"] then
         return true
     end
-    local teamName = (player.Team and type(player.Team) == "table" and player.Team.Name) or tostring(player.Team)
-    return State.selectedTeams[teamName] == true or State.selectedTeams[tostring(player.Team)] == true
+    if not plrTeam then
+        return false
+    end
+    return State.selectedTeams[plrTeam] == true
 end
 
 local function syncWhitelistArrayFromMap()
@@ -2634,6 +2666,8 @@ local function preallocatePlayerESP(player)
         CachedHum = nil,
         CachedHead = nil,
         CachedJointPairs = nil,
+        BonesComplete = false,
+        BoneRetryFrames = 0,
         LastDist = -1,
         LastHP = -1,
         LastPriority = nil,
@@ -2647,12 +2681,30 @@ local function preallocatePlayerESP(player)
     return tagData
 end
 
+local function invalidatePlayerESPCache(player)
+    local data = State.espObjects[player]
+    if not data then
+        return
+    end
+    data.CachedChar = nil
+    data.CachedHRP = nil
+    data.CachedHum = nil
+    data.CachedHead = nil
+    data.CachedJointPairs = nil
+    data.BonesComplete = false
+    data.BoneRetryFrames = 0
+    data.LastHLAdornee = nil
+    data.LastHLEnabled = false
+    data.LastDist = -1
+    data.LastHP = -1
+end
+
 local function hidePlayerESP(player)
     local data = State.espObjects[player]
     if not data then
         return
     end
-    if data.Billboard and data.Billboard.Enabled then
+    if data.Billboard and (data.Billboard.Enabled or data.Billboard.Adornee ~= nil) then
         data.Billboard.Enabled = false
         data.Billboard.Adornee = nil
     end
@@ -2680,7 +2732,7 @@ local function hidePlayerESP(player)
     if data.HealthBarBg and data.HealthBarBg.Visible then
         data.HealthBarBg.Visible = false
     end
-    if data.Highlight and data.LastHLEnabled then
+    if data.Highlight and (data.LastHLEnabled or data.Highlight.Enabled or data.Highlight.Adornee ~= nil) then
         data.Highlight.Enabled = false
         data.Highlight.Adornee = nil
         data.LastHLEnabled = false
@@ -2688,7 +2740,49 @@ local function hidePlayerESP(player)
     end
 end
 
+local function disconnectPlayerCharSignals(player)
+    local conns = State.playerCharConnections[player]
+    if conns then
+        for _, c in ipairs(conns) do
+            pcall(function()
+                c:Disconnect()
+            end)
+        end
+        State.playerCharConnections[player] = nil
+    end
+end
+
+local function hookPlayerLifecycle(player)
+    if not player or player == LocalPlayer then
+        return nil
+    end
+    local tagData = preallocatePlayerESP(player)
+    disconnectPlayerCharSignals(player)
+    local conns = {}
+    pcall(function()
+        if player.CharacterAdded and player.CharacterAdded.Connect then
+            local cAdd = player.CharacterAdded:Connect(function()
+                hidePlayerESP(player)
+                invalidatePlayerESPCache(player)
+            end)
+            table.insert(conns, cAdd)
+        end
+    end)
+    pcall(function()
+        if player.CharacterRemoving and player.CharacterRemoving.Connect then
+            local cRem = player.CharacterRemoving:Connect(function()
+                hidePlayerESP(player)
+                invalidatePlayerESPCache(player)
+            end)
+            table.insert(conns, cRem)
+        end
+    end)
+    State.playerCharConnections[player] = conns
+    return tagData
+end
+
 local function releasePlayerESP(player)
+    disconnectPlayerCharSignals(player)
     local data = State.espObjects[player]
     if not data then
         return
@@ -2716,13 +2810,16 @@ local function clearESP()
     end
 end
 
--- Pre-allocate object pool for all current players (Zero RenderStepped instantiation!)
+-- Pre-allocate object pool & lifecycle hooks for all current players
 for _, existingPlr in ipairs(Players:GetPlayers()) do
-    preallocatePlayerESP(existingPlr)
+    hookPlayerLifecycle(existingPlr)
 end
 
 local function cacheCharacterBones(char)
     local jointPairs = {}
+    local validCount = 0
+    local isR15 = char:FindFirstChild("UpperTorso") ~= nil
+    local expectedMin = isR15 and 10 or (char:FindFirstChild("Left Arm") and 5 or 1)
     for bIdx, jointDef in ipairs(SKELETON_JOINTS) do
         local partA = char:FindFirstChild(jointDef[1])
             or (jointDef[1] == "UpperTorso" and char:FindFirstChild("Torso"))
@@ -2731,11 +2828,12 @@ local function cacheCharacterBones(char)
             or (jointDef[3] and char:FindFirstChild(jointDef[3]))
         if partA and partB and partA ~= partB then
             jointPairs[bIdx] = { PartA = partA, PartB = partB }
+            validCount = validCount + 1
         else
             jointPairs[bIdx] = false
         end
     end
-    return jointPairs
+    return jointPairs, (validCount >= expectedMin)
 end
 
 local function updateESP(camera)
@@ -2749,24 +2847,38 @@ local function updateESP(camera)
 
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then
-            local tagData = State.espObjects[player] or preallocatePlayerESP(player)
+            local tagData = State.espObjects[player] or hookPlayerLifecycle(player)
             local char = player.Character
 
             if not char or not passesTeamCheck(player) then
                 hidePlayerESP(player)
             else
-                -- Per-Character Bone & Part Caching (Zero FindFirstChild overhead in 60-240 FPS loop!)
-                if tagData.CachedChar ~= char then
-                    tagData.CachedChar = char
-                    tagData.CachedHRP = char:FindFirstChild("HumanoidRootPart")
-                    tagData.CachedHum = char:FindFirstChildOfClass("Humanoid")
-                    tagData.CachedHead = char:FindFirstChild("Head")
-                    tagData.CachedJointPairs = cacheCharacterBones(char)
-                    tagData.LastHLAdornee = nil
-                end
-
+                -- Self-healing character & part cache: never locks CachedChar until BOTH HumanoidRootPart and Humanoid have replicated!
                 local hrp = tagData.CachedHRP
                 local hum = tagData.CachedHum
+                if tagData.CachedChar ~= char
+                    or not hrp or hrp.Parent ~= char
+                    or not hum or hum.Parent ~= char then
+                    hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+                    hum = char:FindFirstChildOfClass("Humanoid")
+                    if hrp and hum then
+                        tagData.CachedChar = char
+                        tagData.CachedHRP = hrp
+                        tagData.CachedHum = hum
+                        tagData.CachedHead = char:FindFirstChild("Head")
+                        tagData.CachedJointPairs = nil
+                        tagData.BonesComplete = false
+                        tagData.BoneRetryFrames = 0
+                        tagData.LastHLAdornee = nil
+                        tagData.LastHLEnabled = false
+                        tagData.LastDist = -1
+                        tagData.LastHP = -1
+                    else
+                        tagData.CachedChar = nil
+                        tagData.CachedHRP = nil
+                        tagData.CachedHum = nil
+                    end
+                end
 
                 if not hrp or not hum or hum.Health <= 0 then
                     hidePlayerESP(player)
@@ -2778,6 +2890,7 @@ local function updateESP(camera)
                         hl.FillTransparency = 0.7
                         hl.OutlineTransparency = 0.25
                         hl.Adornee = char
+                        hl.Enabled = true
                         hl.Parent = UI.HighlightContainer
                         tagData.Highlight = hl
                         tagData.LastHLAdornee = char
@@ -2835,11 +2948,11 @@ local function updateESP(camera)
                         end
                     end
 
-                    -- Only update Highlight properties when changed (prevents Roblox Highlight mesh rebuild lag!)
+                    -- Verify both cached & actual Highlight Adornee/Enabled so respawns immediately re-bind Highlight
                     if tagData.Highlight then
                         local wantHL = ConfigState.ESP
                         local wantAdornee = wantHL and char or nil
-                        if tagData.LastHLAdornee ~= wantAdornee then
+                        if tagData.LastHLAdornee ~= wantAdornee or tagData.Highlight.Adornee ~= wantAdornee then
                             tagData.Highlight.Adornee = wantAdornee
                             tagData.LastHLAdornee = wantAdornee
                         end
@@ -2847,7 +2960,7 @@ local function updateESP(camera)
                             tagData.Highlight.FillColor = displayCol
                             tagData.LastHLColor = displayCol
                         end
-                        if tagData.LastHLEnabled ~= wantHL then
+                        if tagData.LastHLEnabled ~= wantHL or tagData.Highlight.Enabled ~= wantHL then
                             tagData.Highlight.Enabled = wantHL
                             tagData.LastHLEnabled = wantHL
                         end
@@ -2892,6 +3005,12 @@ local function updateESP(camera)
                         end
 
                         if ConfigState.SkeletonESP then
+                            if not tagData.CachedJointPairs or (not tagData.BonesComplete and (tagData.BoneRetryFrames or 0) < 30) then
+                                tagData.BoneRetryFrames = (tagData.BoneRetryFrames or 0) + 1
+                                local joints, complete = cacheCharacterBones(char)
+                                tagData.CachedJointPairs = joints
+                                tagData.BonesComplete = complete
+                            end
                             tagData.SkeletonVisible = true
                             local cachedJoints = tagData.CachedJointPairs
                             for bIdx = 1, #SKELETON_JOINTS do
@@ -3128,13 +3247,20 @@ local function getClosestTarget(camera)
     return closestPriority or closestNormal
 end
 
--- Universal Hitbox Expander (Supports Team Check & Whitelist)
+-- Universal Hitbox Expander (Supports Team Check, Whitelist & Auto-Refresh on New/Respawned Players)
 local function updateHitboxExpander()
+    for hrp, orig in pairs(State.hitboxCache) do
+        if not hrp or not hrp.Parent then
+            State.hitboxCache[hrp] = nil
+        end
+    end
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer and p.Character then
             local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+            local hum = p.Character:FindFirstChildOfClass("Humanoid")
+            local isAlive = (not hum) or (hum.Health > 0)
             if hrp then
-                if ConfigState.HitboxExpander and passesTeamCheck(p) then
+                if ConfigState.HitboxExpander and isAlive and passesTeamCheck(p) then
                     if not State.hitboxCache[hrp] then
                         State.hitboxCache[hrp] = {
                             Size = hrp.Size,
@@ -3810,20 +3936,14 @@ do
     end)
 end
 
--- TAB 2: COMBAT (CAMERA + CHARACTER LOCK-IN AIMBOT + SINGLE-RING ANIMATED FOV + HITBOX EXPANDER + MULTI-TEAM + WHITELIST)
+-- TAB 2: COMBAT (SINGLE AIMBOT TOGGLE WITH CLASSIC LOCK-IN + HITPART/WALLCHECK/TEAMCHECK/WHITELIST ABOVE HITBOX AREA)
 do
-    createLabel(CombatTab, "Camera & Character Lock-In Aimbot")
+    createLabel(CombatTab, "Aimbot & FOV Controller")
     createToggle(CombatTab, "Aimbot", false, function(val)
         ConfigState.Aimbot = val
         if not val then
             State.cachedAimTarget = nil
         end
-    end)
-    createToggle(CombatTab, "Aimbot Lock Character (Face Target)", true, function(val)
-        ConfigState.AimbotLockCharacter = val
-    end)
-    createToggle(CombatTab, "Aimbot WallCheck (Raycast)", false, function(val)
-        ConfigState.AimbotWallCheck = val
     end)
     createToggle(CombatTab, "FOV Circle", false, function(val)
         ConfigState.ShowFOV = val
@@ -3836,7 +3956,9 @@ do
     createSlider(CombatTab, "Aimbot Smoothness", 0.05, 1, 0.9, 0.01, "", function(val)
         ConfigState.Smoothness = val
     end)
-    createDropdown(CombatTab, "Aimbot Target Bone", {
+
+    createLabel(CombatTab, "Targeting, Hitpart, Wall Check, Team Check & Whitelist")
+    createDropdown(CombatTab, "Hitpart", {
         "Head",
         "HumanoidRootPart",
         "UpperTorso",
@@ -3845,37 +3967,16 @@ do
         ConfigState.TargetPart = opt
         State.cachedAimTarget = nil
     end)
-
-    createLabel(CombatTab, "Universal Hitbox Expander (Team & Whitelist Aware)")
-    createToggle(CombatTab, "Hitbox Expander", false, function(val)
-        ConfigState.HitboxExpander = val
-        if val then
-            updateHitboxExpander()
-        else
-            restoreAllHitboxes()
-        end
+    createToggle(CombatTab, "Wall Check", false, function(val)
+        ConfigState.AimbotWallCheck = val
     end)
-    createSlider(CombatTab, "Hitbox Size", 2, 25, 10, 1, "studs", function(val)
-        ConfigState.HitboxSize = val
-        if ConfigState.HitboxExpander then
-            updateHitboxExpander()
-        end
-    end)
-    createSlider(CombatTab, "Hitbox Transparency", 0, 1, 0.7, 0.05, "", function(val)
-        ConfigState.HitboxTransparency = val
-        if ConfigState.HitboxExpander then
-            updateHitboxExpander()
-        end
-    end)
-
-    createLabel(CombatTab, "Team Check & Player Whitelist")
     createToggle(CombatTab, "Team Check", true, function(val)
         ConfigState.TeamCheck = val
         if ConfigState.HitboxExpander then
             updateHitboxExpander()
         end
     end)
-    createToggle(CombatTab, "Ignore Whitelisted Players", true, function(val)
+    createToggle(CombatTab, "Whitelist Check", true, function(val)
         ConfigState.UseWhitelist = val
         if ConfigState.HitboxExpander then
             updateHitboxExpander()
@@ -3889,7 +3990,7 @@ do
         end
     end
 
-    local WhitelistDropdownCtrl = createMultiDropdown(CombatTab, "Whitelisted Players", initialPlayerNames, State.whitelistArray, 50, function(selectedNames)
+    local WhitelistDropdownCtrl = createMultiDropdown(CombatTab, "Whitelist Players", initialPlayerNames, State.whitelistArray, 50, function(selectedNames)
         table.clear(State.whitelistedPlayers)
         for _, name in ipairs(selectedNames) do
             State.whitelistedPlayers[name] = true
@@ -3915,6 +4016,28 @@ do
                 State.selectedTeams[tName] = true
             end
         end
+        if ConfigState.HitboxExpander then
+            updateHitboxExpander()
+        end
+    end)
+
+    createLabel(CombatTab, "Universal Hitbox Expander")
+    createToggle(CombatTab, "Hitbox Expander", false, function(val)
+        ConfigState.HitboxExpander = val
+        if val then
+            updateHitboxExpander()
+        else
+            restoreAllHitboxes()
+        end
+    end)
+    createSlider(CombatTab, "Hitbox Size", 2, 25, 10, 1, "studs", function(val)
+        ConfigState.HitboxSize = val
+        if ConfigState.HitboxExpander then
+            updateHitboxExpander()
+        end
+    end)
+    createSlider(CombatTab, "Hitbox Transparency", 0, 1, 0.7, 0.05, "", function(val)
+        ConfigState.HitboxTransparency = val
         if ConfigState.HitboxExpander then
             updateHitboxExpander()
         end
@@ -4512,11 +4635,12 @@ do
     end)
 
     bindConnection("PlayerAdded", Players.PlayerAdded, function(newPlr)
-        preallocatePlayerESP(newPlr)
+        hookPlayerLifecycle(newPlr)
         syncWhitelistArrayFromMap()
-        if UI.MainWindow.Visible then
-            refreshPlayerListUI()
+        if ConfigState.HitboxExpander then
+            updateHitboxExpander()
         end
+        refreshPlayerListUI()
     end)
     bindConnection("PlayerRemoving", Players.PlayerRemoving, function(remPlayer)
         if remPlayer then
@@ -4529,11 +4653,17 @@ do
             if State.orbitingPlayerName == remPlayer.Name then
                 State.orbitingPlayerName = nil
             end
+            if State.spectatingPlayerName == remPlayer.Name then
+                State.spectatingPlayerName = nil
+                local cam = workspace.CurrentCamera
+                local myHum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                if cam and myHum then
+                    cam.CameraSubject = myHum
+                end
+            end
         end
         syncWhitelistArrayFromMap()
-        if UI.MainWindow.Visible then
-            refreshPlayerListUI()
-        end
+        refreshPlayerListUI()
     end)
 end
 
@@ -5155,6 +5285,7 @@ end)
 do
     local interactCooldown = 0
     local antiFlingCooldown = 0
+    local hitboxRefreshCooldown = 0
     RunService.Stepped:Connect(function(_, stepDt)
         if not State.isAuthorized then
             return
@@ -5170,6 +5301,14 @@ do
         local myHRP = State.cachedLocalHRP
         local myHum = State.cachedLocalHum
         local dt = (stepDt and stepDt > 0) and stepDt or 0.016
+
+        if ConfigState.HitboxExpander then
+            hitboxRefreshCooldown = hitboxRefreshCooldown + dt
+            if hitboxRefreshCooldown >= 0.4 then
+                hitboxRefreshCooldown = 0
+                updateHitboxExpander()
+            end
+        end
 
         -- Save last safe CFrame for Anti-Void
         if myHRP and myHRP.Position.Y > -50 then
@@ -5348,7 +5487,7 @@ do
             return
         end
 
-        -- Glitch-Free Freecam movement & Camera Subject Safeguard
+        -- Glitch-Free Freecam movement & Camera Subject Safeguard (Auto-Rebinds Spectate on Respawn)
         if ConfigState.Freecam then
             camera.CameraType = Enum.CameraType.Scriptable
             local hum = State.cachedLocalHum
@@ -5357,7 +5496,17 @@ do
             local nextPos = curPos + (moveDir * (ConfigState.FreecamSpeed * safeDt))
             State.freecamPos = nextPos
             camera.CFrame = CFrame.new(nextPos, nextPos + Vector3.new(0, 0, -1))
-        elseif not State.spectatingPlayerName then
+        elseif State.spectatingPlayerName then
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p.Name == State.spectatingPlayerName and p.Character then
+                    local tHum = p.Character:FindFirstChildOfClass("Humanoid")
+                    if tHum and camera.CameraSubject ~= tHum then
+                        camera.CameraSubject = tHum
+                    end
+                    break
+                end
+            end
+        else
             if camera.CameraType == Enum.CameraType.Scriptable then
                 camera.CameraType = Enum.CameraType.Custom
             end
@@ -5376,7 +5525,7 @@ do
             UI.FovOuterStroke.Thickness = 1.6 + 0.45 * math.sin(animClock * 4.2)
         end
 
-        -- Accurate Frame-Synchronized Aimbot Lock-In (Locks Camera AND Rotates Local Character to Face Target!)
+        -- Classic Single-Toggle Aimbot Lock-In (Locks Camera CFrame & Character Horizontally to Target)
         if ConfigState.Aimbot then
             local target = getClosestTarget(camera)
             State.cachedAimTarget = target
@@ -5384,15 +5533,10 @@ do
                 local targetPos = target.Position
                 local camGoal = CFrame.new(camera.CFrame.Position, targetPos)
                 local smooth = math.clamp(ConfigState.Smoothness or 0.9, 0.05, 1)
-                if smooth >= 0.92 then
-                    camera.CFrame = camGoal
-                else
-                    local alpha = 1 - ((1 - smooth) ^ (safeDt * 60))
-                    camera.CFrame = camera.CFrame:Lerp(camGoal, math.clamp(alpha, 0.12, 1))
-                end
+                camera.CFrame = camera.CFrame:Lerp(camGoal, smooth)
 
                 -- Rotate LocalPlayer's Character horizontally toward the locked target so your character aims with your screen!
-                if ConfigState.AimbotLockCharacter and myHRP and not ConfigState.Spinbot and not State.orbitingPlayerName then
+                if myHRP and not ConfigState.Spinbot and not State.orbitingPlayerName then
                     local myPos = myHRP.Position
                     local flatTarget = Vector3.new(targetPos.X, myPos.Y, targetPos.Z)
                     if (flatTarget - myPos).Magnitude > 0.05 then

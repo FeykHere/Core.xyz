@@ -1075,17 +1075,47 @@ assert(visualsTabBtn ~= nil, "Visuals_TabBtn must exist in sidebar")
 visualsTabBtn.MouseButton1Click:Fire()
 assert(screenGui:FindFirstChild("CoreESPPreviewWindow") == nil, "CoreESPPreviewWindow must remain completely absent")
 
--- Verify Silent Aim was removed from Combat_Page
+-- Verify Silent Aim and duplicate Aimbot toggles were removed from Combat_Page, and verify Hitpart/WallCheck/TeamCheck/Whitelist are ordered ABOVE Hitbox Expander
 local combatPage
 for _, desc in ipairs(mainWindow:GetDescendants()) do
     if desc.Name == "Combat_Page" then combatPage = desc end
 end
-for _, desc in ipairs(combatPage:GetDescendants()) do
-    if desc.ClassName == "TextLabel" then
-        assert(string.find(desc.Text, "Silent Aim") == nil, "Silent Aim must be removed from Combat_Page")
-        assert(string.find(desc.Text, "Hit Chance") == nil, "Hit Chance must be removed from Combat_Page")
+local combatOrderedLabels = {}
+local aimbotToggleCount = 0
+for _, child in ipairs(combatPage:GetChildren()) do
+    for _, desc in ipairs(child:GetDescendants()) do
+        if desc.ClassName == "TextLabel" and desc.Text ~= "" then
+            table.insert(combatOrderedLabels, desc.Text)
+            if string.find(desc.Text, "Aimbot") and child.ClassName == "TextButton" then
+                aimbotToggleCount = aimbotToggleCount + 1
+            end
+        end
     end
 end
+assert(aimbotToggleCount == 1, "There must be ONLY ONE Aimbot toggle in Combat_Page, found: " .. tostring(aimbotToggleCount))
+
+local function findLabelIndex(labelList, targetText)
+    for idx, txt in ipairs(labelList) do
+        if txt == targetText then return idx end
+    end
+    return nil
+end
+
+local idxAimbot = findLabelIndex(combatOrderedLabels, "Aimbot")
+local idxHitpart = findLabelIndex(combatOrderedLabels, "Hitpart")
+local idxWallCheck = findLabelIndex(combatOrderedLabels, "Wall Check")
+local idxTeamCheck = findLabelIndex(combatOrderedLabels, "Team Check")
+local idxWhitelistCheck = findLabelIndex(combatOrderedLabels, "Whitelist Check")
+local idxWhitelistDropdown = findLabelIndex(combatOrderedLabels, "Whitelist Players")
+local idxHitboxExpander = findLabelIndex(combatOrderedLabels, "Hitbox Expander")
+
+assert(idxAimbot and idxHitpart and idxWallCheck and idxTeamCheck and idxWhitelistCheck and idxWhitelistDropdown and idxHitboxExpander, "All Combat controls (Aimbot, Hitpart, Wall Check, Team Check, Whitelist Check, Whitelist Players, Hitbox Expander) must exist")
+assert(idxAimbot < idxHitboxExpander, "Aimbot toggle must be above Hitbox Expander")
+assert(idxHitpart < idxHitboxExpander, "Hitpart dropdown must be above Hitbox Expander")
+assert(idxWallCheck < idxHitboxExpander, "Wall Check toggle must be above Hitbox Expander")
+assert(idxTeamCheck < idxHitboxExpander, "Team Check toggle must be above Hitbox Expander")
+assert(idxWhitelistCheck < idxHitboxExpander, "Whitelist Check toggle must be above Hitbox Expander")
+assert(idxWhitelistDropdown < idxHitboxExpander, "Whitelist Players dropdown must be above Hitbox Expander")
 
 -- Enable Combat, Visuals, and Movement toggles (skipping toggles that already default to true)
 for _, pageName in ipairs({ "Combat_Page", "Visuals_Page", "Movement_Page" }) do
@@ -1097,9 +1127,8 @@ for _, pageName in ipairs({ "Combat_Page", "Visuals_Page", "Movement_Page" }) do
                     local lText = rowLabel and rowLabel.Text or ""
                     if lText ~= ""
                         and lText ~= "Team Check"
-                        and lText ~= "Ignore Whitelisted Players"
-                        and lText ~= "Aimbot Lock Character (Face Target)"
-                        and lText ~= "Aimbot WallCheck (Raycast)"
+                        and lText ~= "Whitelist Check"
+                        and lText ~= "Wall Check"
                         and lText ~= "Crosshair Center Dot"
                         and lText ~= "Stealth Anti-Kick Bypass (99% Undetected)" then
                         ctrl.MouseButton1Click:Fire()
@@ -1255,6 +1284,105 @@ for frame = 1, 20 do
 end
 local instanceCountAfterLoop = #_G.__ALL_INSTANCES
 assert(instanceCountAfterLoop == instanceCountBeforeLoop, "RenderStepped loop must allocate ZERO new instances across 20 frames (100% Object Pooled)")
+
+-- 6B. Test ESP & Hitbox Auto-Refresh on Player Death, Multi-Frame Streaming Respawn, and New Player Joining Mid-Game!
+local enemy3Player = _G.__ALL_PLAYERS[4] -- Enemy_3
+local enemy3Hum = enemy3Player.Character:FindFirstChildOfClass("Humanoid")
+
+local function findScreenTagForPlayer(plrName)
+    for _, child in ipairs(overlays:GetChildren()) do
+        if child.Name == "Box3DOverlay" then
+            local st = child:FindFirstChild("ScreenNameTag")
+            if st and string.find(st.Text or "", plrName) then
+                return st, child
+            end
+        end
+    end
+    return nil, nil
+end
+
+local tagBeforeDeath, overlayBeforeDeath = findScreenTagForPlayer("Enemy_3")
+assert(tagBeforeDeath ~= nil and tagBeforeDeath.Visible == true and overlayBeforeDeath.Visible == true, "Enemy_3 ESP must be visible while alive")
+
+-- Kill Enemy_3 (Health = 0) -> ESP must immediately hide on next frame!
+enemy3Hum.Health = 0
+RunService.RenderStepped:Fire(0.016)
+assert(tagBeforeDeath.Visible == false and overlayBeforeDeath.Visible == false, "Enemy_3 ESP must immediately hide when Enemy_3 dies (Health = 0)")
+
+-- Respawn Enemy_3 with a NEW Character Model where HumanoidRootPart & Humanoid stream in 2 frames later!
+local respawnedChar = _G.__createInstance("Model")
+respawnedChar.Name = "EnemyChar_3_Respawned"
+enemy3Player.Character = respawnedChar
+-- Frame 1 & 2: Character exists, but HumanoidRootPart & Humanoid have NOT replicated yet!
+RunService.RenderStepped:Fire(0.016)
+RunService.RenderStepped:Fire(0.016)
+assert(overlayBeforeDeath.Visible == false, "Enemy_3 ESP must stay hidden while new character parts are still streaming in")
+
+-- Frame 3: HumanoidRootPart, Head, UpperTorso, and Humanoid finish replicating into respawnedChar!
+local newHRP3 = _G.__createInstance("Part")
+newHRP3.Name = "HumanoidRootPart"
+newHRP3.CFrame = CFrame.new(Vector3.new(6, 5, -18))
+newHRP3.Parent = respawnedChar
+local newHead3 = _G.__createInstance("Part")
+newHead3.Name = "Head"
+newHead3.CFrame = CFrame.new(Vector3.new(6, 6.5, -18))
+newHead3.Parent = respawnedChar
+local newUT3 = _G.__createInstance("Part")
+newUT3.Name = "UpperTorso"
+newUT3.CFrame = newHRP3.CFrame
+newUT3.Parent = respawnedChar
+local newHum3 = _G.__createInstance("Humanoid")
+newHum3.Health = 100
+newHum3.MaxHealth = 100
+newHum3.Parent = respawnedChar
+
+RunService.Stepped:Fire(0, 0.5)
+RunService.RenderStepped:Fire(0.016)
+local tagAfterRespawn, overlayAfterRespawn = findScreenTagForPlayer("Enemy_3")
+assert(tagAfterRespawn ~= nil and tagAfterRespawn.Visible == true and overlayAfterRespawn.Visible == true, "Enemy_3 ESP must automatically refresh and become visible as soon as respawned character parts replicate")
+assert(overlayAfterRespawn:FindFirstChild("Bone_1").Visible == true, "Enemy_3 Skeleton ESP must automatically re-bind to respawned character bones")
+assert(newHRP3.Size.X == 10, "Hitbox Expander must automatically expand respawned Enemy_3's new HumanoidRootPart to 10")
+
+-- Now simulate a brand-new player (Enemy_NewJoin_36) joining mid-game via Players.PlayerAdded!
+local newJoinedPlayer = _G.__createInstance("Player")
+newJoinedPlayer.Name = "Enemy_NewJoin_36"
+newJoinedPlayer.DisplayName = "Newcomer_36"
+newJoinedPlayer.UserId = 2036
+newJoinedPlayer.Team = "Bravo"
+newJoinedPlayer.CharacterAdded = _G.__createInstance("Part").MouseButton1Click
+table.insert(_G.__ALL_PLAYERS, newJoinedPlayer)
+game:GetService("Players").PlayerAdded:Fire(newJoinedPlayer)
+
+-- Initially character is empty Model on frame 1
+local newJoinChar = _G.__createInstance("Model")
+newJoinChar.Name = "NewJoinChar_36"
+newJoinedPlayer.Character = newJoinChar
+RunService.RenderStepped:Fire(0.016)
+
+-- Frame 2: HumanoidRootPart, Head, Torso, and Humanoid replicate into NewJoinChar_36
+local njHRP = _G.__createInstance("Part")
+njHRP.Name = "HumanoidRootPart"
+njHRP.CFrame = CFrame.new(Vector3.new(4, 5, -22))
+njHRP.Parent = newJoinChar
+local njHead = _G.__createInstance("Part")
+njHead.Name = "Head"
+njHead.CFrame = CFrame.new(Vector3.new(4, 6.5, -22))
+njHead.Parent = newJoinChar
+local njTorso = _G.__createInstance("Part")
+njTorso.Name = "Torso"
+njTorso.CFrame = njHRP.CFrame
+njTorso.Parent = newJoinChar
+local njHum = _G.__createInstance("Humanoid")
+njHum.Health = 95
+njHum.MaxHealth = 100
+njHum.Parent = newJoinChar
+
+RunService.Stepped:Fire(0, 0.5)
+RunService.RenderStepped:Fire(0.016)
+
+local njTag, njOverlay = findScreenTagForPlayer("Enemy_NewJoin_36")
+assert(njTag ~= nil and njTag.Visible == true and njOverlay.Visible == true, "Newly joined player Enemy_NewJoin_36 must automatically get live ESP without toggling ESP off/on")
+assert(njHRP.Size.X == 10, "Newly joined player Enemy_NewJoin_36 must automatically get expanded hitbox")
 
 -- Verify Zero Restricted Engine Telemetry Calls (No VirtualUser or Set3dRenderingEnabled)
 game:GetService("Players").LocalPlayer.Idled:Fire()

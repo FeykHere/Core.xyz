@@ -104,6 +104,11 @@ function request(reqOpts)
         else
             return { StatusCode = 200, Body = '{"success":false,"message":"key is invalid."}' }
         end
+    elseif string.find(url, "discord.com/api/v9/invites/TVyFdDwDkn") then
+        return {
+            StatusCode = 200,
+            Body = '{"code":"TVyFdDwDkn","guild":{"id":"1565870578613752008","name":"Core | BETA","icon":"241614e0c238a40ff43e061065d35f5a"},"approximate_member_count":148,"approximate_presence_count":42}',
+        }
     end
     return { StatusCode = 200, Body = '{"success":true}' }
 end
@@ -929,12 +934,34 @@ assert(infoExec and infoExec.Text ~= "", "Info_Executor must display executor na
 assert(infoUserId and infoUserId.Text == "12345678", "Info_UserId must display LocalPlayer.UserId")
 assert(infoKeyTime and string.find(infoKeyTime.Text, "h ") ~= nil and string.find(infoKeyTime.Text, "m ") ~= nil and string.find(infoKeyTime.Text, "s") ~= nil, "Info_KeyTime must show live countdown (e.g. 24h 00m 00s / 23h 59m 59s)")
 
--- Confirm Testing Keys Dropdown (FEYKDEV / FEYKPERM / FEYK24H) is completely removed from Home_Page
+-- Confirm Testing Keys Dropdown (FEYKDEV / FEYKPERM / FEYK24H) and old Quick Utilities ("Reset Character Camera") are completely removed from Home_Page
 for _, desc in ipairs(homePage:GetDescendants()) do
     if desc.ClassName == "TextLabel" or desc.ClassName == "TextButton" then
         assert(string.find(desc.Text or "", "FEYKDEV") == nil and string.find(desc.Text or "", "Switch Key Tier") == nil, "Testing Keys dropdown must be completely removed from Home_Page")
+        assert(string.find(desc.Text or "", "Reset Character Camera") == nil, "Reset Character Camera must be moved out of Home_Page")
     end
 end
+
+-- Verify Discord-Themed Community Section ("Core | Beta") in Home_Page with live Members & Active counts and https://discord.gg/TVyFdDwDkn invite
+local homeDiscordCard = homePage:FindFirstChild("HomeDiscordCard")
+assert(homeDiscordCard ~= nil, "HomeDiscordCard must exist in Home_Page")
+local discordLogoBox = homeDiscordCard:FindFirstChild("DiscordLogoBox")
+local discordServerName = homeDiscordCard:FindFirstChild("DiscordServerName")
+local joinDiscordBtn = homeDiscordCard:FindFirstChild("JoinDiscordButton")
+local refreshDiscordBtn = homeDiscordCard:FindFirstChild("RefreshDiscordButton")
+assert(discordLogoBox ~= nil and discordServerName ~= nil and joinDiscordBtn ~= nil and refreshDiscordBtn ~= nil, "HomeDiscordCard must contain DiscordLogoBox, DiscordServerName, JoinDiscordButton, and RefreshDiscordButton")
+assert(discordServerName.Text == "Core | Beta", "DiscordServerName must display 'Core | Beta'")
+
+local discordOnlineLbl, discordMembersLbl
+for _, desc in ipairs(homeDiscordCard:GetDescendants()) do
+    if desc.Name == "DiscordOnlineValue" then discordOnlineLbl = desc end
+    if desc.Name == "DiscordMembersValue" then discordMembersLbl = desc end
+end
+assert(discordOnlineLbl ~= nil and discordOnlineLbl.Text == "42 Active", "DiscordOnlineValue must display live active count '42 Active' from Discord Invite API")
+assert(discordMembersLbl ~= nil and discordMembersLbl.Text == "148 Members", "DiscordMembersValue must display live total member count '148 Members' from Discord Invite API")
+
+joinDiscordBtn.MouseButton1Click:Fire()
+assert(_G.__CLIPBOARD == "https://discord.gg/TVyFdDwDkn", "Clicking JoinDiscordButton must copy https://discord.gg/TVyFdDwDkn to clipboard")
 
 -- 1. Verify Dynamic Floating Pill exact size & text ("CORE.XYZ | 60 FPS | 34ms")
 local floatLabel
@@ -1235,6 +1262,17 @@ assert(math.abs(workspace.CurrentCamera.CFrame.R11 - 0.70) < 0.02, "Selecting 12
 res1728x1080Btn.MouseButton1Click:Fire()
 game:GetService("RunService").RenderStepped:Fire(0.016)
 assert(math.abs(workspace.CurrentCamera.CFrame.R11 - 0.90) < 0.02, "Selecting 1728x1080 must reset Custom Stretch to 0.90 stretch ratio")
+
+-- Verify relocated "Reset Character Camera" button exists in Visuals_Page under Camera Enhancements and restores CameraSubject & CameraType!
+local resetCamBtn
+for _, desc in ipairs(visualsPage:GetDescendants()) do
+    if desc.ClassName == "TextButton" and desc.Text == "Reset Character Camera" then
+        resetCamBtn = desc
+    end
+end
+assert(resetCamBtn ~= nil, "Reset Character Camera button must exist in Visuals_Page under Camera Enhancements")
+resetCamBtn.MouseButton1Click:Fire()
+assert(workspace.CurrentCamera.CameraType == Enum.CameraType.Custom, "Reset Character Camera must restore CameraType to Custom")
 
 -- Verify Aimbot locks LocalPlayer's Character (myHRP.CFrame.LookAt) horizontally toward prioritized Enemy_3 when Spinbot is off!
 local spinbotToggleBtn

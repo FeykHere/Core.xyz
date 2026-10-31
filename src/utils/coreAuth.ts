@@ -2,6 +2,60 @@ export const PLATOBOOST_SERVICE_ID = 36271;
 export const PLATOBOOST_GATEWAY_URL = `https://gateway.platoboost.com/a/${PLATOBOOST_SERVICE_ID}`;
 export const PLATOBOOST_DEFAULT_KEY_TTL_MS = 24 * 60 * 60 * 1000;
 
+export const DISCORD_INVITE_CODE = 'TVyFdDwDkn';
+export const DISCORD_INVITE_URL = `https://discord.gg/${DISCORD_INVITE_CODE}`;
+export const DISCORD_API_INVITE_URL = `https://discord.com/api/v9/invites/${DISCORD_INVITE_CODE}?with_counts=true&with_expiration=true`;
+export const DISCORD_SERVER_NAME = 'Core | Beta';
+export const DISCORD_DEFAULT_GUILD_ID = '1565870578613752008';
+export const DISCORD_DEFAULT_ICON_HASH = '241614e0c238a40ff43e061065d35f5a';
+export const DISCORD_SERVER_ICON_URL = `https://cdn.discordapp.com/icons/${DISCORD_DEFAULT_GUILD_ID}/${DISCORD_DEFAULT_ICON_HASH}.png?size=256`;
+
+export interface DiscordServerStats {
+  serverName: string;
+  onlineCount: number;
+  memberCount: number;
+  iconUrl: string;
+  inviteUrl: string;
+  inviteCode: string;
+}
+
+export function parseDiscordInviteCounts(payload: unknown): DiscordServerStats {
+  const data = (payload && typeof payload === 'object' ? payload : {}) as Record<string, any>;
+  const guild = (data.guild && typeof data.guild === 'object' ? data.guild : {}) as Record<string, any>;
+  const profile = (data.profile && typeof data.profile === 'object' ? data.profile : {}) as Record<string, any>;
+
+  const rawMembers =
+    typeof data.approximate_member_count === 'number'
+      ? data.approximate_member_count
+      : typeof profile.member_count === 'number'
+      ? profile.member_count
+      : 2;
+
+  const rawOnline =
+    typeof data.approximate_presence_count === 'number'
+      ? data.approximate_presence_count
+      : typeof profile.online_count === 'number'
+      ? profile.online_count
+      : 1;
+
+  const guildId = typeof guild.id === 'string' && guild.id ? guild.id : DISCORD_DEFAULT_GUILD_ID;
+  const iconHash =
+    typeof guild.icon === 'string' && guild.icon
+      ? guild.icon
+      : typeof profile.icon_hash === 'string' && profile.icon_hash
+      ? profile.icon_hash
+      : DISCORD_DEFAULT_ICON_HASH;
+
+  return {
+    serverName: DISCORD_SERVER_NAME,
+    onlineCount: Math.max(0, Math.floor(rawOnline)),
+    memberCount: Math.max(0, Math.floor(rawMembers)),
+    iconUrl: `https://cdn.discordapp.com/icons/${guildId}/${iconHash}.png?size=256`,
+    inviteUrl: DISCORD_INVITE_URL,
+    inviteCode: DISCORD_INVITE_CODE,
+  };
+}
+
 export const BOOT_STAGE_SEQUENCE = [
   { threshold: 0, progress: 15, label: 'Starting Core.xyz...' },
   { threshold: 16, progress: 34, label: 'Preparing graphics & overlay engine...' },

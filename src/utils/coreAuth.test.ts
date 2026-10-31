@@ -3,11 +3,15 @@ import assert from 'node:assert/strict';
 import {
   PLATOBOOST_SERVICE_ID,
   PLATOBOOST_GATEWAY_URL,
+  DISCORD_INVITE_CODE,
+  DISCORD_INVITE_URL,
+  DISCORD_SERVER_NAME,
   BOOT_STAGE_SEQUENCE,
   DEFAULT_CORE_CONFIG,
   DEFAULT_GITHUB_CONFIG,
   validateAccessKey,
   formatRemainingKeyTime,
+  parseDiscordInviteCounts,
   buildGithubRawUrl,
   buildLoadstringSnippet,
   generateCoreLuaScript,
@@ -49,6 +53,25 @@ test('formatRemainingKeyTime formats accurate HHh MMm SSs live countdown', () =>
   const expires = now + (23 * 3600 + 59 * 60 + 42) * 1000;
   assert.equal(formatRemainingKeyTime(expires, now), '23h 59m 42s');
   assert.equal(formatRemainingKeyTime(now - 1000, now), 'EXPIRED');
+});
+
+test('parseDiscordInviteCounts parses live Discord invite API member and active counts for Core | Beta', () => {
+  const stats = parseDiscordInviteCounts({
+    code: 'TVyFdDwDkn',
+    guild: {
+      id: '1565870578613752008',
+      name: 'Core | BETA',
+      icon: '241614e0c238a40ff43e061065d35f5a',
+    },
+    approximate_member_count: 148,
+    approximate_presence_count: 42,
+  });
+  assert.equal(stats.serverName, DISCORD_SERVER_NAME);
+  assert.equal(stats.inviteCode, DISCORD_INVITE_CODE);
+  assert.equal(stats.inviteUrl, DISCORD_INVITE_URL);
+  assert.equal(stats.memberCount, 148);
+  assert.equal(stats.onlineCount, 42);
+  assert.ok(stats.iconUrl.includes('1565870578613752008/241614e0c238a40ff43e061065d35f5a'));
 });
 
 test('buildGithubRawUrl and buildLoadstringSnippet format GitHub raw URL accurately', () => {

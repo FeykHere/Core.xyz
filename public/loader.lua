@@ -58,6 +58,7 @@ local Env = {
     identifyexecutor = identifyexecutor or getexecutorname,
     request = request or http_request or syn_request or (type(http) == "table" and http.request) or (type(fluxus) == "table" and fluxus.request),
     gethwid = gethwid,
+    getcustomasset = getcustomasset or getsynasset,
     Stats = nil,
     TextService = nil,
 }
@@ -480,14 +481,17 @@ local function safeJsonDecode(str)
     if not str or str == "" then
         return nil
     end
+    local okP, resP = pcall(PlatoBoost.decode, str)
+    if okP and type(resP) == "table" then
+        return resP
+    end
     local ok, res = pcall(function()
         return HttpService:JSONDecode(str)
     end)
     if ok and res then
         return res
     end
-    local okP, resP = pcall(PlatoBoost.decode, str)
-    return (okP and resP) or nil
+    return nil
 end
 
 --------------------------------------------------------------------------------
@@ -4230,25 +4234,420 @@ do
     State.updateHomeKeyInfo = updateHomeKeyInfo
     updateHomeKeyInfo()
 
-    createLabel(HomeTab, "Quick Utilities")
-    createButton(HomeTab, "Copy Discord Invite", function()
+    createLabel(HomeTab, "Official Discord Community")
+
+    local DISCORD_INVITE_CODE = "TVyFdDwDkn"
+    local DISCORD_INVITE_URL = "https://discord.gg/" .. DISCORD_INVITE_CODE
+    local DISCORD_API_URL = "https://discord.com/api/v9/invites/" .. DISCORD_INVITE_CODE .. "?with_counts=true&with_expiration=true"
+    local DISCORD_DEFAULT_GUILD_ID = "1565870578613752008"
+    local DISCORD_DEFAULT_ICON_HASH = "241614e0c238a40ff43e061065d35f5a"
+
+    local DiscordColors = {
+        CardBg = Color3.fromRGB(30, 31, 34),      -- #1E1F22 Discord dark surface
+        PillBg = Color3.fromRGB(43, 45, 49),      -- #2B2D31 Discord secondary surface
+        DeepBg = Color3.fromRGB(17, 18, 20),      -- #111214 Discord deep frame
+        Blurple = Color3.fromRGB(88, 101, 242),   -- #5865F2 Discord Blurple
+        BlurpleDark = Color3.fromRGB(71, 82, 196),-- #4752C4 Discord Blurple hover/gradient
+        OnlineGreen = Color3.fromRGB(35, 165, 90),-- #23A55A Discord online green
+        MemberGray = Color3.fromRGB(181, 186, 193),-- #B5BAC1 Discord muted gray
+        HeaderWhite = Color3.fromRGB(242, 243, 245),
+    }
+
+    local HomeDiscordCard = Instance.new("Frame")
+    HomeDiscordCard.Name = "HomeDiscordCard"
+    HomeDiscordCard.Size = UDim2.new(1, 0, 0, 148)
+    HomeDiscordCard.BackgroundColor3 = DiscordColors.CardBg
+    HomeDiscordCard.ClipsDescendants = true
+    HomeDiscordCard.ZIndex = 14
+    HomeDiscordCard.Parent = HomeTab
+    addCorner(HomeDiscordCard, 10)
+    addStroke(HomeDiscordCard, DiscordColors.Blurple, 1.2, 0.2)
+
+    -- Top Discord Blurple Banner Strip
+    local DiscordBanner = Instance.new("Frame")
+    DiscordBanner.Name = "DiscordBanner"
+    DiscordBanner.Size = UDim2.new(1, 0, 0, 34)
+    DiscordBanner.BackgroundColor3 = DiscordColors.Blurple
+    DiscordBanner.BorderSizePixel = 0
+    DiscordBanner.ZIndex = 15
+    DiscordBanner.Parent = HomeDiscordCard
+    addCorner(DiscordBanner, 10)
+
+    local BannerBottomMask = Instance.new("Frame")
+    BannerBottomMask.Position = UDim2.new(0, 0, 1, -10)
+    BannerBottomMask.Size = UDim2.new(1, 0, 0, 10)
+    BannerBottomMask.BackgroundColor3 = DiscordColors.Blurple
+    BannerBottomMask.BorderSizePixel = 0
+    BannerBottomMask.ZIndex = 15
+    BannerBottomMask.Parent = DiscordBanner
+
+    local BannerGrad = Instance.new("UIGradient")
+    BannerGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, DiscordColors.Blurple),
+        ColorSequenceKeypoint.new(1, DiscordColors.BlurpleDark),
+    })
+    BannerGrad.Rotation = 15
+    BannerGrad.Parent = DiscordBanner
+
+    local BannerTagLbl = Instance.new("TextLabel")
+    BannerTagLbl.Position = UDim2.fromOffset(80, 0)
+    BannerTagLbl.Size = UDim2.new(1, -195, 1, 0)
+    BannerTagLbl.BackgroundTransparency = 1
+    BannerTagLbl.Font = Enum.Font.GothamBold
+    BannerTagLbl.Text = "DISCORD SERVER  ·  LIVE STATUS"
+    BannerTagLbl.TextColor3 = Color3.fromRGB(224, 227, 255)
+    BannerTagLbl.TextSize = 9
+    BannerTagLbl.TextXAlignment = Enum.TextXAlignment.Left
+    BannerTagLbl.ZIndex = 16
+    BannerTagLbl.Parent = DiscordBanner
+
+    local BannerCodeLbl = Instance.new("TextLabel")
+    BannerCodeLbl.AnchorPoint = Vector2.new(1, 0.5)
+    BannerCodeLbl.Position = UDim2.new(1, -12, 0.5, 0)
+    BannerCodeLbl.Size = UDim2.fromOffset(115, 18)
+    BannerCodeLbl.BackgroundColor3 = DiscordColors.DeepBg
+    BannerCodeLbl.BackgroundTransparency = 0.25
+    BannerCodeLbl.Font = Enum.Font.Code
+    BannerCodeLbl.Text = "gg/" .. DISCORD_INVITE_CODE
+    BannerCodeLbl.TextColor3 = Theme.White
+    BannerCodeLbl.TextSize = 10
+    BannerCodeLbl.ZIndex = 16
+    BannerCodeLbl.Parent = DiscordBanner
+    addCorner(BannerCodeLbl, 5)
+
+    -- Server Logo Squircle (Overlapping Banner & Body like Discord Invite Cards)
+    local DiscordLogoBox = Instance.new("Frame")
+    DiscordLogoBox.Name = "DiscordLogoBox"
+    DiscordLogoBox.Position = UDim2.fromOffset(14, 16)
+    DiscordLogoBox.Size = UDim2.fromOffset(56, 56)
+    DiscordLogoBox.BackgroundColor3 = DiscordColors.DeepBg
+    DiscordLogoBox.ZIndex = 17
+    DiscordLogoBox.Parent = HomeDiscordCard
+    addCorner(DiscordLogoBox, 14)
+    addStroke(DiscordLogoBox, DiscordColors.CardBg, 3, 0)
+
+    local DiscordLogoFallback = Instance.new("Frame")
+    DiscordLogoFallback.Name = "DiscordLogoFallback"
+    DiscordLogoFallback.Position = UDim2.fromOffset(2, 2)
+    DiscordLogoFallback.Size = UDim2.new(1, -4, 1, -4)
+    DiscordLogoFallback.BackgroundColor3 = DiscordColors.Blurple
+    DiscordLogoFallback.ZIndex = 17
+    DiscordLogoFallback.Parent = DiscordLogoBox
+    addCorner(DiscordLogoFallback, 12)
+
+    local LogoMonogramTop = Instance.new("TextLabel")
+    LogoMonogramTop.Position = UDim2.fromOffset(0, 11)
+    LogoMonogramTop.Size = UDim2.new(1, 0, 0, 16)
+    LogoMonogramTop.BackgroundTransparency = 1
+    LogoMonogramTop.Font = Enum.Font.GothamBlack
+    LogoMonogramTop.Text = "CORE"
+    LogoMonogramTop.TextColor3 = Theme.White
+    LogoMonogramTop.TextSize = 12
+    LogoMonogramTop.ZIndex = 18
+    LogoMonogramTop.Parent = DiscordLogoFallback
+
+    local LogoMonogramSub = Instance.new("TextLabel")
+    LogoMonogramSub.Position = UDim2.fromOffset(0, 27)
+    LogoMonogramSub.Size = UDim2.new(1, 0, 0, 12)
+    LogoMonogramSub.BackgroundTransparency = 1
+    LogoMonogramSub.Font = Enum.Font.Code
+    LogoMonogramSub.Text = "BETA"
+    LogoMonogramSub.TextColor3 = Color3.fromRGB(224, 227, 255)
+    LogoMonogramSub.TextSize = 9
+    LogoMonogramSub.ZIndex = 18
+    LogoMonogramSub.Parent = DiscordLogoFallback
+
+    local DiscordServerIcon = Instance.new("ImageLabel")
+    DiscordServerIcon.Name = "DiscordServerIcon"
+    DiscordServerIcon.Size = UDim2.fromScale(1, 1)
+    DiscordServerIcon.BackgroundTransparency = 1
+    DiscordServerIcon.Image = ""
+    DiscordServerIcon.Visible = false
+    DiscordServerIcon.ZIndex = 19
+    DiscordServerIcon.Parent = DiscordLogoBox
+    addCorner(DiscordServerIcon, 14)
+
+    local LogoOnlineDot = Instance.new("Frame")
+    LogoOnlineDot.Name = "LogoOnlineDot"
+    LogoOnlineDot.AnchorPoint = Vector2.new(1, 1)
+    LogoOnlineDot.Position = UDim2.new(1, 2, 1, 2)
+    LogoOnlineDot.Size = UDim2.fromOffset(14, 14)
+    LogoOnlineDot.BackgroundColor3 = DiscordColors.OnlineGreen
+    LogoOnlineDot.ZIndex = 20
+    LogoOnlineDot.Parent = DiscordLogoBox
+    addCorner(LogoOnlineDot, 99)
+    addStroke(LogoOnlineDot, DiscordColors.CardBg, 2.5, 0)
+
+    -- Server Title ("Core | Beta") + Verified Badge + Subtitle
+    local DiscordServerName = Instance.new("TextLabel")
+    DiscordServerName.Name = "DiscordServerName"
+    DiscordServerName.Position = UDim2.fromOffset(80, 40)
+    DiscordServerName.Size = UDim2.new(1, -170, 0, 18)
+    DiscordServerName.BackgroundTransparency = 1
+    DiscordServerName.Font = Enum.Font.GothamBlack
+    DiscordServerName.Text = "Core | Beta"
+    DiscordServerName.TextColor3 = DiscordColors.HeaderWhite
+    DiscordServerName.TextSize = 15
+    DiscordServerName.TextXAlignment = Enum.TextXAlignment.Left
+    DiscordServerName.ZIndex = 16
+    DiscordServerName.Parent = HomeDiscordCard
+
+    local VerifiedBadge = Instance.new("TextLabel")
+    VerifiedBadge.AnchorPoint = Vector2.new(1, 0)
+    VerifiedBadge.Position = UDim2.new(1, -12, 0, 41)
+    VerifiedBadge.Size = UDim2.fromOffset(76, 16)
+    VerifiedBadge.BackgroundColor3 = DiscordColors.PillBg
+    VerifiedBadge.Font = Enum.Font.GothamBold
+    VerifiedBadge.Text = "COMMUNITY"
+    VerifiedBadge.TextColor3 = DiscordColors.Blurple
+    VerifiedBadge.TextSize = 8
+    VerifiedBadge.ZIndex = 16
+    VerifiedBadge.Parent = HomeDiscordCard
+    addCorner(VerifiedBadge, 4)
+    addStroke(VerifiedBadge, DiscordColors.Blurple, 1, 0.45)
+
+    local DiscordSubLbl = Instance.new("TextLabel")
+    DiscordSubLbl.Position = UDim2.fromOffset(80, 59)
+    DiscordSubLbl.Size = UDim2.new(1, -92, 0, 14)
+    DiscordSubLbl.BackgroundTransparency = 1
+    DiscordSubLbl.Font = Enum.Font.GothamMedium
+    DiscordSubLbl.Text = "Official Core.xyz Community · Script Updates, Configs & Support"
+    DiscordSubLbl.TextColor3 = DiscordColors.MemberGray
+    DiscordSubLbl.TextSize = 10
+    DiscordSubLbl.TextTruncate = Enum.TextTruncate.AtEnd
+    DiscordSubLbl.TextXAlignment = Enum.TextXAlignment.Left
+    DiscordSubLbl.ZIndex = 16
+    DiscordSubLbl.Parent = HomeDiscordCard
+
+    -- Live Member Counters Row (Active Online + Total Members)
+    local ActiveCountPill = Instance.new("Frame")
+    ActiveCountPill.Name = "DiscordActivePill"
+    ActiveCountPill.Position = UDim2.fromOffset(80, 77)
+    ActiveCountPill.Size = UDim2.fromOffset(122, 22)
+    ActiveCountPill.BackgroundColor3 = DiscordColors.PillBg
+    ActiveCountPill.ZIndex = 16
+    ActiveCountPill.Parent = HomeDiscordCard
+    addCorner(ActiveCountPill, 6)
+    addStroke(ActiveCountPill, DiscordColors.OnlineGreen, 1, 0.55)
+
+    local ActiveDot = Instance.new("Frame")
+    ActiveDot.AnchorPoint = Vector2.new(0, 0.5)
+    ActiveDot.Position = UDim2.new(0, 8, 0.5, 0)
+    ActiveDot.Size = UDim2.fromOffset(7, 7)
+    ActiveDot.BackgroundColor3 = DiscordColors.OnlineGreen
+    ActiveDot.ZIndex = 17
+    ActiveDot.Parent = ActiveCountPill
+    addCorner(ActiveDot, 99)
+
+    local DiscordOnlineValue = Instance.new("TextLabel")
+    DiscordOnlineValue.Name = "DiscordOnlineValue"
+    DiscordOnlineValue.Position = UDim2.fromOffset(20, 0)
+    DiscordOnlineValue.Size = UDim2.new(1, -24, 1, 0)
+    DiscordOnlineValue.BackgroundTransparency = 1
+    DiscordOnlineValue.Font = Enum.Font.Code
+    DiscordOnlineValue.Text = "1 Active"
+    DiscordOnlineValue.TextColor3 = DiscordColors.HeaderWhite
+    DiscordOnlineValue.TextSize = 10
+    DiscordOnlineValue.TextXAlignment = Enum.TextXAlignment.Left
+    DiscordOnlineValue.ZIndex = 17
+    DiscordOnlineValue.Parent = ActiveCountPill
+
+    local TotalMembersPill = Instance.new("Frame")
+    TotalMembersPill.Name = "DiscordMembersPill"
+    TotalMembersPill.Position = UDim2.fromOffset(210, 77)
+    TotalMembersPill.Size = UDim2.fromOffset(128, 22)
+    TotalMembersPill.BackgroundColor3 = DiscordColors.PillBg
+    TotalMembersPill.ZIndex = 16
+    TotalMembersPill.Parent = HomeDiscordCard
+    addCorner(TotalMembersPill, 6)
+    addStroke(TotalMembersPill, DiscordColors.Blurple, 1, 0.6)
+
+    local TotalDot = Instance.new("Frame")
+    TotalDot.AnchorPoint = Vector2.new(0, 0.5)
+    TotalDot.Position = UDim2.new(0, 8, 0.5, 0)
+    TotalDot.Size = UDim2.fromOffset(7, 7)
+    TotalDot.BackgroundColor3 = DiscordColors.MemberGray
+    TotalDot.ZIndex = 17
+    TotalDot.Parent = TotalMembersPill
+    addCorner(TotalDot, 99)
+
+    local DiscordMembersValue = Instance.new("TextLabel")
+    DiscordMembersValue.Name = "DiscordMembersValue"
+    DiscordMembersValue.Position = UDim2.fromOffset(20, 0)
+    DiscordMembersValue.Size = UDim2.new(1, -24, 1, 0)
+    DiscordMembersValue.BackgroundTransparency = 1
+    DiscordMembersValue.Font = Enum.Font.Code
+    DiscordMembersValue.Text = "2 Members"
+    DiscordMembersValue.TextColor3 = DiscordColors.HeaderWhite
+    DiscordMembersValue.TextSize = 10
+    DiscordMembersValue.TextXAlignment = Enum.TextXAlignment.Left
+    DiscordMembersValue.ZIndex = 17
+    DiscordMembersValue.Parent = TotalMembersPill
+
+    -- Action Buttons: Join Server (Copy Invite + RPC) & Refresh Live Counts
+    local JoinDiscordBtn = Instance.new("TextButton")
+    JoinDiscordBtn.Name = "JoinDiscordButton"
+    JoinDiscordBtn.Position = UDim2.fromOffset(14, 108)
+    JoinDiscordBtn.Size = UDim2.new(1, -110, 0, 28)
+    JoinDiscordBtn.BackgroundColor3 = DiscordColors.Blurple
+    JoinDiscordBtn.AutoButtonColor = false
+    JoinDiscordBtn.Font = Enum.Font.GothamBold
+    JoinDiscordBtn.Text = "Join Core | Beta  (Copy Invite)"
+    JoinDiscordBtn.TextColor3 = Theme.White
+    JoinDiscordBtn.TextSize = 11
+    JoinDiscordBtn.ClipsDescendants = true
+    JoinDiscordBtn.ZIndex = 16
+    JoinDiscordBtn.Parent = HomeDiscordCard
+    addCorner(JoinDiscordBtn, 6)
+
+    local RefreshDiscordBtn = Instance.new("TextButton")
+    RefreshDiscordBtn.Name = "RefreshDiscordButton"
+    RefreshDiscordBtn.AnchorPoint = Vector2.new(1, 0)
+    RefreshDiscordBtn.Position = UDim2.new(1, -14, 0, 108)
+    RefreshDiscordBtn.Size = UDim2.fromOffset(82, 28)
+    RefreshDiscordBtn.BackgroundColor3 = DiscordColors.PillBg
+    RefreshDiscordBtn.AutoButtonColor = false
+    RefreshDiscordBtn.Font = Enum.Font.GothamBold
+    RefreshDiscordBtn.Text = "Refresh"
+    RefreshDiscordBtn.TextColor3 = DiscordColors.HeaderWhite
+    RefreshDiscordBtn.TextSize = 10
+    RefreshDiscordBtn.ClipsDescendants = true
+    RefreshDiscordBtn.ZIndex = 16
+    RefreshDiscordBtn.Parent = HomeDiscordCard
+    addCorner(RefreshDiscordBtn, 6)
+    addStroke(RefreshDiscordBtn, DiscordColors.Blurple, 1, 0.5)
+
+    local discordIconLoaded = false
+    local function tryLoadDiscordServerIcon(guildId, iconHash)
+        if discordIconLoaded or not Env.getcustomasset or not Env.writefile then
+            return
+        end
+        local gId = tostring(guildId or DISCORD_DEFAULT_GUILD_ID)
+        local iHash = tostring(iconHash or DISCORD_DEFAULT_ICON_HASH)
+        if gId == "" or iHash == "" then
+            return
+        end
+        local iconUrl = string.format("https://cdn.discordapp.com/icons/%s/%s.png?size=128", gId, iHash)
+        local iconPath = FS_FOLDER .. "/DiscordIcon_" .. DISCORD_INVITE_CODE .. ".png"
+        local okImg, imgBytes = pcall(function()
+            if type(Env.request) == "function" then
+                local r = Env.request({ Url = iconUrl, Method = "GET" })
+                if r and r.StatusCode == 200 and r.Body and #r.Body > 64 then
+                    return r.Body
+                end
+            end
+            return game:HttpGet(iconUrl)
+        end)
+        if okImg and type(imgBytes) == "string" and #imgBytes > 64 then
+            pcall(function()
+                Env.writefile(iconPath, imgBytes)
+                local customAsset = Env.getcustomasset(iconPath)
+                if customAsset and tostring(customAsset) ~= "" then
+                    DiscordServerIcon.Image = tostring(customAsset)
+                    DiscordServerIcon.Visible = true
+                    discordIconLoaded = true
+                end
+            end)
+        end
+    end
+
+    local function fetchDiscordInviteData(showToast)
+        task.spawn(function()
+            local rawBody = nil
+            pcall(function()
+                if type(Env.request) == "function" then
+                    local res = Env.request({
+                        Url = DISCORD_API_URL,
+                        Method = "GET",
+                    })
+                    if res and res.StatusCode == 200 and type(res.Body) == "string" and res.Body ~= "" then
+                        rawBody = res.Body
+                    end
+                end
+                if not rawBody then
+                    rawBody = game:HttpGet(DISCORD_API_URL)
+                end
+            end)
+
+            if rawBody and rawBody ~= "" then
+                local decoded = safeJsonDecode(rawBody)
+                if type(decoded) == "table" then
+                    local totalCount = tonumber(decoded.approximate_member_count)
+                        or (type(decoded.profile) == "table" and tonumber(decoded.profile.member_count))
+                    local onlineCount = tonumber(decoded.approximate_presence_count)
+                        or (type(decoded.profile) == "table" and tonumber(decoded.profile.online_count))
+
+                    if totalCount then
+                        DiscordMembersValue.Text = string.format("%d Members", math.max(0, math.floor(totalCount)))
+                    end
+                    if onlineCount then
+                        DiscordOnlineValue.Text = string.format("%d Active", math.max(0, math.floor(onlineCount)))
+                    end
+
+                    local guildObj = type(decoded.guild) == "table" and decoded.guild or nil
+                    if guildObj then
+                        tryLoadDiscordServerIcon(guildObj.id, guildObj.icon)
+                    else
+                        tryLoadDiscordServerIcon(DISCORD_DEFAULT_GUILD_ID, DISCORD_DEFAULT_ICON_HASH)
+                    end
+
+                    if showToast then
+                        notify("Core | Beta", string.format("Discord synced: %s · %s", DiscordOnlineValue.Text, DiscordMembersValue.Text), 3)
+                    end
+                    return
+                end
+            end
+
+            tryLoadDiscordServerIcon(DISCORD_DEFAULT_GUILD_ID, DISCORD_DEFAULT_ICON_HASH)
+            if showToast then
+                notify("Core | Beta", "Invite: " .. DISCORD_INVITE_URL, 3)
+            end
+        end)
+    end
+
+    JoinDiscordBtn.MouseButton1Click:Connect(function()
+        spawnRipple(JoinDiscordBtn)
         if Env.setclipboard then
-            Env.setclipboard("https://discord.gg/yeKPEZpMMu")
-            notify("Core.xyz", "Discord invite copied to clipboard!", 4)
-        else
-            notify("Core.xyz", "Discord: discord.gg/yeKPEZpMMu", 4)
+            Env.setclipboard(DISCORD_INVITE_URL)
         end
-    end)
-    createButton(HomeTab, "Reset Character Camera", function()
-        local cam = workspace.CurrentCamera
-        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        if cam and hum then
-            setFreecamEnabled(false)
-            cam.CameraSubject = hum
-            cam.CameraType = Enum.CameraType.Custom
-            notify("Core.xyz", "Camera subject reset to your character.", 3)
+        JoinDiscordBtn.Text = "Copied! (discord.gg/" .. DISCORD_INVITE_CODE .. ")"
+        notify("Core | Beta", "Discord invite copied to clipboard: " .. DISCORD_INVITE_URL, 4)
+
+        -- Also attempt direct Discord Desktop client invite prompt if executor supports local RPC
+        if type(Env.request) == "function" then
+            task.spawn(function()
+                pcall(function()
+                    Env.request({
+                        Url = "http://127.0.0.1:6463/rpc?v=1",
+                        Method = "POST",
+                        Headers = {
+                            ["Content-Type"] = "application/json",
+                            ["Origin"] = "https://discord.com",
+                        },
+                        Body = safeJsonEncode({
+                            cmd = "INVITE_BROWSER",
+                            args = { code = DISCORD_INVITE_CODE },
+                            nonce = "corexyz_" .. tostring(os.time()),
+                        }),
+                    })
+                end)
+            end)
         end
+
+        task.delay(2.2, function()
+            if JoinDiscordBtn and JoinDiscordBtn.Parent then
+                JoinDiscordBtn.Text = "Join Core | Beta  (Copy Invite)"
+            end
+        end)
     end)
+
+    RefreshDiscordBtn.MouseButton1Click:Connect(function()
+        spawnRipple(RefreshDiscordBtn)
+        fetchDiscordInviteData(true)
+    end)
+
+    State.refreshDiscordInvite = fetchDiscordInviteData
+    fetchDiscordInviteData(false)
 end
 
 -- TAB 2: COMBAT (SINGLE AIMBOT TOGGLE WITH CLASSIC LOCK-IN + HITPART/WALLCHECK/TEAMCHECK/WHITELIST ABOVE HITBOX AREA)
@@ -4610,6 +5009,22 @@ do
         pcall(function()
             LocalPlayer.DevCameraOcclusionMode = val and Enum.DevCameraOcclusionMode.Invisicam or State.defaultOcclusion
         end)
+    end)
+    createButton(VisualsTab, "Reset Character Camera", function()
+        local cam = workspace.CurrentCamera
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if cam then
+            setFreecamEnabled(false)
+            State.spectatingPlayerName = nil
+            if hum then
+                cam.CameraSubject = hum
+            end
+            cam.CameraType = Enum.CameraType.Custom
+            if not ConfigState.CustomCamFOV then
+                cam.FieldOfView = State.defaultCamFOV
+            end
+            notify("Core.xyz", "Camera subject reset to your character.", 3)
+        end
     end)
 
     createLabel(VisualsTab, "Client Character Cosmetics")

@@ -6,17 +6,24 @@ import {
   Download,
   RotateCcw,
   Lock,
+  Home,
   Crosshair,
   Eye,
   Gauge,
   Settings,
-  Github,
   Code2,
+  RefreshCw,
 } from 'lucide-react';
 import {
   CoreConfigState,
   DEFAULT_CORE_CONFIG,
   DEFAULT_GITHUB_CONFIG,
+  DISCORD_API_INVITE_URL,
+  DISCORD_INVITE_CODE,
+  DISCORD_INVITE_URL,
+  DISCORD_SERVER_ICON_URL,
+  DISCORD_SERVER_NAME,
+  DiscordServerStats,
   GithubRepoConfig,
   LIVE_LOADSTRING_SNIPPET,
   LIVE_RAW_SCRIPT_URL,
@@ -26,6 +33,7 @@ import {
   buildLoadstringSnippet,
   formatRemainingKeyTime,
   generateCoreLuaScript,
+  parseDiscordInviteCounts,
 } from '../utils/coreAuth';
 
 interface CoreWorkspaceProps {
@@ -35,7 +43,7 @@ interface CoreWorkspaceProps {
 }
 
 type ActiveSection = 'simulator' | 'github' | 'improvements';
-type RobloxTab = 'Combat' | 'Visuals' | 'Movement' | 'Misc';
+type RobloxTab = 'Home' | 'Combat' | 'Visuals' | 'Movement' | 'Misc';
 
 const ACCENT_HEX: Record<CoreConfigState['espAccent'], string> = {
   White: '#FFFFFF',
@@ -56,12 +64,19 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
   onLockSession,
 }) => {
   const [activeSection, setActiveSection] = useState<ActiveSection>('simulator');
-  const [robloxTab, setRobloxTab] = useState<RobloxTab>('Combat');
+  const [robloxTab, setRobloxTab] = useState<RobloxTab>('Home');
   const [config, setConfig] = useState<CoreConfigState>(DEFAULT_CORE_CONFIG);
   const [githubConfig, setGithubConfig] = useState<GithubRepoConfig>(DEFAULT_GITHUB_CONFIG);
   const [useLiveHost, setUseLiveHost] = useState(true);
   const [copiedLoadstring, setCopiedLoadstring] = useState(false);
   const [copiedLua, setCopiedLua] = useState(false);
+  const [copiedDiscord, setCopiedDiscord] = useState(false);
+  const [cameraResetMsg, setCameraResetMsg] = useState<string | null>(null);
+  const [discordStats, setDiscordStats] = useState<DiscordServerStats>(() =>
+    parseDiscordInviteCounts({})
+  );
+  const [discordIconError, setDiscordIconError] = useState(false);
+  const [refreshingDiscord, setRefreshingDiscord] = useState(false);
   const [fullLuaFile, setFullLuaFile] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
@@ -81,6 +96,25 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
     () => formatRemainingKeyTime(effectiveExpiresAt, nowMs),
     [effectiveExpiresAt, nowMs]
   );
+
+  const fetchLiveDiscordStats = React.useCallback(async () => {
+    setRefreshingDiscord(true);
+    try {
+      const res = await fetch(DISCORD_API_INVITE_URL);
+      if (res.ok) {
+        const json = await res.json();
+        setDiscordStats(parseDiscordInviteCounts(json));
+      }
+    } catch {
+      // Keep current stats on network error
+    } finally {
+      setRefreshingDiscord(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    fetchLiveDiscordStats();
+  }, [fetchLiveDiscordStats]);
 
   React.useEffect(() => {
     fetch('/loader.lua')
@@ -343,6 +377,7 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
                 <div className="sm:col-span-4 bg-[#0E0E0E] border-b sm:border-b-0 sm:border-r border-white/10 p-3 flex sm:flex-col gap-1.5 overflow-x-auto">
                   {(
                     [
+                      { id: 'Home', icon: Home },
                       { id: 'Combat', icon: Crosshair },
                       { id: 'Visuals', icon: Eye },
                       { id: 'Movement', icon: Gauge },
@@ -379,6 +414,161 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
                       transition={{ duration: 0.16 }}
                       className="space-y-4"
                     >
+                      {robloxTab === 'Home' && (
+                        <>
+                          <div className="text-xs font-semibold text-neutral-400 pb-1 border-b border-white/10">
+                            Operator Showcase &amp; License Status
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2.5">
+                            <div className="rounded-lg bg-[#141414] border border-white/10 px-3 py-2">
+                              <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+                                Executor
+                              </div>
+                              <div className="text-xs font-mono text-white mt-0.5">
+                                Delta / Universal
+                              </div>
+                            </div>
+                            <div className="rounded-lg bg-[#141414] border border-white/10 px-3 py-2">
+                              <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+                                Key Time Left
+                              </div>
+                              <div className="text-xs font-mono text-white mt-0.5 tabular-nums">
+                                {liveKeyTimeLeft}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="text-xs font-semibold text-neutral-400 pt-1 pb-1 border-b border-white/10">
+                            Official Discord Community
+                          </div>
+
+                          {/* Discord-Themed Community Section ("Core | Beta") */}
+                          <div
+                            className="rounded-xl bg-[#1E1F22] border border-[#5865F2]/50 overflow-hidden shadow-lg"
+                            data-testid="home-discord-card"
+                          >
+                            {/* Top Discord Blurple Banner */}
+                            <div className="h-9 bg-gradient-to-r from-[#5865F2] to-[#4752C4] px-3.5 flex items-center justify-between">
+                              <span className="text-[10px] font-bold tracking-wider uppercase text-[#E0E3FF] pl-16">
+                                Discord Server · Live Status
+                              </span>
+                              <span className="px-2 py-0.5 rounded bg-[#111214]/60 text-[10px] font-mono text-white">
+                                gg/{DISCORD_INVITE_CODE}
+                              </span>
+                            </div>
+
+                            {/* Card Body */}
+                            <div className="px-3.5 pb-3.5 pt-2 relative">
+                              {/* Overlapping Server Logo Squircle */}
+                              <div className="relative -mt-6 mb-2 flex items-end justify-between">
+                                <div className="relative w-14 h-14 rounded-2xl bg-[#111214] p-0.5 ring-3 ring-[#1E1F22] shrink-0">
+                                  {!discordIconError ? (
+                                    <img
+                                      src={discordStats.iconUrl || DISCORD_SERVER_ICON_URL}
+                                      alt={`${DISCORD_SERVER_NAME} Server Logo`}
+                                      onError={() => setDiscordIconError(true)}
+                                      className="w-full h-full rounded-[14px] object-cover"
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full rounded-[14px] bg-[#5865F2] flex flex-col items-center justify-center leading-none">
+                                      <span className="text-[11px] font-black text-white">
+                                        CORE
+                                      </span>
+                                      <span className="text-[8px] font-mono text-[#E0E3FF] mt-0.5">
+                                        BETA
+                                      </span>
+                                    </div>
+                                  )}
+                                  <span
+                                    className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-[#23A55A] ring-2 ring-[#1E1F22]"
+                                    aria-hidden="true"
+                                  />
+                                </div>
+
+                                <span className="px-2 py-0.5 rounded bg-[#2B2D31] border border-[#5865F2]/40 text-[10px] font-bold tracking-wide text-[#949CF7]">
+                                  COMMUNITY
+                                </span>
+                              </div>
+
+                              {/* Server Name & Description */}
+                              <div className="space-y-0.5">
+                                <div className="flex items-center gap-2">
+                                  <h4
+                                    className="text-base font-extrabold text-[#F2F3F5] tracking-tight"
+                                    data-testid="discord-server-name"
+                                  >
+                                    {DISCORD_SERVER_NAME}
+                                  </h4>
+                                </div>
+                                <p className="text-xs text-[#B5BAC1]">
+                                  Official Core.xyz Community · Script Updates, Configs &amp; Support
+                                </p>
+                              </div>
+
+                              {/* Live Member & Active Counters */}
+                              <div className="mt-3 flex flex-wrap items-center gap-2">
+                                <div
+                                  className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-[#2B2D31] border border-[#23A55A]/40 text-xs font-mono text-[#F2F3F5]"
+                                  data-testid="discord-online-pill"
+                                >
+                                  <span className="w-2 h-2 rounded-full bg-[#23A55A]" />
+                                  <span>{discordStats.onlineCount} Active</span>
+                                </div>
+
+                                <div
+                                  className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-[#2B2D31] border border-[#5865F2]/35 text-xs font-mono text-[#F2F3F5]"
+                                  data-testid="discord-members-pill"
+                                >
+                                  <span className="w-2 h-2 rounded-full bg-[#B5BAC1]" />
+                                  <span>{discordStats.memberCount} Members</span>
+                                </div>
+                              </div>
+
+                              {/* Join / Copy Invite & Refresh Buttons */}
+                              <div className="mt-3.5 flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    try {
+                                      await navigator.clipboard.writeText(DISCORD_INVITE_URL);
+                                    } catch {
+                                      // fallback
+                                    }
+                                    setCopiedDiscord(true);
+                                    window.setTimeout(() => setCopiedDiscord(false), 2200);
+                                  }}
+                                  className="flex-1 inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold bg-[#5865F2] hover:bg-[#4752C4] text-white transition-colors cursor-pointer"
+                                >
+                                  {copiedDiscord ? (
+                                    <>
+                                      <Check className="w-3.5 h-3.5" />
+                                      <span>Copied! (discord.gg/{DISCORD_INVITE_CODE})</span>
+                                    </>
+                                  ) : (
+                                    <span>Join Core | Beta (Copy Invite)</span>
+                                  )}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={fetchLiveDiscordStats}
+                                  aria-label="Refresh Discord Server Stats"
+                                  className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-[#2B2D31] hover:bg-[#35373C] text-[#F2F3F5] border border-[#5865F2]/40 transition-colors cursor-pointer"
+                                >
+                                  <RefreshCw
+                                    className={`w-3.5 h-3.5 ${
+                                      refreshingDiscord ? 'animate-spin' : ''
+                                    }`}
+                                  />
+                                  <span>Refresh</span>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      )}
+
                       {robloxTab === 'Combat' && (
                         <>
                           <div className="text-xs font-semibold text-neutral-400 pb-1 border-b border-white/10">
@@ -526,6 +716,28 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
                             unit=" px"
                             onChange={(v) => updateConfig('crosshairSize', v)}
                           />
+
+                          <div className="pt-2 border-t border-white/10 space-y-2">
+                            <div className="text-xs font-semibold text-neutral-400">
+                              Freecam &amp; Camera Enhancements
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCameraResetMsg('Camera subject reset to your character.');
+                                window.setTimeout(() => setCameraResetMsg(null), 2500);
+                              }}
+                              className="w-full inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold bg-[#161616] text-white hover:bg-[#222222] border border-white/15 transition-colors cursor-pointer"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>Reset Character Camera</span>
+                            </button>
+                            {cameraResetMsg && (
+                              <p className="text-[11px] font-mono text-emerald-400">
+                                {cameraResetMsg}
+                              </p>
+                            )}
+                          </div>
                         </>
                       )}
 

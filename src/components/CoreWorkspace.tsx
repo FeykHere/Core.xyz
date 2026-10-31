@@ -37,6 +37,7 @@ import {
   generateCoreLuaScript,
   parseDiscordInviteCounts,
 } from '../utils/coreAuth';
+import { WeatherCanvasOverlay } from './WeatherCanvasOverlay';
 
 interface CoreWorkspaceProps {
   keyExpiresAtMs?: number;
@@ -58,23 +59,6 @@ const SIMULATED_PLAYERS = [
   { id: 'p1', name: 'Vortex_R15', dist: 42, hp: 100, x: 22, y: 42, team: 'Alpha' },
   { id: 'p2', name: 'Nyx_Shadow', dist: 18, hp: 76, x: 50, y: 52, team: 'Bravo' },
   { id: 'p3', name: 'Kairo_R6', dist: 67, hp: 45, x: 78, y: 36, team: 'Bravo' },
-];
-
-const WEATHER_PARTICLES = Array.from({ length: 28 }, (_, i) => ({
-  id: i,
-  leftPct: (i * 17 + 7) % 98,
-  delaySec: ((i * 0.23) % 1.8).toFixed(2),
-  rainDurSec: (0.55 + (i % 5) * 0.08).toFixed(2),
-  stormDurSec: (0.38 + (i % 4) * 0.06).toFixed(2),
-  snowDurSec: (2.6 + (i % 6) * 0.35).toFixed(2),
-  sizePx: 3 + (i % 4),
-}));
-
-const SUN_BEAMS = [
-  { id: 'ray-1', left: '12%', width: '68px', rotate: '22deg', opacity: 0.22 },
-  { id: 'ray-2', left: '28%', width: '92px', rotate: '18deg', opacity: 0.28 },
-  { id: 'ray-3', left: '48%', width: '76px', rotate: '14deg', opacity: 0.20 },
-  { id: 'ray-4', left: '66%', width: '104px', rotate: '10deg', opacity: 0.25 },
 ];
 
 export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
@@ -115,104 +99,6 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
     () => formatRemainingKeyTime(effectiveExpiresAt, nowMs),
     [effectiveExpiresAt, nowMs]
   );
-
-  // Web Audio Synthesizer for Live Weather Sound Effects in Preview
-  React.useEffect(() => {
-    if (
-      typeof window === 'undefined' ||
-      !config.weatherSoundEnabled ||
-      config.weatherPreset === 'Default'
-    ) {
-      return;
-    }
-
-    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioCtx) return;
-
-    let ctx: AudioContext | null = null;
-    let thunderInterval: number | null = null;
-
-    try {
-      ctx = new AudioCtx();
-      const vol = Math.max(0, Math.min(1, config.weatherVolume / 100));
-      const masterGain = ctx.createGain();
-      masterGain.gain.value = vol * 0.16;
-      masterGain.connect(ctx.destination);
-
-      if (
-        config.weatherPreset === 'Rain' ||
-        config.weatherPreset === 'Thunderstorm' ||
-        config.weatherPreset === 'Snow'
-      ) {
-        const bufferSize = ctx.sampleRate * 2;
-        const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-        const output = noiseBuffer.getChannelData(0);
-        let lastOut = 0;
-        for (let i = 0; i < bufferSize; i++) {
-          const white = Math.random() * 2 - 1;
-          output[i] = (lastOut + 0.04 * white) / 1.04;
-          lastOut = output[i];
-          output[i] *= 2.5;
-        }
-
-        const whiteNoise = ctx.createBufferSource();
-        whiteNoise.buffer = noiseBuffer;
-        whiteNoise.loop = true;
-
-        const filter = ctx.createBiquadFilter();
-        filter.type = config.weatherPreset === 'Snow' ? 'bandpass' : 'lowpass';
-        filter.frequency.value =
-          config.weatherPreset === 'Thunderstorm'
-            ? 950
-            : config.weatherPreset === 'Rain'
-            ? 1250
-            : 520;
-
-        whiteNoise.connect(filter);
-        filter.connect(masterGain);
-        whiteNoise.start(0);
-
-        if (config.weatherPreset === 'Thunderstorm') {
-          thunderInterval = window.setInterval(() => {
-            if (!ctx || ctx.state !== 'running') return;
-            try {
-              const osc = ctx.createOscillator();
-              const tGain = ctx.createGain();
-              osc.type = 'sawtooth';
-              osc.frequency.setValueAtTime(95, ctx.currentTime);
-              osc.frequency.exponentialRampToValueAtTime(28, ctx.currentTime + 1.2);
-              tGain.gain.setValueAtTime(vol * 0.22, ctx.currentTime);
-              tGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.3);
-              osc.connect(tGain);
-              tGain.connect(ctx.destination);
-              osc.start();
-              osc.stop(ctx.currentTime + 1.35);
-            } catch {
-              // ignore
-            }
-          }, 5200);
-        }
-      } else if (config.weatherPreset === 'Sunny') {
-        const osc = ctx.createOscillator();
-        const sunnyGain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = 432;
-        sunnyGain.gain.value = vol * 0.035;
-        osc.connect(sunnyGain);
-        sunnyGain.connect(ctx.destination);
-        osc.start();
-      }
-    } catch {
-      // Ignore AudioContext autoplay restrictions until user interaction
-    }
-
-    return () => {
-      if (thunderInterval) window.clearInterval(thunderInterval);
-      if (ctx) {
-        ctx.close().catch(() => {});
-      }
-    };
-  }, [config.weatherPreset, config.weatherSoundEnabled, config.weatherVolume]);
 
   const fetchLiveDiscordStats = React.useCallback(async () => {
     setRefreshingDiscord(true);
@@ -1061,109 +947,12 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
                   }}
                 />
 
-                {/* Weather Atmosphere & Particle Overlay */}
-                {config.weatherPreset !== 'Default' && (
-                  <div
-                    className="pointer-events-none absolute inset-0 overflow-hidden"
-                    data-testid={`viewport-weather-${config.weatherPreset.toLowerCase()}`}
-                  >
-                    {/* Atmosphere Tint */}
-                    {config.weatherPreset === 'Rain' && (
-                      <div className="absolute inset-0 bg-gradient-to-b from-[#1e293b]/45 via-[#0f172a]/25 to-transparent" />
-                    )}
-                    {config.weatherPreset === 'Thunderstorm' && (
-                      <>
-                        <div className="absolute inset-0 bg-gradient-to-b from-[#0f172a]/65 via-[#1e1b4b]/35 to-transparent" />
-                        <motion.div
-                          animate={{ opacity: [0, 0, 0.55, 0, 0.25, 0, 0] }}
-                          transition={{
-                            duration: 5.2,
-                            repeat: Infinity,
-                            times: [0, 0.72, 0.74, 0.76, 0.78, 0.82, 1],
-                          }}
-                          className="absolute inset-0 bg-[#dbeafe]"
-                        />
-                      </>
-                    )}
-                    {config.weatherPreset === 'Snow' && (
-                      <div className="absolute inset-0 bg-gradient-to-b from-[#cbd5e1]/25 via-[#94a3b8]/10 to-transparent" />
-                    )}
-                    {config.weatherPreset === 'Sunny' && (
-                      <>
-                        <div className="absolute inset-0 bg-gradient-to-br from-amber-300/25 via-orange-200/10 to-transparent" />
-                        <div className="absolute -top-10 left-8 w-28 h-28 rounded-full bg-amber-200/35 blur-xl" />
-                        {SUN_BEAMS.map((beam) => (
-                          <motion.div
-                            key={beam.id}
-                            animate={{ opacity: [beam.opacity * 0.75, beam.opacity, beam.opacity * 0.75] }}
-                            transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-                            style={{
-                              left: beam.left,
-                              width: beam.width,
-                              transform: `rotate(${beam.rotate})`,
-                            }}
-                            className="absolute -top-12 h-[380px] bg-gradient-to-b from-amber-100/25 via-amber-200/10 to-transparent blur-md origin-top"
-                          />
-                        ))}
-                      </>
-                    )}
-
-                    {/* Rain / Thunderstorm Streaks */}
-                    {(config.weatherPreset === 'Rain' ||
-                      config.weatherPreset === 'Thunderstorm') &&
-                      WEATHER_PARTICLES.map((drop) => (
-                        <motion.span
-                          key={drop.id}
-                          initial={{ y: -24, x: 0 }}
-                          animate={{
-                            y: 340,
-                            x: config.weatherPreset === 'Thunderstorm' ? -36 : -8,
-                          }}
-                          transition={{
-                            duration: Number(
-                              config.weatherPreset === 'Thunderstorm'
-                                ? drop.stormDurSec
-                                : drop.rainDurSec
-                            ),
-                            delay: Number(drop.delaySec),
-                            repeat: Infinity,
-                            ease: 'linear',
-                          }}
-                          style={{ left: `${drop.leftPct}%` }}
-                          className={`absolute top-0 w-[1.5px] ${
-                            config.weatherPreset === 'Thunderstorm'
-                              ? 'h-5 bg-sky-200/70 rotate-[12deg]'
-                              : 'h-4 bg-sky-300/55 rotate-[4deg]'
-                          }`}
-                        />
-                      ))}
-
-                    {/* Snowflakes */}
-                    {config.weatherPreset === 'Snow' &&
-                      WEATHER_PARTICLES.map((flake) => (
-                        <motion.span
-                          key={flake.id}
-                          initial={{ y: -12, x: 0 }}
-                          animate={{
-                            y: 330,
-                            x: [0, 10, -8, 4],
-                          }}
-                          transition={{
-                            duration: Number(flake.snowDurSec),
-                            delay: Number(flake.delaySec),
-                            repeat: Infinity,
-                            ease: 'linear',
-                          }}
-                          style={{
-                            left: `${flake.leftPct}%`,
-                            width: `${flake.sizePx}px`,
-                            height: `${flake.sizePx}px`,
-                          }}
-                          className="absolute top-0 rounded-full bg-white/85 shadow-xs"
-                        />
-                      ))}
-                  </div>
-                )}
+                {/* Weather Atmosphere & Canvas Particle Overlay */}
+                <WeatherCanvasOverlay
+                  preset={config.weatherPreset}
+                  soundEnabled={config.weatherSoundEnabled}
+                  volume={config.weatherVolume}
+                />
 
                 {/* SVG Snapline Tracers */}
                 {config.espEnabled && config.tracersEnabled && (

@@ -58,6 +58,7 @@ local Env = {
     identifyexecutor = identifyexecutor or getexecutorname,
     request = request or http_request or syn_request or (type(http) == "table" and http.request) or (type(fluxus) == "table" and fluxus.request),
     gethwid = gethwid,
+    getcustomasset = getcustomasset or getsynasset,
     Stats = nil,
     TextService = nil,
 }
@@ -480,14 +481,17 @@ local function safeJsonDecode(str)
     if not str or str == "" then
         return nil
     end
+    local okP, resP = pcall(PlatoBoost.decode, str)
+    if okP and type(resP) == "table" then
+        return resP
+    end
     local ok, res = pcall(function()
         return HttpService:JSONDecode(str)
     end)
     if ok and res then
         return res
     end
-    local okP, resP = pcall(PlatoBoost.decode, str)
-    return (okP and resP) or nil
+    return nil
 end
 
 --------------------------------------------------------------------------------
@@ -517,6 +521,21 @@ do
             existingGui:Destroy()
         end)
     end
+    pcall(function()
+        local oldWeatherPart = workspace and workspace:FindFirstChild("CoreXyz_WeatherEmitterPart")
+        if oldWeatherPart then oldWeatherPart:Destroy() end
+        local oldRays = Lighting and Lighting:FindFirstChild("CoreXyz_WeatherSunRays")
+        if oldRays then oldRays:Destroy() end
+        local oldCC = Lighting and Lighting:FindFirstChild("CoreXyz_WeatherColorCorrection")
+        if oldCC then oldCC:Destroy() end
+        local soundSvc = safeGetService("SoundService")
+        if soundSvc then
+            local oldAmb = soundSvc:FindFirstChild("CoreXyz_WeatherAmbienceSound")
+            if oldAmb then oldAmb:Destroy() end
+            local oldThun = soundSvc:FindFirstChild("CoreXyz_WeatherThunderSound")
+            if oldThun then oldThun:Destroy() end
+        end
+    end)
 end
 
 --------------------------------------------------------------------------------
@@ -563,6 +582,9 @@ local ConfigState = {
     XRay = false,
     XRayTransparency = 0.6,
     SkyPreset = "Game Default",
+    WeatherPreset = "Default",
+    WeatherSoundEnabled = true,
+    WeatherSoundVolume = 0.5,
     Fullbright = false,
     NoFog = false,
     TimeOfDay = 14,
@@ -3648,7 +3670,9 @@ end
 local function applyXRayVision(enabled)
     if enabled then
         for _, desc in ipairs(workspace:GetDescendants()) do
-            if desc:IsA("BasePart") then
+            if desc:IsA("BasePart")
+                and desc.Name ~= "CoreXyz_WeatherEmitterPart"
+                and not string.find(desc.Name or "", "^CoreXyz_Lightning") then
                 local isPlayerPart = false
                 for _, p in ipairs(Players:GetPlayers()) do
                     if p.Character and desc:IsDescendantOf(p.Character) then
@@ -3717,8 +3741,30 @@ local SKY_PRESETS = {
 }
 
 local function updateLightingEnvironment()
+    local weatherMode = ConfigState.WeatherPreset or "Default"
     local preset = SKY_PRESETS[ConfigState.SkyPreset]
-    if preset then
+    if weatherMode == "Rain" then
+        Lighting.ClockTime = 15.0
+        Lighting.Brightness = ConfigState.Fullbright and 2.0 or 1.1
+        Lighting.Ambient = Color3.fromRGB(95, 108, 128)
+        Lighting.OutdoorAmbient = Color3.fromRGB(105, 118, 138)
+    elseif weatherMode == "Thunderstorm" then
+        Lighting.ClockTime = 18.5
+        Lighting.Brightness = ConfigState.Fullbright and 2.0 or 0.65
+        Lighting.Ambient = Color3.fromRGB(60, 70, 92)
+        Lighting.OutdoorAmbient = Color3.fromRGB(68, 78, 102)
+    elseif weatherMode == "Snow" then
+        Lighting.ClockTime = 13.0
+        Lighting.Brightness = ConfigState.Fullbright and 2.2 or 1.85
+        Lighting.Ambient = Color3.fromRGB(175, 190, 215)
+        Lighting.OutdoorAmbient = Color3.fromRGB(195, 210, 235)
+    elseif weatherMode == "Sunny" then
+        Lighting.ClockTime = 14.2
+        Lighting.Brightness = 2.85
+        Lighting.GlobalShadows = true
+        Lighting.Ambient = Color3.fromRGB(195, 185, 165)
+        Lighting.OutdoorAmbient = Color3.fromRGB(235, 220, 190)
+    elseif preset then
         Lighting.ClockTime = preset.ClockTime
         Lighting.Brightness = preset.Brightness
         Lighting.Ambient = preset.Ambient
@@ -3735,7 +3781,7 @@ local function updateLightingEnvironment()
         Lighting.OutdoorAmbient = State.origLighting.OutdoorAmbient
     end
 
-    if ConfigState.NoFog then
+    if ConfigState.NoFog or weatherMode == "Sunny" then
         Lighting.FogEnd = 100000
         Lighting.FogStart = 100000
         for _, child in ipairs(Lighting:GetChildren()) do
@@ -3743,10 +3789,768 @@ local function updateLightingEnvironment()
                 pcall(function() child.Density = 0 end)
             end
         end
+    elseif weatherMode == "Rain" then
+        Lighting.FogStart = 20
+        Lighting.FogEnd = 420
+    elseif weatherMode == "Thunderstorm" then
+        Lighting.FogStart = 10
+        Lighting.FogEnd = 280
+    elseif weatherMode == "Snow" then
+        Lighting.FogStart = 25
+        Lighting.FogEnd = 520
     else
         Lighting.FogEnd = State.origLighting.FogEnd
         Lighting.FogStart = State.origLighting.FogStart
     end
+end
+
+-- Pre-Allocated Client Weather, Canvas Particle Overlay, 3D Lightning & Surrounding Audio Engine (Zero Per-Frame Instance Allocations!)
+do
+    local SoundService = safeGetService("SoundService") or Lighting
+    local weatherPart = Instance.new("Part")
+    weatherPart.Name = "CoreXyz_WeatherEmitterPart"
+    weatherPart.Size = Vector3.new(85, 1, 85)
+    weatherPart.Transparency = 1
+    weatherPart.Anchored = true
+    weatherPart.CanCollide = false
+    weatherPart.CastShadow = false
+    pcall(function()
+        weatherPart.CanQuery = false
+        weatherPart.CanTouch = false
+    end)
+    weatherPart.Parent = workspace
+
+    local weatherEmitter = Instance.new("ParticleEmitter")
+    weatherEmitter.Name = "CoreXyz_WeatherEmitter"
+    weatherEmitter.Enabled = false
+    pcall(function()
+        weatherEmitter.LockedToPart = false
+        if Enum.NormalId and Enum.NormalId.Bottom then
+            weatherEmitter.EmissionDirection = Enum.NormalId.Bottom
+        end
+    end)
+    weatherEmitter.Parent = weatherPart
+
+    -- Secondary built-in local texture emitter so rain droplets & dense snow render even if asset CDN is throttled
+    local streakEmitter = Instance.new("ParticleEmitter")
+    streakEmitter.Name = "CoreXyz_WeatherStreakEmitter"
+    streakEmitter.Enabled = false
+    pcall(function()
+        streakEmitter.LockedToPart = false
+        if Enum.NormalId and Enum.NormalId.Bottom then
+            streakEmitter.EmissionDirection = Enum.NormalId.Bottom
+        end
+    end)
+    streakEmitter.Parent = weatherPart
+
+    -- Pre-Allocated 2D Screen-Space Weather Canvas Overlay (Rain droplets, Ground Splashes, Dense Snowflakes, Sky Lightning Flash)
+    local weatherCanvas = Instance.new("Frame")
+    weatherCanvas.Name = "CoreXyz_WeatherCanvas"
+    weatherCanvas.Size = UDim2.fromScale(1, 1)
+    weatherCanvas.Position = UDim2.fromScale(0, 0)
+    weatherCanvas.BackgroundTransparency = 1
+    weatherCanvas.Visible = false
+    weatherCanvas.ZIndex = 2
+    weatherCanvas.Parent = UI.OverlayContainer
+
+    local lightningFlashFrame = Instance.new("Frame")
+    lightningFlashFrame.Name = "CoreXyz_WeatherLightningFlash"
+    lightningFlashFrame.Size = UDim2.fromScale(1, 1)
+    lightningFlashFrame.Position = UDim2.fromScale(0, 0)
+    lightningFlashFrame.BackgroundColor3 = Color3.fromRGB(220, 236, 255)
+    lightningFlashFrame.BackgroundTransparency = 1
+    lightningFlashFrame.BorderSizePixel = 0
+    lightningFlashFrame.Visible = false
+    lightningFlashFrame.ZIndex = 3
+    lightningFlashFrame.Parent = weatherCanvas
+
+    local CANVAS_PARTICLE_COUNT = 28
+    local canvasDrops = {}
+    local canvasDropState = {}
+    for i = 1, CANVAS_PARTICLE_COUNT do
+        local drop = Instance.new("Frame")
+        drop.Name = "WeatherDrop_" .. i
+        drop.BackgroundColor3 = Color3.fromRGB(190, 220, 255)
+        drop.BackgroundTransparency = 0.25
+        drop.BorderSizePixel = 0
+        drop.Position = UDim2.fromScale(((i * 37) % 100) / 100, ((i * 19) % 100) / 100)
+        drop.Size = UDim2.fromOffset(2, 24)
+        drop.ZIndex = 2
+        drop.Parent = weatherCanvas
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(1, 0)
+        corner.Parent = drop
+
+        canvasDrops[i] = drop
+        canvasDropState[i] = {
+            x = ((i * 37) % 100) / 100,
+            y = ((i * 23) % 100) / 100,
+            speedY = 0.95 + (i % 7) * 0.16,
+            speedX = -0.08 - (i % 5) * 0.02,
+            phase = i * 0.75,
+            depth = 0.45 + (i % 6) * 0.11,
+        }
+    end
+
+    local CANVAS_SPLASH_COUNT = 8
+    local canvasSplashes = {}
+    local canvasSplashState = {}
+    for i = 1, CANVAS_SPLASH_COUNT do
+        local splash = Instance.new("Frame")
+        splash.Name = "WeatherSplash_" .. i
+        splash.BackgroundColor3 = Color3.fromRGB(200, 228, 255)
+        splash.BackgroundTransparency = 0.55
+        splash.BorderSizePixel = 0
+        splash.Position = UDim2.fromScale(((i * 13) % 90 + 5) / 100, (82 + (i % 14)) / 100)
+        splash.Size = UDim2.fromOffset(8, 3)
+        splash.Visible = false
+        splash.ZIndex = 2
+        splash.Parent = weatherCanvas
+
+        local sCorner = Instance.new("UICorner")
+        sCorner.CornerRadius = UDim.new(1, 0)
+        sCorner.Parent = splash
+
+        canvasSplashes[i] = splash
+        canvasSplashState[i] = {
+            x = ((i * 13) % 90 + 5) / 100,
+            y = (82 + (i % 14)) / 100,
+            progress = (i - 1) / CANVAS_SPLASH_COUNT,
+            speed = 2.4 + (i % 4) * 0.45,
+        }
+    end
+
+    -- Pre-Allocated 3D Surrounding Lightning Bolt Pool & Spatial Thunder Emitter in Workspace
+    local lightningFolder = Instance.new("Folder")
+    lightningFolder.Name = "CoreXyz_LightningBoltPool"
+    lightningFolder.Parent = workspace
+
+    local LIGHTNING_SEGMENT_COUNT = 6
+    local lightningSegments = {}
+    for i = 1, LIGHTNING_SEGMENT_COUNT do
+        local seg = Instance.new("Part")
+        seg.Name = "CoreXyz_LightningSegment_" .. i
+        seg.Anchored = true
+        seg.CanCollide = false
+        seg.CastShadow = false
+        seg.Transparency = 1
+        seg.Color = Color3.fromRGB(215, 235, 255)
+        seg.Size = Vector3.new(0.85, 0.85, 24)
+        seg.CFrame = CFrame.new(Vector3.new(0, -500, 0))
+        pcall(function()
+            if Enum.Material and Enum.Material.Neon then
+                seg.Material = Enum.Material.Neon
+            end
+            seg.CanQuery = false
+            seg.CanTouch = false
+        end)
+        seg.Parent = lightningFolder
+        lightningSegments[i] = seg
+    end
+
+    local LIGHTNING_BRANCH_COUNT = 2
+    local lightningBranches = {}
+    for i = 1, LIGHTNING_BRANCH_COUNT do
+        local branch = Instance.new("Part")
+        branch.Name = "CoreXyz_LightningBranch_" .. i
+        branch.Anchored = true
+        branch.CanCollide = false
+        branch.CastShadow = false
+        branch.Transparency = 1
+        branch.Color = Color3.fromRGB(185, 220, 255)
+        branch.Size = Vector3.new(0.45, 0.45, 16)
+        branch.CFrame = CFrame.new(Vector3.new(0, -500, 0))
+        pcall(function()
+            if Enum.Material and Enum.Material.Neon then
+                branch.Material = Enum.Material.Neon
+            end
+            branch.CanQuery = false
+            branch.CanTouch = false
+        end)
+        branch.Parent = lightningFolder
+        lightningBranches[i] = branch
+    end
+
+    local lightningStrikeNode = Instance.new("Part")
+    lightningStrikeNode.Name = "CoreXyz_LightningStrikeNode"
+    lightningStrikeNode.Size = Vector3.new(1, 1, 1)
+    lightningStrikeNode.Transparency = 1
+    lightningStrikeNode.Anchored = true
+    lightningStrikeNode.CanCollide = false
+    lightningStrikeNode.CastShadow = false
+    lightningStrikeNode.CFrame = CFrame.new(Vector3.new(0, -500, 0))
+    pcall(function()
+        lightningStrikeNode.CanQuery = false
+        lightningStrikeNode.CanTouch = false
+    end)
+    lightningStrikeNode.Parent = lightningFolder
+
+    local strikePointLight = Instance.new("PointLight")
+    strikePointLight.Name = "CoreXyz_LightningPointLight"
+    strikePointLight.Enabled = false
+    strikePointLight.Range = 60
+    strikePointLight.Brightness = 6.5
+    strikePointLight.Color = Color3.fromRGB(205, 230, 255)
+    strikePointLight.Parent = lightningStrikeNode
+
+    local spatialThunderSound = Instance.new("Sound")
+    spatialThunderSound.Name = "CoreXyz_SpatialThunderSound"
+    spatialThunderSound.Looped = false
+    spatialThunderSound.Volume = 0.9
+    spatialThunderSound.SoundId = "rbxassetid://9114224721"
+    pcall(function()
+        if Enum.RollOffMode and Enum.RollOffMode.InverseTapered then
+            spatialThunderSound.RollOffMode = Enum.RollOffMode.InverseTapered
+        end
+        spatialThunderSound.RollOffMinDistance = 35
+        spatialThunderSound.RollOffMaxDistance = 650
+    end)
+    spatialThunderSound.Parent = lightningStrikeNode
+
+    local sunRays = Instance.new("SunRaysEffect")
+    sunRays.Name = "CoreXyz_WeatherSunRays"
+    sunRays.Enabled = false
+    sunRays.Intensity = 0.32
+    sunRays.Spread = 0.90
+    sunRays.Parent = Lighting
+
+    local colorCorr = Instance.new("ColorCorrectionEffect")
+    colorCorr.Name = "CoreXyz_WeatherColorCorrection"
+    colorCorr.Enabled = false
+    colorCorr.Brightness = 0
+    colorCorr.Contrast = 0
+    colorCorr.Saturation = 0
+    colorCorr.TintColor = Color3.fromRGB(255, 255, 255)
+    colorCorr.Parent = Lighting
+
+    local ambienceSound = Instance.new("Sound")
+    ambienceSound.Name = "CoreXyz_WeatherAmbienceSound"
+    ambienceSound.Looped = true
+    ambienceSound.Volume = ConfigState.WeatherSoundVolume or 0.5
+    ambienceSound.SoundId = ""
+    ambienceSound.Parent = SoundService
+
+    -- Built-in client sound layer with acoustic EQ + Reverb so Rain/Storm/Snow audio ALWAYS plays even if CDN assets are blocked
+    local patterSound = Instance.new("Sound")
+    patterSound.Name = "CoreXyz_WeatherPatterSound"
+    patterSound.Looped = true
+    patterSound.Volume = 0
+    patterSound.SoundId = "rbxasset://sounds/action_falling.mp3"
+    patterSound.Parent = SoundService
+
+    local patterEq = Instance.new("EqualizerSoundEffect")
+    patterEq.Name = "CoreXyz_WeatherPatterEQ"
+    patterEq.HighGain = -6
+    patterEq.MidGain = -2
+    patterEq.LowGain = 4
+    patterEq.Parent = patterSound
+
+    local patterPitch = Instance.new("PitchShiftSoundEffect")
+    patterPitch.Name = "CoreXyz_WeatherPatterPitch"
+    patterPitch.Octave = 0.85
+    patterPitch.Parent = patterSound
+
+    local patterReverb = Instance.new("ReverbSoundEffect")
+    patterReverb.Name = "CoreXyz_WeatherPatterReverb"
+    patterReverb.DecayTime = 1.8
+    patterReverb.WetLevel = 2
+    patterReverb.DryLevel = 0
+    patterReverb.Parent = patterSound
+
+    -- Continuous low-frequency storm & rain rumble bed using the verified thunder audio asset
+    local rumblerSound = Instance.new("Sound")
+    rumblerSound.Name = "CoreXyz_WeatherRumblerSound"
+    rumblerSound.Looped = true
+    rumblerSound.Volume = 0
+    rumblerSound.PlaybackSpeed = 0.44
+    rumblerSound.SoundId = "rbxassetid://9114224721"
+    rumblerSound.Parent = SoundService
+
+    local rumblerEq = Instance.new("EqualizerSoundEffect")
+    rumblerEq.Name = "CoreXyz_WeatherRumblerEQ"
+    rumblerEq.HighGain = -18
+    rumblerEq.MidGain = -8
+    rumblerEq.LowGain = 6
+    rumblerEq.Parent = rumblerSound
+
+    local thunderSound = Instance.new("Sound")
+    thunderSound.Name = "CoreXyz_WeatherThunderSound"
+    thunderSound.Looped = false
+    thunderSound.Volume = 0.85
+    thunderSound.SoundId = "rbxassetid://9114224721"
+    thunderSound.Parent = SoundService
+
+    local WEATHER_SOUND_IDS = {
+        Rain = "rbxassetid://9112854440",
+        Thunderstorm = "rbxassetid://9112854440",
+        Snow = "rbxassetid://9112758096",
+        Sunny = "rbxassetid://9114221580",
+    }
+
+    local function makeNumRange(minV, maxV)
+        if type(NumberRange) == "table" and NumberRange.new then
+            return NumberRange.new(minV, maxV or minV)
+        end
+        return maxV or minV
+    end
+
+    local function makeNumSeq(val)
+        if type(NumberSequence) == "table" and NumberSequence.new then
+            return NumberSequence.new(val)
+        end
+        return val
+    end
+
+    local function hideLightningBolts()
+        strikePointLight.Enabled = false
+        lightningFlashFrame.Visible = false
+        lightningFlashFrame.BackgroundTransparency = 1
+        for i = 1, LIGHTNING_SEGMENT_COUNT do
+            lightningSegments[i].Transparency = 1
+        end
+        for i = 1, LIGHTNING_BRANCH_COUNT do
+            lightningBranches[i].Transparency = 1
+        end
+    end
+
+    local function triggerSurroundingLightningStrike(camera)
+        local camPos = camera and camera.CFrame and camera.CFrame.Position or Vector3.new(0, 20, 0)
+        local angle = (math.random(0, 359) / 180) * math.pi
+        local dist = math.random(55, 145)
+        local baseX = camPos.X + math.cos(angle) * dist
+        local baseZ = camPos.Z + math.sin(angle) * dist
+        local topY = camPos.Y + 115
+        local bottomY = camPos.Y - 12
+        local stepY = (topY - bottomY) / LIGHTNING_SEGMENT_COUNT
+
+        local prevPoint = Vector3.new(baseX, topY, baseZ)
+        for i = 1, LIGHTNING_SEGMENT_COUNT do
+            local jitterX = (i == LIGHTNING_SEGMENT_COUNT) and 0 or math.random(-9, 9)
+            local jitterZ = (i == LIGHTNING_SEGMENT_COUNT) and 0 or math.random(-9, 9)
+            local nextPoint = Vector3.new(baseX + jitterX, topY - stepY * i, baseZ + jitterZ)
+            local diff = nextPoint - prevPoint
+            local segLen = math.max(1, diff.Magnitude)
+            local midPoint = (prevPoint + nextPoint) * 0.5
+            local seg = lightningSegments[i]
+            local thickness = math.max(0.45, 1.05 - i * 0.08)
+            seg.Size = Vector3.new(thickness, thickness, segLen + 0.6)
+            seg.CFrame = CFrame.new(midPoint, nextPoint)
+            seg.Transparency = 0.02
+            if i == 2 or i == 4 then
+                local bIdx = (i == 2) and 1 or 2
+                local branch = lightningBranches[bIdx]
+                local branchEnd = nextPoint + Vector3.new(math.random(-18, 18), -stepY * 0.85, math.random(-18, 18))
+                local bDiff = branchEnd - nextPoint
+                local bLen = math.max(1, bDiff.Magnitude)
+                local bMid = (nextPoint + branchEnd) * 0.5
+                branch.Size = Vector3.new(0.42, 0.42, bLen)
+                branch.CFrame = CFrame.new(bMid, branchEnd)
+                branch.Transparency = 0.15
+            end
+            prevPoint = nextPoint
+        end
+
+        lightningStrikeNode.CFrame = CFrame.new(Vector3.new(baseX, camPos.Y + 8, baseZ))
+        strikePointLight.Enabled = true
+        strikePointLight.Brightness = 7.5
+        lightningFlashFrame.Visible = true
+        lightningFlashFrame.BackgroundTransparency = 0.38
+        State.lightningFlashIntensity = 1.0
+
+        if ConfigState.WeatherSoundEnabled then
+            local pitch = math.random(78, 114) / 100
+            pcall(function()
+                spatialThunderSound.PlaybackSpeed = pitch
+                spatialThunderSound:Play()
+            end)
+            pcall(function()
+                thunderSound.PlaybackSpeed = pitch
+                thunderSound:Play()
+            end)
+        end
+    end
+
+    local function syncWeatherAudio()
+        local mode = ConfigState.WeatherPreset or "Default"
+        local soundId = WEATHER_SOUND_IDS[mode]
+        local baseVol = math.clamp(ConfigState.WeatherSoundVolume or 0.5, 0, 1)
+        thunderSound.Volume = math.clamp(baseVol * 1.35, 0, 1)
+        spatialThunderSound.Volume = math.clamp(baseVol * 1.45, 0, 1)
+
+        if not ConfigState.WeatherSoundEnabled or mode == "Default" or not soundId then
+            ambienceSound.Volume = 0
+            patterSound.Volume = 0
+            rumblerSound.Volume = 0
+            pcall(function() ambienceSound:Stop() end)
+            pcall(function() patterSound:Stop() end)
+            pcall(function() rumblerSound:Stop() end)
+            pcall(function() thunderSound:Stop() end)
+            pcall(function() spatialThunderSound:Stop() end)
+            return
+        end
+
+        local volScale = (mode == "Thunderstorm" and 1.18) or (mode == "Snow" and 0.85) or (mode == "Sunny" and 0.75) or 1.0
+        ambienceSound.Volume = math.clamp(baseVol * volScale, 0, 1)
+        ambienceSound.PlaybackSpeed = (mode == "Thunderstorm" and 0.94) or (mode == "Snow" and 0.88) or 1.0
+
+        if ambienceSound.SoundId ~= soundId then
+            pcall(function() ambienceSound:Stop() end)
+            ambienceSound.SoundId = soundId
+        end
+        pcall(function()
+            if not ambienceSound.IsPlaying then
+                ambienceSound:Play()
+            end
+        end)
+
+        -- Guaranteed multi-layer acoustic rain/wind patter & storm rumble bed
+        if mode == "Rain" or mode == "Thunderstorm" or mode == "Snow" then
+            if mode == "Rain" then
+                patterSound.Volume = math.clamp(baseVol * 0.72, 0, 1)
+                patterSound.PlaybackSpeed = 1.18
+                patterPitch.Octave = 0.92
+                patterEq.HighGain = -4
+                patterEq.MidGain = 0
+                patterEq.LowGain = 3
+                rumblerSound.Volume = math.clamp(baseVol * 0.38, 0, 1)
+                rumblerSound.PlaybackSpeed = 0.42
+            elseif mode == "Thunderstorm" then
+                patterSound.Volume = math.clamp(baseVol * 0.95, 0, 1)
+                patterSound.PlaybackSpeed = 1.28
+                patterPitch.Octave = 0.86
+                patterEq.HighGain = -2
+                patterEq.MidGain = 2
+                patterEq.LowGain = 6
+                rumblerSound.Volume = math.clamp(baseVol * 0.62, 0, 1)
+                rumblerSound.PlaybackSpeed = 0.50
+            else
+                -- Snow howling winter wind layer
+                patterSound.Volume = math.clamp(baseVol * 0.48, 0, 1)
+                patterSound.PlaybackSpeed = 0.64
+                patterPitch.Octave = 0.65
+                patterEq.HighGain = -12
+                patterEq.MidGain = -4
+                patterEq.LowGain = 5
+                rumblerSound.Volume = 0
+            end
+            pcall(function()
+                if not patterSound.IsPlaying then
+                    patterSound:Play()
+                end
+                if rumblerSound.Volume > 0 and not rumblerSound.IsPlaying then
+                    rumblerSound:Play()
+                elseif rumblerSound.Volume <= 0 then
+                    rumblerSound:Stop()
+                end
+            end)
+        else
+            patterSound.Volume = 0
+            rumblerSound.Volume = 0
+            pcall(function() patterSound:Stop() end)
+            pcall(function() rumblerSound:Stop() end)
+        end
+    end
+
+    local function applyWeatherPreset(mode)
+        ConfigState.WeatherPreset = mode or "Default"
+        State.lightningFlashIntensity = 0
+        State.nextLightningTimer = 2.6
+        State.weatherAnimClock = State.weatherAnimClock or 0
+        hideLightningBolts()
+
+        if ConfigState.WeatherPreset == "Rain" then
+            weatherPart.Size = Vector3.new(85, 1, 85)
+            weatherEmitter.Texture = "rbxassetid://258128463"
+            weatherEmitter.Rate = 450
+            streakEmitter.Texture = "rbxasset://textures/particles/smoke_main.dds"
+            streakEmitter.Rate = 220
+            pcall(function()
+                if Enum.ParticleOrientation and Enum.ParticleOrientation.VelocityParallel then
+                    weatherEmitter.Orientation = Enum.ParticleOrientation.VelocityParallel
+                    streakEmitter.Orientation = Enum.ParticleOrientation.VelocityParallel
+                end
+                weatherEmitter.Squash = makeNumSeq(2.8)
+                streakEmitter.Squash = makeNumSeq(3.2)
+                weatherEmitter.LightEmission = 0.42
+                streakEmitter.LightEmission = 0.35
+                weatherEmitter.Speed = makeNumRange(78, 102)
+                streakEmitter.Speed = makeNumRange(82, 108)
+                weatherEmitter.Lifetime = makeNumRange(0.55, 0.90)
+                streakEmitter.Lifetime = makeNumRange(0.50, 0.85)
+                weatherEmitter.Size = makeNumSeq(0.52)
+                streakEmitter.Size = makeNumSeq(0.38)
+                weatherEmitter.Transparency = makeNumSeq(0.14)
+                streakEmitter.Transparency = makeNumSeq(0.28)
+                weatherEmitter.SpreadAngle = Vector2.new(5, 5)
+                streakEmitter.SpreadAngle = Vector2.new(4, 4)
+                weatherEmitter.Acceleration = Vector3.new(-6, -110, 0)
+                streakEmitter.Acceleration = Vector3.new(-6, -110, 0)
+                local rainCol = ColorSequence.new({
+                    ColorSequenceKeypoint.new(0, Color3.fromRGB(185, 215, 255)),
+                    ColorSequenceKeypoint.new(1, Color3.fromRGB(145, 185, 245)),
+                })
+                weatherEmitter.Color = rainCol
+                streakEmitter.Color = rainCol
+            end)
+            weatherEmitter.Enabled = true
+            streakEmitter.Enabled = true
+            weatherCanvas.Visible = true
+            for i = 1, CANVAS_SPLASH_COUNT do
+                canvasSplashes[i].Visible = true
+            end
+            sunRays.Enabled = false
+            colorCorr.Enabled = true
+            colorCorr.Brightness = -0.02
+            colorCorr.Contrast = 0.06
+            colorCorr.Saturation = -0.16
+            colorCorr.TintColor = Color3.fromRGB(220, 232, 255)
+        elseif ConfigState.WeatherPreset == "Thunderstorm" then
+            weatherPart.Size = Vector3.new(90, 1, 90)
+            weatherEmitter.Texture = "rbxassetid://258128463"
+            weatherEmitter.Rate = 650
+            streakEmitter.Texture = "rbxasset://textures/particles/smoke_main.dds"
+            streakEmitter.Rate = 340
+            pcall(function()
+                if Enum.ParticleOrientation and Enum.ParticleOrientation.VelocityParallel then
+                    weatherEmitter.Orientation = Enum.ParticleOrientation.VelocityParallel
+                    streakEmitter.Orientation = Enum.ParticleOrientation.VelocityParallel
+                end
+                weatherEmitter.Squash = makeNumSeq(3.4)
+                streakEmitter.Squash = makeNumSeq(3.8)
+                weatherEmitter.LightEmission = 0.48
+                streakEmitter.LightEmission = 0.40
+                weatherEmitter.Speed = makeNumRange(96, 128)
+                streakEmitter.Speed = makeNumRange(100, 134)
+                weatherEmitter.Lifetime = makeNumRange(0.48, 0.82)
+                streakEmitter.Lifetime = makeNumRange(0.45, 0.78)
+                weatherEmitter.Size = makeNumSeq(0.62)
+                streakEmitter.Size = makeNumSeq(0.46)
+                weatherEmitter.Transparency = makeNumSeq(0.10)
+                streakEmitter.Transparency = makeNumSeq(0.22)
+                weatherEmitter.SpreadAngle = Vector2.new(11, 11)
+                streakEmitter.SpreadAngle = Vector2.new(10, 10)
+                weatherEmitter.Acceleration = Vector3.new(-24, -135, -10)
+                streakEmitter.Acceleration = Vector3.new(-24, -135, -10)
+                local stormCol = ColorSequence.new({
+                    ColorSequenceKeypoint.new(0, Color3.fromRGB(175, 208, 255)),
+                    ColorSequenceKeypoint.new(1, Color3.fromRGB(130, 168, 235)),
+                })
+                weatherEmitter.Color = stormCol
+                streakEmitter.Color = stormCol
+            end)
+            weatherEmitter.Enabled = true
+            streakEmitter.Enabled = true
+            weatherCanvas.Visible = true
+            for i = 1, CANVAS_SPLASH_COUNT do
+                canvasSplashes[i].Visible = true
+            end
+            sunRays.Enabled = false
+            colorCorr.Enabled = true
+            colorCorr.Brightness = -0.05
+            colorCorr.Contrast = 0.14
+            colorCorr.Saturation = -0.26
+            colorCorr.TintColor = Color3.fromRGB(198, 214, 246)
+        elseif ConfigState.WeatherPreset == "Snow" then
+            -- Dense single-canopy snowfall (no laggy snow ground layer part!)
+            weatherPart.Size = Vector3.new(85, 1, 85)
+            weatherEmitter.Texture = "rbxassetid://258128463"
+            weatherEmitter.Rate = 500
+            streakEmitter.Texture = "rbxassetid://258128463"
+            streakEmitter.Rate = 240
+            pcall(function()
+                if Enum.ParticleOrientation and Enum.ParticleOrientation.FacingCamera then
+                    weatherEmitter.Orientation = Enum.ParticleOrientation.FacingCamera
+                    streakEmitter.Orientation = Enum.ParticleOrientation.FacingCamera
+                end
+                weatherEmitter.Squash = makeNumSeq(0)
+                streakEmitter.Squash = makeNumSeq(0)
+                weatherEmitter.LightEmission = 0.55
+                streakEmitter.LightEmission = 0.60
+                weatherEmitter.Speed = makeNumRange(14, 24)
+                streakEmitter.Speed = makeNumRange(10, 18)
+                weatherEmitter.Lifetime = makeNumRange(3.4, 5.2)
+                streakEmitter.Lifetime = makeNumRange(3.8, 5.6)
+                weatherEmitter.Size = makeNumSeq(0.68)
+                streakEmitter.Size = makeNumSeq(0.48)
+                weatherEmitter.Transparency = makeNumSeq(0.04)
+                streakEmitter.Transparency = makeNumSeq(0.10)
+                weatherEmitter.SpreadAngle = Vector2.new(38, 38)
+                streakEmitter.SpreadAngle = Vector2.new(42, 42)
+                weatherEmitter.Acceleration = Vector3.new(6, -5, 3)
+                streakEmitter.Acceleration = Vector3.new(-5, -4, -3)
+                local snowCol = ColorSequence.new({
+                    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+                    ColorSequenceKeypoint.new(1, Color3.fromRGB(230, 244, 255)),
+                })
+                weatherEmitter.Color = snowCol
+                streakEmitter.Color = snowCol
+            end)
+            weatherEmitter.Enabled = true
+            streakEmitter.Enabled = true
+            weatherCanvas.Visible = true
+            for i = 1, CANVAS_SPLASH_COUNT do
+                canvasSplashes[i].Visible = false
+            end
+            sunRays.Enabled = false
+            colorCorr.Enabled = true
+            colorCorr.Brightness = 0.03
+            colorCorr.Contrast = 0.05
+            colorCorr.Saturation = -0.10
+            colorCorr.TintColor = Color3.fromRGB(238, 246, 255)
+        elseif ConfigState.WeatherPreset == "Sunny" then
+            weatherEmitter.Enabled = false
+            streakEmitter.Enabled = false
+            weatherCanvas.Visible = false
+            for i = 1, CANVAS_SPLASH_COUNT do
+                canvasSplashes[i].Visible = false
+            end
+            sunRays.Enabled = true
+            sunRays.Intensity = 0.32
+            sunRays.Spread = 0.90
+            colorCorr.Enabled = true
+            colorCorr.Brightness = 0.03
+            colorCorr.Contrast = 0.08
+            colorCorr.Saturation = 0.18
+            colorCorr.TintColor = Color3.fromRGB(255, 246, 228)
+        else
+            weatherEmitter.Enabled = false
+            streakEmitter.Enabled = false
+            weatherCanvas.Visible = false
+            for i = 1, CANVAS_SPLASH_COUNT do
+                canvasSplashes[i].Visible = false
+            end
+            sunRays.Enabled = false
+            colorCorr.Enabled = false
+        end
+
+        updateLightingEnvironment()
+        syncWeatherAudio()
+    end
+
+    local function updateWeatherFrame(camera, safeDt)
+        local mode = ConfigState.WeatherPreset
+        if not mode or mode == "Default" then
+            return
+        end
+        State.weatherAnimClock = (State.weatherAnimClock or 0) + safeDt
+
+        if camera and (mode == "Rain" or mode == "Thunderstorm" or mode == "Snow") then
+            local camPos = camera.CFrame.Position
+            local canopyHeight = (mode == "Snow") and 18 or 20
+            weatherPart.CFrame = CFrame.new(Vector3.new(camPos.X, camPos.Y + canopyHeight, camPos.Z))
+        end
+
+        -- Animate 2D Canvas Weather Particles & Ground Ripples (0 allocations)
+        if weatherCanvas.Visible and (mode == "Rain" or mode == "Thunderstorm" or mode == "Snow") then
+            local isSnow = (mode == "Snow")
+            local isStorm = (mode == "Thunderstorm")
+            for i = 1, CANVAS_PARTICLE_COUNT do
+                local st = canvasDropState[i]
+                local drop = canvasDrops[i]
+                if isSnow then
+                    st.y = st.y + safeDt * (0.16 + st.depth * 0.18)
+                    st.x = st.x + math.sin(State.weatherAnimClock * 1.9 + st.phase) * safeDt * 0.08
+                    local flakePx = math.floor(4 + st.depth * 6)
+                    drop.Size = UDim2.fromOffset(flakePx, flakePx)
+                    drop.Rotation = (State.weatherAnimClock * 45 + i * 19) % 360
+                    drop.BackgroundColor3 = Color3.fromRGB(245, 250, 255)
+                    drop.BackgroundTransparency = math.clamp(0.32 - st.depth * 0.24, 0.04, 0.5)
+                else
+                    local fallMult = isStorm and 1.45 or 1.12
+                    local windDrift = isStorm and -0.22 or -0.09
+                    st.y = st.y + safeDt * st.speedY * fallMult
+                    st.x = st.x + safeDt * windDrift
+                    local streakW = (st.depth > 0.75) and 2 or 1
+                    local streakH = math.floor((isStorm and 24 or 18) + st.depth * 18)
+                    drop.Size = UDim2.fromOffset(streakW, streakH)
+                    drop.Rotation = isStorm and 14 or 7
+                    drop.BackgroundColor3 = isStorm and Color3.fromRGB(185, 218, 255) or Color3.fromRGB(170, 208, 255)
+                    drop.BackgroundTransparency = math.clamp(0.48 - st.depth * 0.26, 0.12, 0.65)
+                end
+                if st.y > 1.06 then
+                    st.y = -0.06
+                    st.x = ((st.x * 100 + i * 17) % 100) / 100
+                end
+                if st.x < -0.05 then
+                    st.x = 1.04
+                elseif st.x > 1.05 then
+                    st.x = -0.04
+                end
+                drop.Position = UDim2.fromScale(st.x, st.y)
+            end
+
+            if not isSnow then
+                for i = 1, CANVAS_SPLASH_COUNT do
+                    local sp = canvasSplashState[i]
+                    local splashFrame = canvasSplashes[i]
+                    sp.progress = sp.progress + safeDt * sp.speed
+                    if sp.progress >= 1 then
+                        sp.progress = 0
+                        sp.x = ((sp.x * 100 + i * 29) % 88 + 6) / 100
+                        sp.y = (80 + ((i * 7 + math.floor(State.weatherAnimClock * 10)) % 16)) / 100
+                    end
+                    local rx = math.floor(4 + sp.progress * (isStorm and 18 or 13))
+                    local ry = math.max(2, math.floor(rx * 0.32))
+                    splashFrame.Position = UDim2.fromScale(sp.x, sp.y)
+                    splashFrame.Size = UDim2.fromOffset(rx, ry)
+                    splashFrame.BackgroundTransparency = math.clamp(0.35 + sp.progress * 0.62, 0.35, 0.98)
+                end
+            end
+        end
+
+        if mode == "Thunderstorm" then
+            State.nextLightningTimer = (State.nextLightningTimer or 3.5) - safeDt
+            if State.nextLightningTimer <= 0 then
+                -- Randomize interval and occasionally trigger a realistic double-strike
+                if not State.pendingDoubleStrike and math.random(1, 100) <= 38 then
+                    State.pendingDoubleStrike = true
+                    State.nextLightningTimer = math.random(18, 38) / 100
+                else
+                    State.pendingDoubleStrike = false
+                    State.nextLightningTimer = math.random(28, 68) / 10
+                end
+                triggerSurroundingLightningStrike(camera)
+                Lighting.Brightness = (ConfigState.Fullbright and 2.0 or 0.65) + 3.5
+            elseif (State.lightningFlashIntensity or 0) > 0 then
+                local decayDt = math.min(safeDt, 0.05)
+                State.lightningFlashIntensity = math.max(0, State.lightningFlashIntensity - decayDt * 3.2)
+                local intensity = State.lightningFlashIntensity
+                local flashBoost = intensity * 3.5
+                Lighting.Brightness = (ConfigState.Fullbright and 2.0 or 0.65) + flashBoost
+                if intensity > 0.04 then
+                    local boltTrans = math.clamp(1 - intensity * 0.96, 0.02, 0.98)
+                    for i = 1, LIGHTNING_SEGMENT_COUNT do
+                        lightningSegments[i].Transparency = boltTrans
+                    end
+                    for i = 1, LIGHTNING_BRANCH_COUNT do
+                        lightningBranches[i].Transparency = math.clamp(boltTrans + 0.12, 0.1, 1)
+                    end
+                    strikePointLight.Brightness = intensity * 7.5
+                    lightningFlashFrame.Visible = true
+                    lightningFlashFrame.BackgroundTransparency = math.clamp(1 - intensity * 0.58, 0.35, 1)
+                else
+                    hideLightningBolts()
+                end
+            end
+        end
+    end
+
+    State.applyWeatherPreset = applyWeatherPreset
+    State.syncWeatherAudio = syncWeatherAudio
+    State.updateWeatherFrame = updateWeatherFrame
+    UI.WeatherEmitterPart = weatherPart
+    UI.WeatherEmitter = weatherEmitter
+    UI.WeatherStreakEmitter = streakEmitter
+    UI.WeatherCanvas = weatherCanvas
+    UI.LightningBoltPool = lightningFolder
+    UI.SpatialThunderSound = spatialThunderSound
+    UI.WeatherPatterSound = patterSound
+    UI.WeatherRumblerSound = rumblerSound
+    UI.WeatherSunRays = sunRays
+    UI.WeatherColorCorrection = colorCorr
+    UI.WeatherAmbienceSound = ambienceSound
+    UI.WeatherThunderSound = thunderSound
 end
 
 -- Glitch-Free Freecam Toggle
@@ -3998,6 +4802,10 @@ local function runUltimateFPSBooster()
     end)
 
     local function optimizeInstance(obj)
+        local objName = tostring(obj.Name or "")
+        if string.find(objName, "^CoreXyz_Weather") or string.find(objName, "^CoreXyz_Lightning") or string.find(objName, "^CoreXyz_Spatial") then
+            return
+        end
         if obj:IsA("BasePart") then
             pcall(function()
                 obj.Material = Enum.Material.SmoothPlastic
@@ -4230,25 +5038,449 @@ do
     State.updateHomeKeyInfo = updateHomeKeyInfo
     updateHomeKeyInfo()
 
-    createLabel(HomeTab, "Quick Utilities")
-    createButton(HomeTab, "Copy Discord Invite", function()
+    createLabel(HomeTab, "Official Discord Community")
+
+    local DISCORD_INVITE_CODE = "TVyFdDwDkn"
+    local DISCORD_INVITE_URL = "https://discord.gg/" .. DISCORD_INVITE_CODE
+    local DISCORD_API_URL = "https://discord.com/api/v9/invites/" .. DISCORD_INVITE_CODE .. "?with_counts=true&with_expiration=true"
+    local DISCORD_DEFAULT_GUILD_ID = "1565870578613752008"
+    local DISCORD_DEFAULT_ICON_HASH = "241614e0c238a40ff43e061065d35f5a"
+
+    local DiscordColors = {
+        CardBg = Color3.fromRGB(30, 31, 34),      -- #1E1F22 Discord dark surface
+        PillBg = Color3.fromRGB(43, 45, 49),      -- #2B2D31 Discord secondary surface
+        DeepBg = Color3.fromRGB(17, 18, 20),      -- #111214 Discord deep frame
+        Blurple = Color3.fromRGB(88, 101, 242),   -- #5865F2 Discord Blurple
+        BlurpleDark = Color3.fromRGB(71, 82, 196),-- #4752C4 Discord Blurple hover/gradient
+        SkyWave = Color3.fromRGB(120, 175, 255),  -- #78AFFF Smooth light-blue wave crest
+        CyanWave = Color3.fromRGB(165, 212, 255), -- #A5D4FF Luminous light-blue wave highlight
+        OnlineGreen = Color3.fromRGB(35, 165, 90),-- #23A55A Discord online green
+        MemberGray = Color3.fromRGB(181, 186, 193),-- #B5BAC1 Discord muted gray
+        HeaderWhite = Color3.fromRGB(242, 243, 245),
+    }
+
+    local HomeDiscordCard = Instance.new("Frame")
+    HomeDiscordCard.Name = "HomeDiscordCard"
+    HomeDiscordCard.Size = UDim2.new(1, 0, 0, 148)
+    HomeDiscordCard.BackgroundColor3 = DiscordColors.CardBg
+    HomeDiscordCard.ClipsDescendants = true
+    HomeDiscordCard.ZIndex = 14
+    HomeDiscordCard.Parent = HomeTab
+    addCorner(HomeDiscordCard, 10)
+    addStroke(HomeDiscordCard, DiscordColors.Blurple, 1.2, 0.2)
+
+    -- Top Discord Light-Blue / Blurple Animated Slow Wave Banner Strip
+    local DiscordBanner = Instance.new("Frame")
+    DiscordBanner.Name = "DiscordBanner"
+    DiscordBanner.Size = UDim2.new(1, 0, 0, 34)
+    DiscordBanner.BackgroundColor3 = DiscordColors.Blurple
+    DiscordBanner.ClipsDescendants = true
+    DiscordBanner.BorderSizePixel = 0
+    DiscordBanner.ZIndex = 15
+    DiscordBanner.Parent = HomeDiscordCard
+    addCorner(DiscordBanner, 10)
+
+    local BannerGrad = Instance.new("UIGradient")
+    BannerGrad.Name = "DiscordWaveGradient"
+    BannerGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0.0, DiscordColors.BlurpleDark),
+        ColorSequenceKeypoint.new(0.35, DiscordColors.Blurple),
+        ColorSequenceKeypoint.new(0.68, DiscordColors.SkyWave),
+        ColorSequenceKeypoint.new(1.0, DiscordColors.BlurpleDark),
+    })
+    BannerGrad.Rotation = 14
+    BannerGrad.Parent = DiscordBanner
+
+    local DiscordWaveCrest1 = Instance.new("Frame")
+    DiscordWaveCrest1.Name = "DiscordWaveCrest1"
+    DiscordWaveCrest1.AnchorPoint = Vector2.new(0.5, 0.5)
+    DiscordWaveCrest1.Position = UDim2.fromScale(0.5, 0.72)
+    DiscordWaveCrest1.Size = UDim2.new(1.45, 0, 0, 28)
+    DiscordWaveCrest1.BackgroundColor3 = DiscordColors.SkyWave
+    DiscordWaveCrest1.BackgroundTransparency = 0.68
+    DiscordWaveCrest1.BorderSizePixel = 0
+    DiscordWaveCrest1.ZIndex = 15
+    DiscordWaveCrest1.Parent = DiscordBanner
+    addCorner(DiscordWaveCrest1, 999)
+
+    local DiscordWaveCrest2 = Instance.new("Frame")
+    DiscordWaveCrest2.Name = "DiscordWaveCrest2"
+    DiscordWaveCrest2.AnchorPoint = Vector2.new(0.5, 0.5)
+    DiscordWaveCrest2.Position = UDim2.fromScale(0.5, 0.84)
+    DiscordWaveCrest2.Size = UDim2.new(1.55, 0, 0, 24)
+    DiscordWaveCrest2.BackgroundColor3 = DiscordColors.CyanWave
+    DiscordWaveCrest2.BackgroundTransparency = 0.74
+    DiscordWaveCrest2.BorderSizePixel = 0
+    DiscordWaveCrest2.ZIndex = 15
+    DiscordWaveCrest2.Parent = DiscordBanner
+    addCorner(DiscordWaveCrest2, 999)
+
+    UI.DiscordWave = {
+        Banner = DiscordBanner,
+        Gradient = BannerGrad,
+        Crest1 = DiscordWaveCrest1,
+        Crest2 = DiscordWaveCrest2,
+    }
+
+    local BannerTagLbl = Instance.new("TextLabel")
+    BannerTagLbl.Position = UDim2.fromOffset(80, 0)
+    BannerTagLbl.Size = UDim2.new(1, -195, 1, 0)
+    BannerTagLbl.BackgroundTransparency = 1
+    BannerTagLbl.Font = Enum.Font.GothamBold
+    BannerTagLbl.Text = "DISCORD SERVER  ·  LIVE STATUS"
+    BannerTagLbl.TextColor3 = Color3.fromRGB(224, 227, 255)
+    BannerTagLbl.TextSize = 9
+    BannerTagLbl.TextXAlignment = Enum.TextXAlignment.Left
+    BannerTagLbl.ZIndex = 16
+    BannerTagLbl.Parent = DiscordBanner
+
+    local BannerCodeLbl = Instance.new("TextLabel")
+    BannerCodeLbl.AnchorPoint = Vector2.new(1, 0.5)
+    BannerCodeLbl.Position = UDim2.new(1, -12, 0.5, 0)
+    BannerCodeLbl.Size = UDim2.fromOffset(115, 18)
+    BannerCodeLbl.BackgroundColor3 = DiscordColors.DeepBg
+    BannerCodeLbl.BackgroundTransparency = 0.25
+    BannerCodeLbl.Font = Enum.Font.Code
+    BannerCodeLbl.Text = "gg/" .. DISCORD_INVITE_CODE
+    BannerCodeLbl.TextColor3 = Theme.White
+    BannerCodeLbl.TextSize = 10
+    BannerCodeLbl.ZIndex = 16
+    BannerCodeLbl.Parent = DiscordBanner
+    addCorner(BannerCodeLbl, 5)
+
+    -- Server Logo Squircle (Overlapping Banner & Body like Discord Invite Cards)
+    local DiscordLogoBox = Instance.new("Frame")
+    DiscordLogoBox.Name = "DiscordLogoBox"
+    DiscordLogoBox.Position = UDim2.fromOffset(14, 16)
+    DiscordLogoBox.Size = UDim2.fromOffset(56, 56)
+    DiscordLogoBox.BackgroundColor3 = DiscordColors.DeepBg
+    DiscordLogoBox.ZIndex = 17
+    DiscordLogoBox.Parent = HomeDiscordCard
+    addCorner(DiscordLogoBox, 14)
+    addStroke(DiscordLogoBox, DiscordColors.CardBg, 3, 0)
+
+    local DiscordLogoFallback = Instance.new("Frame")
+    DiscordLogoFallback.Name = "DiscordLogoFallback"
+    DiscordLogoFallback.Position = UDim2.fromOffset(2, 2)
+    DiscordLogoFallback.Size = UDim2.new(1, -4, 1, -4)
+    DiscordLogoFallback.BackgroundColor3 = DiscordColors.Blurple
+    DiscordLogoFallback.ZIndex = 17
+    DiscordLogoFallback.Parent = DiscordLogoBox
+    addCorner(DiscordLogoFallback, 12)
+
+    local LogoMonogramTop = Instance.new("TextLabel")
+    LogoMonogramTop.Position = UDim2.fromOffset(0, 11)
+    LogoMonogramTop.Size = UDim2.new(1, 0, 0, 16)
+    LogoMonogramTop.BackgroundTransparency = 1
+    LogoMonogramTop.Font = Enum.Font.GothamBlack
+    LogoMonogramTop.Text = "CORE"
+    LogoMonogramTop.TextColor3 = Theme.White
+    LogoMonogramTop.TextSize = 12
+    LogoMonogramTop.ZIndex = 18
+    LogoMonogramTop.Parent = DiscordLogoFallback
+
+    local LogoMonogramSub = Instance.new("TextLabel")
+    LogoMonogramSub.Position = UDim2.fromOffset(0, 27)
+    LogoMonogramSub.Size = UDim2.new(1, 0, 0, 12)
+    LogoMonogramSub.BackgroundTransparency = 1
+    LogoMonogramSub.Font = Enum.Font.Code
+    LogoMonogramSub.Text = "BETA"
+    LogoMonogramSub.TextColor3 = Color3.fromRGB(224, 227, 255)
+    LogoMonogramSub.TextSize = 9
+    LogoMonogramSub.ZIndex = 18
+    LogoMonogramSub.Parent = DiscordLogoFallback
+
+    local DiscordServerIcon = Instance.new("ImageLabel")
+    DiscordServerIcon.Name = "DiscordServerIcon"
+    DiscordServerIcon.Size = UDim2.fromScale(1, 1)
+    DiscordServerIcon.BackgroundTransparency = 1
+    DiscordServerIcon.Image = ""
+    DiscordServerIcon.Visible = false
+    DiscordServerIcon.ZIndex = 19
+    DiscordServerIcon.Parent = DiscordLogoBox
+    addCorner(DiscordServerIcon, 14)
+
+    local LogoOnlineDot = Instance.new("Frame")
+    LogoOnlineDot.Name = "LogoOnlineDot"
+    LogoOnlineDot.AnchorPoint = Vector2.new(1, 1)
+    LogoOnlineDot.Position = UDim2.new(1, 2, 1, 2)
+    LogoOnlineDot.Size = UDim2.fromOffset(14, 14)
+    LogoOnlineDot.BackgroundColor3 = DiscordColors.OnlineGreen
+    LogoOnlineDot.ZIndex = 20
+    LogoOnlineDot.Parent = DiscordLogoBox
+    addCorner(LogoOnlineDot, 99)
+    addStroke(LogoOnlineDot, DiscordColors.CardBg, 2.5, 0)
+
+    -- Server Title ("Core | Beta") + Verified Badge + Subtitle
+    local DiscordServerName = Instance.new("TextLabel")
+    DiscordServerName.Name = "DiscordServerName"
+    DiscordServerName.Position = UDim2.fromOffset(80, 40)
+    DiscordServerName.Size = UDim2.new(1, -170, 0, 18)
+    DiscordServerName.BackgroundTransparency = 1
+    DiscordServerName.Font = Enum.Font.GothamBlack
+    DiscordServerName.Text = "Core | Beta"
+    DiscordServerName.TextColor3 = DiscordColors.HeaderWhite
+    DiscordServerName.TextSize = 15
+    DiscordServerName.TextXAlignment = Enum.TextXAlignment.Left
+    DiscordServerName.ZIndex = 16
+    DiscordServerName.Parent = HomeDiscordCard
+
+    local VerifiedBadge = Instance.new("TextLabel")
+    VerifiedBadge.AnchorPoint = Vector2.new(1, 0)
+    VerifiedBadge.Position = UDim2.new(1, -12, 0, 41)
+    VerifiedBadge.Size = UDim2.fromOffset(76, 16)
+    VerifiedBadge.BackgroundColor3 = DiscordColors.PillBg
+    VerifiedBadge.Font = Enum.Font.GothamBold
+    VerifiedBadge.Text = "COMMUNITY"
+    VerifiedBadge.TextColor3 = DiscordColors.Blurple
+    VerifiedBadge.TextSize = 8
+    VerifiedBadge.ZIndex = 16
+    VerifiedBadge.Parent = HomeDiscordCard
+    addCorner(VerifiedBadge, 4)
+    addStroke(VerifiedBadge, DiscordColors.Blurple, 1, 0.45)
+
+    local DiscordSubLbl = Instance.new("TextLabel")
+    DiscordSubLbl.Position = UDim2.fromOffset(80, 59)
+    DiscordSubLbl.Size = UDim2.new(1, -92, 0, 14)
+    DiscordSubLbl.BackgroundTransparency = 1
+    DiscordSubLbl.Font = Enum.Font.GothamMedium
+    DiscordSubLbl.Text = "Official Core.xyz Community · Script Updates, Configs & Support"
+    DiscordSubLbl.TextColor3 = DiscordColors.MemberGray
+    DiscordSubLbl.TextSize = 10
+    DiscordSubLbl.TextTruncate = Enum.TextTruncate.AtEnd
+    DiscordSubLbl.TextXAlignment = Enum.TextXAlignment.Left
+    DiscordSubLbl.ZIndex = 16
+    DiscordSubLbl.Parent = HomeDiscordCard
+
+    -- Live Member Counters Row (Active Online + Total Members)
+    local ActiveCountPill = Instance.new("Frame")
+    ActiveCountPill.Name = "DiscordActivePill"
+    ActiveCountPill.Position = UDim2.fromOffset(80, 77)
+    ActiveCountPill.Size = UDim2.fromOffset(122, 22)
+    ActiveCountPill.BackgroundColor3 = DiscordColors.PillBg
+    ActiveCountPill.ZIndex = 16
+    ActiveCountPill.Parent = HomeDiscordCard
+    addCorner(ActiveCountPill, 6)
+    addStroke(ActiveCountPill, DiscordColors.OnlineGreen, 1, 0.55)
+
+    local ActiveDot = Instance.new("Frame")
+    ActiveDot.AnchorPoint = Vector2.new(0, 0.5)
+    ActiveDot.Position = UDim2.new(0, 8, 0.5, 0)
+    ActiveDot.Size = UDim2.fromOffset(7, 7)
+    ActiveDot.BackgroundColor3 = DiscordColors.OnlineGreen
+    ActiveDot.ZIndex = 17
+    ActiveDot.Parent = ActiveCountPill
+    addCorner(ActiveDot, 99)
+
+    local DiscordOnlineValue = Instance.new("TextLabel")
+    DiscordOnlineValue.Name = "DiscordOnlineValue"
+    DiscordOnlineValue.Position = UDim2.fromOffset(20, 0)
+    DiscordOnlineValue.Size = UDim2.new(1, -24, 1, 0)
+    DiscordOnlineValue.BackgroundTransparency = 1
+    DiscordOnlineValue.Font = Enum.Font.Code
+    DiscordOnlineValue.Text = "1 Active"
+    DiscordOnlineValue.TextColor3 = DiscordColors.HeaderWhite
+    DiscordOnlineValue.TextSize = 10
+    DiscordOnlineValue.TextXAlignment = Enum.TextXAlignment.Left
+    DiscordOnlineValue.ZIndex = 17
+    DiscordOnlineValue.Parent = ActiveCountPill
+
+    local TotalMembersPill = Instance.new("Frame")
+    TotalMembersPill.Name = "DiscordMembersPill"
+    TotalMembersPill.Position = UDim2.fromOffset(210, 77)
+    TotalMembersPill.Size = UDim2.fromOffset(128, 22)
+    TotalMembersPill.BackgroundColor3 = DiscordColors.PillBg
+    TotalMembersPill.ZIndex = 16
+    TotalMembersPill.Parent = HomeDiscordCard
+    addCorner(TotalMembersPill, 6)
+    addStroke(TotalMembersPill, DiscordColors.Blurple, 1, 0.6)
+
+    local TotalDot = Instance.new("Frame")
+    TotalDot.AnchorPoint = Vector2.new(0, 0.5)
+    TotalDot.Position = UDim2.new(0, 8, 0.5, 0)
+    TotalDot.Size = UDim2.fromOffset(7, 7)
+    TotalDot.BackgroundColor3 = DiscordColors.MemberGray
+    TotalDot.ZIndex = 17
+    TotalDot.Parent = TotalMembersPill
+    addCorner(TotalDot, 99)
+
+    local DiscordMembersValue = Instance.new("TextLabel")
+    DiscordMembersValue.Name = "DiscordMembersValue"
+    DiscordMembersValue.Position = UDim2.fromOffset(20, 0)
+    DiscordMembersValue.Size = UDim2.new(1, -24, 1, 0)
+    DiscordMembersValue.BackgroundTransparency = 1
+    DiscordMembersValue.Font = Enum.Font.Code
+    DiscordMembersValue.Text = "2 Members"
+    DiscordMembersValue.TextColor3 = DiscordColors.HeaderWhite
+    DiscordMembersValue.TextSize = 10
+    DiscordMembersValue.TextXAlignment = Enum.TextXAlignment.Left
+    DiscordMembersValue.ZIndex = 17
+    DiscordMembersValue.Parent = TotalMembersPill
+
+    -- Action Buttons: Join Server (Copy Invite + RPC) & Refresh Live Counts
+    local JoinDiscordBtn = Instance.new("TextButton")
+    JoinDiscordBtn.Name = "JoinDiscordButton"
+    JoinDiscordBtn.Position = UDim2.fromOffset(14, 108)
+    JoinDiscordBtn.Size = UDim2.new(1, -110, 0, 28)
+    JoinDiscordBtn.BackgroundColor3 = DiscordColors.Blurple
+    JoinDiscordBtn.AutoButtonColor = false
+    JoinDiscordBtn.Font = Enum.Font.GothamBold
+    JoinDiscordBtn.Text = "Join Core | Beta  (Copy Invite)"
+    JoinDiscordBtn.TextColor3 = Theme.White
+    JoinDiscordBtn.TextSize = 11
+    JoinDiscordBtn.ClipsDescendants = true
+    JoinDiscordBtn.ZIndex = 16
+    JoinDiscordBtn.Parent = HomeDiscordCard
+    addCorner(JoinDiscordBtn, 6)
+
+    local RefreshDiscordBtn = Instance.new("TextButton")
+    RefreshDiscordBtn.Name = "RefreshDiscordButton"
+    RefreshDiscordBtn.AnchorPoint = Vector2.new(1, 0)
+    RefreshDiscordBtn.Position = UDim2.new(1, -14, 0, 108)
+    RefreshDiscordBtn.Size = UDim2.fromOffset(82, 28)
+    RefreshDiscordBtn.BackgroundColor3 = DiscordColors.PillBg
+    RefreshDiscordBtn.AutoButtonColor = false
+    RefreshDiscordBtn.Font = Enum.Font.GothamBold
+    RefreshDiscordBtn.Text = "Refresh"
+    RefreshDiscordBtn.TextColor3 = DiscordColors.HeaderWhite
+    RefreshDiscordBtn.TextSize = 10
+    RefreshDiscordBtn.ClipsDescendants = true
+    RefreshDiscordBtn.ZIndex = 16
+    RefreshDiscordBtn.Parent = HomeDiscordCard
+    addCorner(RefreshDiscordBtn, 6)
+    addStroke(RefreshDiscordBtn, DiscordColors.Blurple, 1, 0.5)
+
+    local discordIconLoaded = false
+    local function tryLoadDiscordServerIcon(guildId, iconHash)
+        if discordIconLoaded or not Env.getcustomasset or not Env.writefile then
+            return
+        end
+        local gId = tostring(guildId or DISCORD_DEFAULT_GUILD_ID)
+        local iHash = tostring(iconHash or DISCORD_DEFAULT_ICON_HASH)
+        if gId == "" or iHash == "" then
+            return
+        end
+        local iconUrl = string.format("https://cdn.discordapp.com/icons/%s/%s.png?size=128", gId, iHash)
+        local iconPath = FS_FOLDER .. "/DiscordIcon_" .. DISCORD_INVITE_CODE .. ".png"
+        local okImg, imgBytes = pcall(function()
+            if type(Env.request) == "function" then
+                local r = Env.request({ Url = iconUrl, Method = "GET" })
+                if r and r.StatusCode == 200 and r.Body and #r.Body > 64 then
+                    return r.Body
+                end
+            end
+            return game:HttpGet(iconUrl)
+        end)
+        if okImg and type(imgBytes) == "string" and #imgBytes > 64 then
+            pcall(function()
+                Env.writefile(iconPath, imgBytes)
+                local customAsset = Env.getcustomasset(iconPath)
+                if customAsset and tostring(customAsset) ~= "" then
+                    DiscordServerIcon.Image = tostring(customAsset)
+                    DiscordServerIcon.Visible = true
+                    discordIconLoaded = true
+                end
+            end)
+        end
+    end
+
+    local function fetchDiscordInviteData(showToast)
+        task.spawn(function()
+            local rawBody = nil
+            pcall(function()
+                if type(Env.request) == "function" then
+                    local res = Env.request({
+                        Url = DISCORD_API_URL,
+                        Method = "GET",
+                    })
+                    if res and res.StatusCode == 200 and type(res.Body) == "string" and res.Body ~= "" then
+                        rawBody = res.Body
+                    end
+                end
+                if not rawBody then
+                    rawBody = game:HttpGet(DISCORD_API_URL)
+                end
+            end)
+
+            if rawBody and rawBody ~= "" then
+                local decoded = safeJsonDecode(rawBody)
+                if type(decoded) == "table" then
+                    local totalCount = tonumber(decoded.approximate_member_count)
+                        or (type(decoded.profile) == "table" and tonumber(decoded.profile.member_count))
+                    local onlineCount = tonumber(decoded.approximate_presence_count)
+                        or (type(decoded.profile) == "table" and tonumber(decoded.profile.online_count))
+
+                    if totalCount then
+                        DiscordMembersValue.Text = string.format("%d Members", math.max(0, math.floor(totalCount)))
+                    end
+                    if onlineCount then
+                        DiscordOnlineValue.Text = string.format("%d Active", math.max(0, math.floor(onlineCount)))
+                    end
+
+                    local guildObj = type(decoded.guild) == "table" and decoded.guild or nil
+                    if guildObj then
+                        tryLoadDiscordServerIcon(guildObj.id, guildObj.icon)
+                    else
+                        tryLoadDiscordServerIcon(DISCORD_DEFAULT_GUILD_ID, DISCORD_DEFAULT_ICON_HASH)
+                    end
+
+                    if showToast then
+                        notify("Core | Beta", string.format("Discord synced: %s · %s", DiscordOnlineValue.Text, DiscordMembersValue.Text), 3)
+                    end
+                    return
+                end
+            end
+
+            tryLoadDiscordServerIcon(DISCORD_DEFAULT_GUILD_ID, DISCORD_DEFAULT_ICON_HASH)
+            if showToast then
+                notify("Core | Beta", "Invite: " .. DISCORD_INVITE_URL, 3)
+            end
+        end)
+    end
+
+    JoinDiscordBtn.MouseButton1Click:Connect(function()
+        spawnRipple(JoinDiscordBtn)
         if Env.setclipboard then
-            Env.setclipboard("https://discord.gg/yeKPEZpMMu")
-            notify("Core.xyz", "Discord invite copied to clipboard!", 4)
-        else
-            notify("Core.xyz", "Discord: discord.gg/yeKPEZpMMu", 4)
+            Env.setclipboard(DISCORD_INVITE_URL)
         end
-    end)
-    createButton(HomeTab, "Reset Character Camera", function()
-        local cam = workspace.CurrentCamera
-        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        if cam and hum then
-            setFreecamEnabled(false)
-            cam.CameraSubject = hum
-            cam.CameraType = Enum.CameraType.Custom
-            notify("Core.xyz", "Camera subject reset to your character.", 3)
+        JoinDiscordBtn.Text = "Copied! (discord.gg/" .. DISCORD_INVITE_CODE .. ")"
+        notify("Core | Beta", "Discord invite copied to clipboard: " .. DISCORD_INVITE_URL, 4)
+
+        -- Also attempt direct Discord Desktop client invite prompt if executor supports local RPC
+        if type(Env.request) == "function" then
+            task.spawn(function()
+                pcall(function()
+                    Env.request({
+                        Url = "http://127.0.0.1:6463/rpc?v=1",
+                        Method = "POST",
+                        Headers = {
+                            ["Content-Type"] = "application/json",
+                            ["Origin"] = "https://discord.com",
+                        },
+                        Body = safeJsonEncode({
+                            cmd = "INVITE_BROWSER",
+                            args = { code = DISCORD_INVITE_CODE },
+                            nonce = "corexyz_" .. tostring(os.time()),
+                        }),
+                    })
+                end)
+            end)
         end
+
+        task.delay(2.2, function()
+            if JoinDiscordBtn and JoinDiscordBtn.Parent then
+                JoinDiscordBtn.Text = "Join Core | Beta  (Copy Invite)"
+            end
+        end)
     end)
+
+    RefreshDiscordBtn.MouseButton1Click:Connect(function()
+        spawnRipple(RefreshDiscordBtn)
+        fetchDiscordInviteData(true)
+    end)
+
+    State.refreshDiscordInvite = fetchDiscordInviteData
+    fetchDiscordInviteData(false)
 end
 
 -- TAB 2: COMBAT (SINGLE AIMBOT TOGGLE WITH CLASSIC LOCK-IN + HITPART/WALLCHECK/TEAMCHECK/WHITELIST ABOVE HITBOX AREA)
@@ -4544,7 +5776,7 @@ do
         ConfigState.CrosshairPulseSpeed = val
     end)
 
-    createLabel(VisualsTab, "X-Ray, Sky & World Atmosphere")
+    createLabel(VisualsTab, "X-Ray, Weather, Sky & World Atmosphere")
     createToggle(VisualsTab, "X-Ray Vision (See-Through Walls)", false, function(val)
         ConfigState.XRay = val
         applyXRayVision(val)
@@ -4553,6 +5785,30 @@ do
         ConfigState.XRayTransparency = val
         if ConfigState.XRay then
             applyXRayVision(true)
+        end
+    end)
+    createDropdown(VisualsTab, "Weather Preset", {
+        "Default",
+        "Rain",
+        "Thunderstorm",
+        "Snow",
+        "Sunny",
+    }, "Default", function(opt)
+        if State.applyWeatherPreset then
+            State.applyWeatherPreset(opt)
+        end
+        notify("Weather Engine", "Weather set to " .. tostring(opt) .. (ConfigState.WeatherSoundEnabled and " (Sound FX On)" or ""), 3)
+    end)
+    createToggle(VisualsTab, "Weather Sound Effects", true, function(val)
+        ConfigState.WeatherSoundEnabled = val
+        if State.syncWeatherAudio then
+            State.syncWeatherAudio()
+        end
+    end)
+    createSlider(VisualsTab, "Weather Sound Volume", 0, 1, 0.5, 0.05, "", function(val)
+        ConfigState.WeatherSoundVolume = val
+        if State.syncWeatherAudio then
+            State.syncWeatherAudio()
         end
     end)
     createDropdown(VisualsTab, "Sky & Atmosphere Preset", {
@@ -4610,6 +5866,22 @@ do
         pcall(function()
             LocalPlayer.DevCameraOcclusionMode = val and Enum.DevCameraOcclusionMode.Invisicam or State.defaultOcclusion
         end)
+    end)
+    createButton(VisualsTab, "Reset Character Camera", function()
+        local cam = workspace.CurrentCamera
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if cam then
+            setFreecamEnabled(false)
+            State.spectatingPlayerName = nil
+            if hum then
+                cam.CameraSubject = hum
+            end
+            cam.CameraType = Enum.CameraType.Custom
+            if not ConfigState.CustomCamFOV then
+                cam.FieldOfView = State.defaultCamFOV
+            end
+            notify("Core.xyz", "Camera subject reset to your character.", 3)
+        end
     end)
 
     createLabel(VisualsTab, "Client Character Cosmetics")
@@ -5405,7 +6677,11 @@ do
         if BSliderCtrl then BSliderCtrl.Set(ConfigState.AccentB or 255, false) end
         UI.MainWindow.BackgroundTransparency = ConfigState.WindowTransparency or 0.03
         updateMovement()
-        updateLightingEnvironment()
+        if State.applyWeatherPreset then
+            State.applyWeatherPreset(ConfigState.WeatherPreset or "Default")
+        else
+            updateLightingEnvironment()
+        end
         updateCrosshair(0)
         State.lastPillText = ""
         updateFloatingPillTelemetry()
@@ -6010,7 +7286,19 @@ do
             end
             if UI.MainWindow.Visible then
                 UI.HeaderLineGrad.Offset = Vector2.new(math.sin(animClock * 1.8) * 0.42, 0)
+                if UI.DiscordWave and State.activeTab and State.activeTab.Name == "Home" then
+                    UI.DiscordWave.Gradient.Offset = Vector2.new(math.sin(animClock * 0.65) * 0.38, math.cos(animClock * 0.45) * 0.15)
+                    UI.DiscordWave.Gradient.Rotation = 14 + math.sin(animClock * 0.5) * 8
+                    UI.DiscordWave.Crest1.Position = UDim2.new(0.5 + math.sin(animClock * 0.75) * 0.22, 0, 0.72 + math.cos(animClock * 0.9) * 0.08, 0)
+                    UI.DiscordWave.Crest1.Rotation = math.sin(animClock * 0.55) * 3.5
+                    UI.DiscordWave.Crest2.Position = UDim2.new(0.5 - math.cos(animClock * 0.62) * 0.24, 0, 0.84 + math.sin(animClock * 0.8) * 0.08, 0)
+                    UI.DiscordWave.Crest2.Rotation = -math.cos(animClock * 0.48) * 3.0
+                end
             end
+        end
+
+        if State.updateWeatherFrame then
+            State.updateWeatherFrame(workspace.CurrentCamera, safeDt)
         end
 
         if ConfigState.Crosshair then

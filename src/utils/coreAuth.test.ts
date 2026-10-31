@@ -102,3 +102,37 @@ test('generateCoreLuaScript embeds Platoboost Service 36271, 2-button Key System
   assert.ok(script.includes('walkSpeed = 32'));
 });
 
+test('weatherEngine creates and steps dense snow, heavy rain droplets with ground splashes, and forked lightning bolts', async () => {
+  const {
+    getTargetParticleCount,
+    createWeatherParticles,
+    stepWeatherParticles,
+    generateLightningBolt,
+  } = await import('./weatherEngine');
+
+  assert.equal(getTargetParticleCount('Default'), 0);
+  assert.ok(getTargetParticleCount('Rain') >= 120);
+  assert.ok(getTargetParticleCount('Thunderstorm') >= 200);
+  assert.ok(getTargetParticleCount('Snow') >= 180, 'Snowfall must be dense without needing a ground layer');
+
+  const rainParticles = createWeatherParticles('Thunderstorm');
+  assert.equal(rainParticles.length, getTargetParticleCount('Thunderstorm'));
+  const splashes: any[] = [];
+  for (let step = 0; step < 6; step++) {
+    stepWeatherParticles(rainParticles, splashes, 'Thunderstorm', 0.08, step * 0.08);
+  }
+  assert.ok(splashes.length > 0, 'Stepping heavy rain particles must spawn ground splash ripples');
+
+  const snowParticles = createWeatherParticles('Snow');
+  const firstFlakeX = snowParticles[0].x;
+  const firstFlakeY = snowParticles[0].y;
+  stepWeatherParticles(snowParticles, [], 'Snow', 0.08, 2.0);
+  assert.notEqual(snowParticles[0].y, firstFlakeY, 'Snowflakes must fall vertically');
+  assert.notEqual(snowParticles[0].x, firstFlakeX, 'Snowflakes must drift horizontally with wind turbulence');
+
+  const bolt = generateLightningBolt(0.28, 75);
+  assert.ok(bolt.segments.length >= 10, 'Forked lightning bolt must contain main trunk and branch segments');
+  assert.ok(bolt.stereoPan >= -0.92 && bolt.stereoPan <= 0.92, 'Lightning bolt must compute stereo pan position');
+});
+
+

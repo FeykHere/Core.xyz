@@ -193,7 +193,7 @@ export function validateAccessKey(input: string, nowMs: number = Date.now()): Ke
   };
 }
 
-export const LIVE_RAW_SCRIPT_URL = 'https://dpaste.com/CWZ86RBCC.txt';
+export const LIVE_RAW_SCRIPT_URL = 'https://dpaste.com/52EQ6RXLR.txt';
 export const LIVE_LOADSTRING_SNIPPET = `loadstring(game:HttpGet("${LIVE_RAW_SCRIPT_URL}"))()`;
 export const GITHUB_CACHE_BUST_LOADSTRING =
   'loadstring(game:HttpGet("https://raw.githubusercontent.com/FeykHere/Core.xyz/main/Core.xyz.lua?t=" .. tostring(os.time())))()';

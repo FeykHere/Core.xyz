@@ -185,6 +185,7 @@ UDim2 = {
 
 Color3 = {
     fromRGB = function(r, g, b) return { R = r, G = g, B = b } end,
+    fromHSV = function(h, s, v) return { R = h or 1, G = s or 1, B = v or 1 } end,
     new = function(r, g, b) return { R = r, G = g, B = b } end,
 }
 
@@ -212,6 +213,9 @@ function CFrame.new(pos, lookAt, z, r00, r01, r02, r10, r11, r12, r20, r21, r22)
         LookVector = Vector3.new(0, 0, -1),
         RotationY = 0,
         R11 = stretchY,
+        Inverse = function(self)
+            return self
+        end,
         GetComponents = function(self)
             local p = self.Position
             return p.X, p.Y, p.Z, 1, 0, 0, 0, 1, 0, 0, 0, 1
@@ -243,6 +247,20 @@ function CFrame.__mul(a, b)
     ), a.LookAt)
     out.RotationY = (a.RotationY or 0) + (b.RotationY or 0)
     return out
+end
+function CFrame.__add(a, v)
+    return CFrame.new(Vector3.new(
+        a.Position.X + (v.X or 0),
+        a.Position.Y + (v.Y or 0),
+        a.Position.Z + (v.Z or 0)
+    ), a.LookAt)
+end
+function CFrame.__sub(a, v)
+    return CFrame.new(Vector3.new(
+        a.Position.X - (v.X or 0),
+        a.Position.Y - (v.Y or 0),
+        a.Position.Z - (v.Z or 0)
+    ), a.LookAt)
 end
 
 TweenInfo = {
@@ -281,6 +299,7 @@ Enum = {
     Material = { SmoothPlastic = "SmoothPlastic", Plastic = "Plastic" },
     QualityLevel = { Level01 = "Level01" },
     ScaleType = { Fit = "Fit", Crop = "Crop", Stretch = "Stretch" },
+    RenderPriority = { Camera = { Value = 200 }, Character = { Value = 300 }, First = { Value = 0 }, Last = { Value = 2000 } },
 }
 
 _G.__ALL_INSTANCES = {}
@@ -565,8 +584,18 @@ local PlayersService = {
 
 local RunService = {
     __3dRenderEnabled = true,
+    __boundSteps = {},
     RenderStepped = createSignal(),
     Stepped = createSignal(),
+    BindToRenderStep = function(self, name, priority, fn)
+        self.__boundSteps[name] = self.RenderStepped:Connect(fn)
+    end,
+    UnbindFromRenderStep = function(self, name)
+        if self.__boundSteps[name] then
+            self.__boundSteps[name]:Disconnect()
+            self.__boundSteps[name] = nil
+        end
+    end,
     Set3dRenderingEnabled = function(self, val)
         self.__3dRenderEnabled = val
     end
@@ -1045,7 +1074,7 @@ for _, desc in ipairs(combatPage:GetDescendants()) do
     end
 end
 
--- Enable Combat, Visuals, and Movement toggles
+-- Enable Combat, Visuals, and Movement toggles (skipping toggles that already default to true)
 for _, pageName in ipairs({ "Combat_Page", "Visuals_Page", "Movement_Page" }) do
     for _, desc in ipairs(mainWindow:GetDescendants()) do
         if desc.Name == pageName then
@@ -1053,7 +1082,11 @@ for _, pageName in ipairs({ "Combat_Page", "Visuals_Page", "Movement_Page" }) do
                 if ctrl.ClassName == "TextButton" and ctrl.Text == "" then
                     local rowLabel = ctrl:FindFirstChildOfClass("TextLabel")
                     local lText = rowLabel and rowLabel.Text or ""
-                    if lText ~= "" and lText ~= "Team Check" and lText ~= "Ignore Whitelisted Players" then
+                    if lText ~= ""
+                        and lText ~= "Team Check"
+                        and lText ~= "Ignore Whitelisted Players"
+                        and lText ~= "Crosshair Center Dot"
+                        and lText ~= "Stealth Anti-Kick Bypass (99% Undetected)" then
                         ctrl.MouseButton1Click:Fire()
                     end
                 end
@@ -1062,7 +1095,15 @@ for _, pageName in ipairs({ "Combat_Page", "Visuals_Page", "Movement_Page" }) do
     end
 end
 
--- Verify live ESP Preview Window reflects enabled ESP toggles on user's own character!
+-- Verify wider CoreESPPreviewWindow (240px width) and Dock-Locking with CoreMainWindow!
+assert(espPreviewWindow.Size.X.Offset == 240, "CoreESPPreviewWindow must be widened to 240px")
+mainWindow.Position = UDim2.new(0, 120, 0, 80)
+mainWindow.Changed:Fire("Position")
+local mScale = mainWindow:FindFirstChildOfClass("UIScale").Scale
+assert(espPreviewWindow.Position.X.Offset == 120 + math.floor(412 * mScale), "Moving CoreMainWindow must automatically move docked CoreESPPreviewWindow with it")
+assert(espPreviewWindow.Position.Y.Offset == 80, "CoreESPPreviewWindow Y position must stay locked with CoreMainWindow")
+
+-- Verify live ESP Preview Window reflects enabled ESP toggles on user's cloned character with full-size bounds!
 local previewStage = espPreviewWindow:FindFirstChild("PreviewStage")
 assert(previewStage ~= nil, "PreviewStage must exist inside CoreESPPreviewWindow")
 local previewBox3D = previewStage:FindFirstChild("PreviewBox3D")
@@ -1073,9 +1114,19 @@ local previewNameTag = previewStage:FindFirstChild("PreviewNameTag")
 local previewChams = previewStage:FindFirstChild("PreviewChams")
 assert(previewBox3D.Visible == true, "PreviewBox3D must be visible in CoreESPPreviewWindow when 3D Bounding Box is enabled")
 assert(previewSkeleton.Visible == true, "PreviewSkeleton must be visible in CoreESPPreviewWindow when 3D Skeleton Rig is enabled")
-assert(previewHealthBar.Visible == true, "PreviewHealthBar must be visible in CoreESPPreviewWindow when Health Bar is enabled")
+assert(previewHealthBar.Visible == true and previewHealthBar.Size.Y.Offset >= 150, "PreviewHealthBar must be visible and full-height (>=150px) matching avatar")
 assert(previewTracer.Visible == true, "PreviewTracer must be visible in CoreESPPreviewWindow when Snapline Tracers is enabled")
 assert(previewNameTag.Visible == true and previewChams.Visible == true, "PreviewNameTag & PreviewChams must be visible when Player ESP is enabled")
+assert(previewChams.Size.Y.Offset >= 150 and previewChams.Size.X.Offset >= 90, "PreviewChams must fit full-height cloned avatar in PreviewStage")
+
+-- Verify Pro Crosshair Suite (Presets, Spin, Pulse, Rainbow, Center Dot, Line Length/Width)
+local overlaysFolder = screenGui:FindFirstChild("Overlays")
+local crosshairContainer = overlaysFolder:FindFirstChild("CrosshairContainer")
+assert(crosshairContainer ~= nil and crosshairContainer.Visible == true, "CrosshairContainer must exist and be visible when Custom Crosshair is enabled")
+local armTop = crosshairContainer:FindFirstChild("ArmTop")
+local armBottom = crosshairContainer:FindFirstChild("ArmBottom")
+local chDot = crosshairContainer:FindFirstChild("CrosshairDot")
+assert(armTop ~= nil and armBottom ~= nil and chDot ~= nil and chDot.Visible == true, "Crosshair arms and CrosshairDot must exist and be visible")
 
 -- Test Screen Resolution Preset dropdown resetting Custom Stretch
 local visualsPage
@@ -1137,18 +1188,34 @@ assert(myHRP.Position.Y > -50, "Anti-Void must teleport LocalPlayer back to safe
 local overlays = screenGui:FindFirstChild("Overlays")
 local found3DBox = false
 local foundSkeletonBone = false
+local pooledOverlayCountBefore = 0
 for _, child in ipairs(overlays:GetChildren()) do
-    if child.Name == "Box3DOverlay" and child.Visible then
-        found3DBox = true
-        local edge1 = child:FindFirstChild("Edge3D_1")
-        local bone1 = child:FindFirstChild("Bone_1")
-        if edge1 and edge1.Visible then found3DBox = true end
-        if bone1 and bone1.Visible then foundSkeletonBone = true end
-        break
+    if child.Name == "Box3DOverlay" then
+        pooledOverlayCountBefore = pooledOverlayCountBefore + 1
+        if child.Visible then
+            local edge1 = child:FindFirstChild("Edge3D_1")
+            local bone1 = child:FindFirstChild("Bone_1")
+            if edge1 and edge1.Visible then found3DBox = true end
+            if bone1 and bone1.Visible then foundSkeletonBone = true end
+        end
     end
 end
 assert(found3DBox == true, "3D Bounding Box overlay (12 edges) must be visible on enemies")
 assert(foundSkeletonBone == true, "3D Skeleton Rig overlay must be visible on enemies")
+assert(pooledOverlayCountBefore == 35, "Object Pool must pre-allocate exact 35 Box3DOverlay containers for the 35 enemies")
+
+-- Verify Zero Per-Frame Instance Allocation (Constraint #3: Memory Safety)
+local instanceCountBeforeLoop = #_G.__ALL_INSTANCES
+for frame = 1, 20 do
+    RunService.RenderStepped:Fire(0.016)
+end
+local instanceCountAfterLoop = #_G.__ALL_INSTANCES
+assert(instanceCountAfterLoop == instanceCountBeforeLoop, "RenderStepped loop must allocate ZERO new instances across 20 frames (100% Object Pooled)")
+
+-- Verify Zero Restricted Engine Telemetry Calls (No VirtualUser or Set3dRenderingEnabled)
+game:GetService("Players").LocalPlayer.Idled:Fire()
+assert(game:GetService("VirtualUser").__clicks == 0, "Anti-AFK must not invoke monitored VirtualUser service")
+assert(RunService.__3dRenderEnabled == true, "Script must not invoke restricted RunService:Set3dRenderingEnabled")
 
 -- Verify Single-Ring FOV Circle has NO tick markers and NO inner orbital ring
 local fovCircle = overlays:FindFirstChild("FOVCircle")
@@ -1190,7 +1257,7 @@ function runLuaChunk(L: any, code: string, label: string) {
   }
 }
 
-test('Core.xyz.lua v4.2 Chef\'s Kiss Edition executes Home 3D Avatar Box + 3 Key Tiers (FEYKDEV/FEYKPERM/FEYK24H), Right-Side Live ESP Preview Window, Single-Ring FOV Circle, Screen Resolution Stretch + Preset Reset, Spider Climb, 7-Action Player Cards with Orbit, Join Server by JobId, and 3D ESP with zero errors', () => {
+test('Core.xyz.lua v4.4 Stealth & Object-Pooled Edition executes Home 3D Avatar Box + 3 Key Tiers, Right-Side Dock-Locked Live ESP Preview, Pre-Allocated Object Pool (0 per-frame allocations), Passive Viewport Targeting, Pro Crosshair Suite, and Zero Restricted Telemetry Calls with zero errors', () => {
   const scriptPath = path.resolve(process.cwd(), 'Core.xyz.lua');
   const coreLuaCode = fs.readFileSync(scriptPath, 'utf8');
 

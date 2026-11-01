@@ -75,6 +75,59 @@ export const WEATHER_PRESETS: readonly WeatherPresetType[] = [
   'Sunny',
 ] as const;
 
+export const COMMUNITY_MUSIC_NOTE =
+  'All tracks are handpicked from our Discord community on every script update. Want a specific song added next? Join our Discord community to submit your track requests.';
+
+export interface CommunityMusicTrack {
+  id: string;
+  label: string;
+  title: string;
+  artist: string;
+  fileName: string;
+  durationSec: number;
+  githubBlobUrl: string;
+  rawUrls: readonly string[];
+}
+
+export const COMMUNITY_MUSIC_TRACKS: readonly CommunityMusicTrack[] = [
+  {
+    id: 'sia_snowman_slowed',
+    label: 'Snowman (Slowed + Reverb) — Sia',
+    title: 'Snowman (Slowed + Reverb)',
+    artist: 'Sia',
+    fileName: 'sia_snowman_slowed.mp3',
+    durationSec: 184,
+    githubBlobUrl:
+      'https://github.com/FeykHere/Core.xyz/blob/main/sia%20-%20snowman%20(slowed%20%2B%20reverb)%20[with%20lyrics].mp3',
+    rawUrls: [
+      'https://raw.githubusercontent.com/FeykHere/Core.xyz/main/sia%20-%20snowman%20(slowed%20%2B%20reverb)%20%5Bwith%20lyrics%5D.mp3',
+      'https://raw.githubusercontent.com/FeykHere/Core.xyz/main/sia%20-%20snowman%20(slowed%20+%20reverb)%20[with%20lyrics].mp3',
+      'https://github.com/FeykHere/Core.xyz/blob/main/sia%20-%20snowman%20(slowed%20%2B%20reverb)%20[with%20lyrics].mp3?raw=true',
+      'https://raw.githubusercontent.com/FeykHere/Core.xyz/main/music/sia%20-%20snowman%20(slowed%20%2B%20reverb)%20%5Bwith%20lyrics%5D.mp3',
+    ],
+  },
+] as const;
+
+export function formatTrackTimestamp(seconds: number): string {
+  const safe = Math.max(0, Math.floor(Number.isFinite(seconds) ? seconds : 0));
+  const mins = Math.floor(safe / 60);
+  const secs = safe % 60;
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+export function computeOceanWaveDisplacement(
+  normX: number,
+  phase: number,
+  isPlaying: boolean
+): number {
+  const clampedX = Math.max(0, Math.min(1, normX));
+  const primary = Math.sin(clampedX * Math.PI * 3.5 - phase);
+  const secondary = Math.cos(clampedX * Math.PI * 6.0 - phase * 1.38) * 0.45;
+  const swell = Math.sin(clampedX * Math.PI * 1.75 + phase * 0.62) * 0.25;
+  const amplitude = isPlaying ? 3.8 : 1.35;
+  return (primary + secondary + swell) * amplitude;
+}
+
 export interface CoreConfigState {
   aimbotEnabled: boolean;
   showFOV: boolean;
@@ -98,6 +151,12 @@ export interface CoreConfigState {
   infJumpEnabled: boolean;
   noClipEnabled: boolean;
   antiAFKEnabled: boolean;
+  selectedTrack: string;
+  musicPlayerVisible: boolean;
+  musicPlaying: boolean;
+  musicVolume: number;
+  musicLooped: boolean;
+  muteGameAudio: boolean;
 }
 
 export interface GithubRepoConfig {
@@ -130,6 +189,12 @@ export const DEFAULT_CORE_CONFIG: CoreConfigState = {
   infJumpEnabled: false,
   noClipEnabled: false,
   antiAFKEnabled: true,
+  selectedTrack: COMMUNITY_MUSIC_TRACKS[0].label,
+  musicPlayerVisible: true,
+  musicPlaying: false,
+  musicVolume: 75,
+  musicLooped: true,
+  muteGameAudio: false,
 };
 
 export const DEFAULT_GITHUB_CONFIG: GithubRepoConfig = {

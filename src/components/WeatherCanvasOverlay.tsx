@@ -13,28 +13,30 @@ interface WeatherCanvasOverlayProps {
   preset: WeatherPresetType;
   soundEnabled: boolean;
   volume: number; // 0..100
+  muteGameAudio?: boolean;
 }
 
 export const WeatherCanvasOverlay: React.FC<WeatherCanvasOverlayProps> = ({
   preset,
   soundEnabled,
   volume,
+  muteGameAudio = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const soundEnabledRef = useRef(soundEnabled);
+  const soundEnabledRef = useRef(soundEnabled && !muteGameAudio);
   const volumeRef = useRef(volume);
   const triggerThunderSoundRef = useRef<((pan: number, distanceMeters: number) => void) | null>(
     null
   );
 
   useEffect(() => {
-    soundEnabledRef.current = soundEnabled;
+    soundEnabledRef.current = soundEnabled && !muteGameAudio;
     volumeRef.current = volume;
-  }, [soundEnabled, volume]);
+  }, [soundEnabled, volume, muteGameAudio]);
 
   // Ambient Audio Loop & Synchronized 3D Spatial Thunder Synthesizer
   useEffect(() => {
-    if (typeof window === 'undefined' || !soundEnabled || preset === 'Default') {
+    if (typeof window === 'undefined' || !soundEnabled || muteGameAudio || preset === 'Default') {
       triggerThunderSoundRef.current = null;
       return;
     }
@@ -217,7 +219,7 @@ export const WeatherCanvasOverlay: React.FC<WeatherCanvasOverlayProps> = ({
         ctx.close().catch(() => {});
       }
     };
-  }, [preset, soundEnabled, volume]);
+  }, [preset, soundEnabled, volume, muteGameAudio]);
 
   // Canvas Particle & Lightning Bolt Renderer
   useEffect(() => {

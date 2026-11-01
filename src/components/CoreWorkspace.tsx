@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Copy,
@@ -10,11 +10,20 @@ import {
   Crosshair,
   Eye,
   Gauge,
+  Music,
+  Play,
+  Pause,
+  SkipBack,
+  SkipForward,
+  Volume2,
+  VolumeX,
   Settings,
   Code2,
   RefreshCw,
 } from 'lucide-react';
 import {
+  COMMUNITY_MUSIC_NOTE,
+  COMMUNITY_MUSIC_TRACKS,
   CoreConfigState,
   DEFAULT_CORE_CONFIG,
   DEFAULT_GITHUB_CONFIG,
@@ -33,7 +42,9 @@ import {
   WeatherPresetType,
   buildGithubRawUrl,
   buildLoadstringSnippet,
+  computeOceanWaveDisplacement,
   formatRemainingKeyTime,
+  formatTrackTimestamp,
   generateCoreLuaScript,
   parseDiscordInviteCounts,
 } from '../utils/coreAuth';
@@ -46,7 +57,9 @@ interface CoreWorkspaceProps {
 }
 
 type ActiveSection = 'simulator' | 'github' | 'improvements';
-type RobloxTab = 'Home' | 'Combat' | 'Visuals' | 'Movement' | 'Misc';
+type RobloxTab = 'Home' | 'Combat' | 'Visuals' | 'Movement' | 'Music' | 'Misc';
+
+const OCEAN_SEGMENT_INDICES = Array.from({ length: 24 }, (_, i) => i);
 
 const ACCENT_HEX: Record<CoreConfigState['espAccent'], string> = {
   White: '#FFFFFF',
@@ -82,6 +95,81 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
   const [refreshingDiscord, setRefreshingDiscord] = useState(false);
   const [fullLuaFile, setFullLuaFile] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  const [trackTimeSec, setTrackTimeSec] = useState<number>(38);
+  const [wavePhase, setWavePhase] = useState<number>(0);
+  const [isScrubbing, setIsScrubbing] = useState<boolean>(false);
+  const scrubberTrackRef = useRef<HTMLDivElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const activeTrack = useMemo(
+    () =>
+      COMMUNITY_MUSIC_TRACKS.find((t) => t.label === config.selectedTrack) ??
+      COMMUNITY_MUSIC_TRACKS[0],
+    [config.selectedTrack]
+  );
+
+  // Sync HTML5 Audio element with playback state, volume, and loop
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.volume = Math.max(0, Math.min(1, config.musicVolume / 100));
+    audio.loop = config.musicLooped;
+  }, [config.musicVolume, config.musicLooped]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (config.musicPlaying) {
+      audio.play().catch(() => {
+        // Fallback to simulated timeline progression when external audio stream is blocked
+      });
+    } else {
+      audio.pause();
+    }
+  }, [config.musicPlaying, activeTrack]);
+
+  // Continuous Wavy Ocean Phase & Playback Time Ticker
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setWavePhase((prev) => prev + (config.musicPlaying ? 0.24 : 0.08));
+      if (config.musicPlaying && !isScrubbing) {
+        const audio = audioRef.current;
+        if (audio && !audio.paused && audio.currentTime > 0) {
+          setTrackTimeSec(audio.currentTime);
+        } else {
+          setTrackTimeSec((prev) => {
+            const next = prev + 0.1;
+            if (next >= activeTrack.durationSec) {
+              return config.musicLooped ? 0 : activeTrack.durationSec;
+            }
+            return next;
+          });
+        }
+      }
+    }, 100);
+    return () => window.clearInterval(id);
+  }, [config.musicPlaying, config.musicLooped, isScrubbing, activeTrack.durationSec]);
+
+  const seekToRatio = (ratio: number) => {
+    const clamped = Math.max(0, Math.min(1, ratio));
+    const targetSec = clamped * activeTrack.durationSec;
+    setTrackTimeSec(targetSec);
+    if (audioRef.current) {
+      try {
+        audioRef.current.currentTime = targetSec;
+      } catch {
+        // ignore seek error on unloaded stream
+      }
+    }
+  };
+
+  const handleScrubberPointer = (clientX: number) => {
+    const el = scrubberTrackRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    seekToRatio((clientX - rect.left) / rect.width);
+  };
 
   const effectiveExpiresAt = useMemo(
     () => keyExpiresAtMs ?? Date.now() + PLATOBOOST_DEFAULT_KEY_TTL_MS,
@@ -360,33 +448,48 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
         {/* SECTION 1: INTERACTIVE CORE.XYZ ROBLOX UI & LIVE VIEWPORT */}
         {activeSection === 'simulator' && (
           <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
-            {/* Left Column: Simulated Core.xyz Monochrome In-Game Window */}
-            <div className="lg:col-span-7 rounded-xl bg-[#0A0A0A] border border-white/15 overflow-hidden flex flex-col">
-              {/* Simulated Roblox Window Title Bar */}
-              <div className="px-5 py-3.5 bg-[#121212] border-b border-white/10 flex items-center justify-between">
-                <span className="font-mono text-sm font-bold tracking-tight text-white">
-                  CORE.XYZ
-                </span>
-                <div className="flex items-center gap-3 text-xs text-neutral-400 font-mono tabular-nums">
-                  <span>Key Time Left: {liveKeyTimeLeft}</span>
-                  <span>·</span>
-                  <span>[R-SHIFT] Toggle</span>
+            {/* Left Column: Simulated Core.xyz Monochrome In-Game Window + Docked Music Player Bar */}
+            <div className="lg:col-span-7 flex flex-col gap-2.5">
+              <audio
+                ref={audioRef}
+                src={activeTrack.rawUrls[0]}
+                preload="none"
+                onEnded={() => {
+                  if (config.musicLooped) {
+                    setTrackTimeSec(0);
+                    audioRef.current?.play().catch(() => {});
+                  } else {
+                    updateConfig('musicPlaying', false);
+                  }
+                }}
+              />
+              <div className="rounded-xl bg-[#0A0A0A] border border-white/15 overflow-hidden flex flex-col">
+                {/* Simulated Roblox Window Title Bar */}
+                <div className="px-5 py-3.5 bg-[#121212] border-b border-white/10 flex items-center justify-between">
+                  <span className="font-mono text-sm font-bold tracking-tight text-white">
+                    CORE.XYZ
+                  </span>
+                  <div className="flex items-center gap-3 text-xs text-neutral-400 font-mono tabular-nums">
+                    <span>Key Time Left: {liveKeyTimeLeft}</span>
+                    <span>·</span>
+                    <span>[R-SHIFT] Toggle</span>
+                  </div>
                 </div>
-              </div>
 
-              {/* Window Body: Sidebar + Active Tab Controls */}
-              <div className="flex-1 grid grid-cols-1 sm:grid-cols-12 min-h-[420px]">
-                {/* Sidebar Tabs */}
-                <div className="sm:col-span-4 bg-[#0E0E0E] border-b sm:border-b-0 sm:border-r border-white/10 p-3 flex sm:flex-col gap-1.5 overflow-x-auto">
-                  {(
-                    [
-                      { id: 'Home', icon: Home },
-                      { id: 'Combat', icon: Crosshair },
-                      { id: 'Visuals', icon: Eye },
-                      { id: 'Movement', icon: Gauge },
-                      { id: 'Misc', icon: Settings },
-                    ] as const
-                  ).map(({ id, icon: Icon }) => {
+                {/* Window Body: Sidebar + Active Tab Controls */}
+                <div className="flex-1 grid grid-cols-1 sm:grid-cols-12 min-h-[420px]">
+                  {/* Sidebar Tabs */}
+                  <div className="sm:col-span-4 bg-[#0E0E0E] border-b sm:border-b-0 sm:border-r border-white/10 p-3 flex sm:flex-col gap-1.5 overflow-x-auto">
+                    {(
+                      [
+                        { id: 'Home', icon: Home },
+                        { id: 'Combat', icon: Crosshair },
+                        { id: 'Visuals', icon: Eye },
+                        { id: 'Movement', icon: Gauge },
+                        { id: 'Music', icon: Music },
+                        { id: 'Misc', icon: Settings },
+                      ] as const
+                    ).map(({ id, icon: Icon }) => {
                     const isActive = robloxTab === id;
                     return (
                       <button
@@ -878,6 +981,110 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
                         </>
                       )}
 
+                       {robloxTab === 'Music' && (
+                        <>
+                          <div className="text-xs font-semibold text-neutral-400 pb-1 border-b border-white/10">
+                            Community Music Player &amp; Audio Engine
+                          </div>
+
+                          {/* Community Music Note Card */}
+                          <div
+                            className="rounded-xl bg-[#141519] border border-[#5865F2]/45 p-3.5 space-y-2.5"
+                            data-testid="music-community-note-card"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[11px] font-bold tracking-wider uppercase text-[#949CF7]">
+                                COMMUNITY TRACK SUBMISSIONS
+                              </span>
+                              <span className="text-[10px] font-mono text-neutral-400">
+                                CoreXyz_Music/
+                              </span>
+                            </div>
+                            <p className="text-xs text-neutral-300 leading-relaxed">
+                              {COMMUNITY_MUSIC_NOTE}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  await navigator.clipboard.writeText(DISCORD_INVITE_URL);
+                                } catch {
+                                  // fallback
+                                }
+                                setCopiedDiscord(true);
+                                window.setTimeout(() => setCopiedDiscord(false), 2200);
+                              }}
+                              className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-bold bg-[#5865F2] hover:bg-[#4752C4] text-white transition-colors cursor-pointer"
+                            >
+                              {copiedDiscord ? (
+                                <>
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>Copied Discord Invite (discord.gg/{DISCORD_INVITE_CODE})</span>
+                                </>
+                              ) : (
+                                <span>Join Discord to Submit a Song (Copy Invite)</span>
+                              )}
+                            </button>
+                          </div>
+
+                          {/* Tracks Dropdown */}
+                          <div>
+                            <label
+                              htmlFor="music-track-select"
+                              className="block text-xs font-medium text-neutral-300 mb-1.5"
+                            >
+                              Select Track (Auto-Downloads &amp; Caches via getcustomasset)
+                            </label>
+                            <select
+                              id="music-track-select"
+                              data-testid="music-track-select"
+                              value={config.selectedTrack}
+                              onChange={(e) => {
+                                updateConfig('selectedTrack', e.target.value);
+                                setTrackTimeSec(0);
+                              }}
+                              className="w-full rounded-lg bg-[#141414] border border-white/15 px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white"
+                            >
+                              {COMMUNITY_MUSIC_TRACKS.map((track) => (
+                                <option key={track.id} value={track.label}>
+                                  {track.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <ToggleRow
+                            label="Toggle Player UI (Docked Below Hub)"
+                            checked={config.musicPlayerVisible}
+                            onChange={(v) => updateConfig('musicPlayerVisible', v)}
+                          />
+                          <ToggleRow
+                            label="Play / Pause Music"
+                            checked={config.musicPlaying}
+                            onChange={(v) => updateConfig('musicPlaying', v)}
+                          />
+                          <ToggleRow
+                            label="Mute Game Audio (Silences Non-Core Sounds)"
+                            checked={config.muteGameAudio}
+                            onChange={(v) => updateConfig('muteGameAudio', v)}
+                          />
+                          <SliderRow
+                            label="Music Volume"
+                            value={config.musicVolume}
+                            min={0}
+                            max={100}
+                            step={5}
+                            unit="%"
+                            onChange={(v) => updateConfig('musicVolume', v)}
+                          />
+                          <ToggleRow
+                            label="Loop Track"
+                            checked={config.musicLooped}
+                            onChange={(v) => updateConfig('musicLooped', v)}
+                          />
+                        </>
+                      )}
+
                       {robloxTab === 'Misc' && (
                         <>
                           <div className="text-xs font-semibold text-neutral-400 pb-1 border-b border-white/10">
@@ -914,6 +1121,210 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
                   </AnimatePresence>
                 </div>
               </div>
+              </div>
+
+              {/* CONNECTED MINI MUSIC PLAYER UI (Docked Directly Below CORE.XYZ Window) */}
+              {config.musicPlayerVisible && (
+                <div
+                  className="rounded-xl bg-[#0A0A0A] border border-white/20 px-4 py-3.5 shadow-xl space-y-3"
+                  data-testid="connected-music-player"
+                >
+                  {/* Top Row: Track Metadata + Transport Controls + Time Counter */}
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-lg bg-[#141414] border border-white/15 flex items-center justify-center shrink-0">
+                        <Music className="w-4 h-4 text-white" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="text-xs font-bold text-white truncate"
+                            data-testid="player-track-title"
+                          >
+                            {activeTrack.title}
+                          </span>
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-neutral-300">
+                            {activeTrack.artist}
+                          </span>
+                        </div>
+                        <div className="text-[10px] font-mono text-neutral-400 truncate mt-0.5">
+                          {config.musicPlaying ? 'Playing · ' : 'Paused · '}
+                          Cached: CoreXyz_Music/{activeTrack.fileName}
+                          {config.muteGameAudio ? ' · Game Audio Muted' : ''}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Transport Buttons: Backward, Play/Pause, Forward */}
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        aria-label="Previous or Rewind Track"
+                        onClick={() => seekToRatio(0)}
+                        className="w-8 h-8 rounded-lg bg-[#141414] hover:bg-[#222222] border border-white/10 flex items-center justify-center text-white transition-colors cursor-pointer"
+                      >
+                        <SkipBack className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={config.musicPlaying ? 'Pause Track' : 'Play Track'}
+                        data-testid="player-play-pause-btn"
+                        onClick={() => updateConfig('musicPlaying', !config.musicPlaying)}
+                        className="w-9 h-8 rounded-lg bg-white hover:bg-neutral-200 text-black flex items-center justify-center transition-colors cursor-pointer"
+                      >
+                        {config.musicPlaying ? (
+                          <Pause className="w-4 h-4 fill-current" />
+                        ) : (
+                          <Play className="w-4 h-4 fill-current" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Next Track"
+                        onClick={() => seekToRatio(0)}
+                        className="w-8 h-8 rounded-lg bg-[#141414] hover:bg-[#222222] border border-white/10 flex items-center justify-center text-white transition-colors cursor-pointer"
+                      >
+                        <SkipForward className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={
+                          config.muteGameAudio ? 'Unmute Game Audio' : 'Mute Game Audio'
+                        }
+                        onClick={() => updateConfig('muteGameAudio', !config.muteGameAudio)}
+                        className={`px-2.5 h-8 rounded-lg border text-[10px] font-mono inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+                          config.muteGameAudio
+                            ? 'bg-white text-black border-white font-bold'
+                            : 'bg-[#141414] text-neutral-300 border-white/10 hover:text-white'
+                        }`}
+                      >
+                        {config.muteGameAudio ? (
+                          <VolumeX className="w-3.5 h-3.5" />
+                        ) : (
+                          <Volume2 className="w-3.5 h-3.5" />
+                        )}
+                        <span>{config.muteGameAudio ? 'Game Muted' : 'Game Audio'}</span>
+                      </button>
+                    </div>
+
+                    {/* Live Time Counter */}
+                    <div
+                      className="text-xs font-mono text-neutral-300 tabular-nums shrink-0"
+                      data-testid="player-time-counter"
+                    >
+                      {formatTrackTimestamp(trackTimeSec)} /{' '}
+                      {formatTrackTimestamp(activeTrack.durationSec)}
+                    </div>
+                  </div>
+
+                  {/* Interactive Animated Wavy Ocean Timeline Slider / Scrubber */}
+                  <div className="space-y-1">
+                    <div
+                      ref={scrubberTrackRef}
+                      role="slider"
+                      tabIndex={0}
+                      aria-label="Wavy Ocean Music Timeline Scrubber"
+                      aria-valuemin={0}
+                      aria-valuemax={activeTrack.durationSec}
+                      aria-valuenow={Math.floor(trackTimeSec)}
+                      data-testid="wavy-ocean-scrubber"
+                      onPointerDown={(e) => {
+                        setIsScrubbing(true);
+                        handleScrubberPointer(e.clientX);
+                      }}
+                      onPointerMove={(e) => {
+                        if (isScrubbing) {
+                          handleScrubberPointer(e.clientX);
+                        }
+                      }}
+                      onPointerUp={() => setIsScrubbing(false)}
+                      onPointerLeave={() => setIsScrubbing(false)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'ArrowRight') {
+                          seekToRatio((trackTimeSec + 5) / activeTrack.durationSec);
+                        } else if (e.key === 'ArrowLeft') {
+                          seekToRatio((trackTimeSec - 5) / activeTrack.durationSec);
+                        }
+                      }}
+                      className="relative h-8 rounded-lg bg-[#111318] border border-white/10 px-2 flex items-center cursor-pointer select-none overflow-hidden"
+                    >
+                      {/* Ocean Deep Undercurrent Fill */}
+                      <div
+                        style={{
+                          width: `${Math.max(
+                            2,
+                            Math.min(100, (trackTimeSec / activeTrack.durationSec) * 100)
+                          )}%`,
+                        }}
+                        className="pointer-events-none absolute inset-y-0 left-0 bg-gradient-to-r from-[#5865F2]/25 via-[#78AFFF]/30 to-white/25 transition-all duration-75"
+                      />
+
+                      {/* 24 Pre-Allocated Wavy Ocean Harmonic Segments (Mirrors OceanWaveSegment_1..24 in Core.xyz.lua) */}
+                      <div className="relative z-10 w-full flex items-center justify-between gap-1 px-1">
+                        {OCEAN_SEGMENT_INDICES.map((idx) => {
+                          const normX = idx / (OCEAN_SEGMENT_INDICES.length - 1);
+                          const progressRatio = trackTimeSec / activeTrack.durationSec;
+                          const isPassed = normX <= progressRatio;
+                          const waveDisp = computeOceanWaveDisplacement(
+                            normX,
+                            wavePhase,
+                            config.musicPlaying
+                          );
+                          const heightPx = Math.max(
+                            4,
+                            Math.min(
+                              20,
+                              Math.round(
+                                (isPassed ? 10 : 6) +
+                                  Math.abs(waveDisp) * (isPassed ? 1.8 : 0.85)
+                              )
+                            )
+                          );
+
+                          return (
+                            <div
+                              key={idx}
+                              data-testid={`ocean-wave-segment-${idx + 1}`}
+                              style={{
+                                height: `${heightPx}px`,
+                                transform: `translateY(${waveDisp.toFixed(2)}px)`,
+                              }}
+                              className={`flex-1 rounded-full transition-colors duration-75 ${
+                                isPassed
+                                  ? 'bg-gradient-to-t from-[#78AFFF] to-white shadow-[0_0_8px_rgba(255,255,255,0.45)]'
+                                  : 'bg-white/20'
+                              }`}
+                            />
+                          );
+                        })}
+                      </div>
+
+                      {/* Scrubber Thumb Riding the Ocean Wave Crest */}
+                      {(() => {
+                        const progressRatio = Math.max(
+                          0,
+                          Math.min(1, trackTimeSec / activeTrack.durationSec)
+                        );
+                        const thumbWaveY = computeOceanWaveDisplacement(
+                          progressRatio,
+                          wavePhase,
+                          config.musicPlaying
+                        );
+                        return (
+                          <div
+                            data-testid="ocean-scrubber-thumb"
+                            style={{
+                              left: `calc(${(progressRatio * 100).toFixed(2)}% - 7px)`,
+                              transform: `translateY(${(thumbWaveY * 0.65).toFixed(2)}px)`,
+                            }}
+                            className="pointer-events-none absolute z-20 w-3.5 h-3.5 rounded-full bg-white ring-2 ring-[#78AFFF] shadow-[0_0_12px_rgba(255,255,255,0.9)]"
+                          />
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Right Column: Live Interactive Viewport Preview */}
@@ -952,6 +1363,7 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
                   preset={config.weatherPreset}
                   soundEnabled={config.weatherSoundEnabled}
                   volume={config.weatherVolume}
+                  muteGameAudio={config.muteGameAudio}
                 />
 
                 {/* SVG Snapline Tracers */}

@@ -71,14 +71,20 @@ end)
 
 local CURRENT_PLACE_ID = tostring(game.PlaceId or 0)
 local FS_FOLDER = "CoreXYZ_Data"
+local MUSIC_FOLDER = "CoreXyz_Music"
 local CONFIG_INDEX_FILE = FS_FOLDER .. "/ConfigIndex.json"
 local AUTO_LOAD_FILE = FS_FOLDER .. "/AutoLoadConfig.txt"
 local KEY_META_FILE = FS_FOLDER .. "/PlatoKeyMeta.json"
 local WAYPOINTS_FILE = FS_FOLDER .. "/Waypoints_" .. CURRENT_PLACE_ID .. ".json"
 
 pcall(function()
-    if Env.makefolder and Env.isfolder and not Env.isfolder(FS_FOLDER) then
-        Env.makefolder(FS_FOLDER)
+    if Env.makefolder and Env.isfolder then
+        if not Env.isfolder(FS_FOLDER) then
+            Env.makefolder(FS_FOLDER)
+        end
+        if not Env.isfolder(MUSIC_FOLDER) then
+            Env.makefolder(MUSIC_FOLDER)
+        end
     end
 end)
 
@@ -109,6 +115,21 @@ local function safeReadFile(path)
         end
     end
     return memoryFileStore[path]
+end
+
+local function safeIsFile(path)
+    if memoryFileStore[path] ~= nil then
+        return true
+    end
+    if Env.isfile then
+        local ok, exists = pcall(function()
+            return Env.isfile(path)
+        end)
+        if ok and exists then
+            return true
+        end
+    end
+    return false
 end
 
 local PlatoBoost = (function()
@@ -524,16 +545,31 @@ do
     pcall(function()
         local oldWeatherPart = workspace and workspace:FindFirstChild("CoreXyz_WeatherEmitterPart")
         if oldWeatherPart then oldWeatherPart:Destroy() end
+        local oldGroundPart = workspace and workspace:FindFirstChild("CoreXyz_WeatherGroundPart")
+        if oldGroundPart then oldGroundPart:Destroy() end
+        local oldLightningPool = workspace and workspace:FindFirstChild("CoreXyz_LightningBoltPool")
+        if oldLightningPool then oldLightningPool:Destroy() end
         local oldRays = Lighting and Lighting:FindFirstChild("CoreXyz_WeatherSunRays")
         if oldRays then oldRays:Destroy() end
         local oldCC = Lighting and Lighting:FindFirstChild("CoreXyz_WeatherColorCorrection")
         if oldCC then oldCC:Destroy() end
+        local oldBloom = Lighting and Lighting:FindFirstChild("CoreXyz_WeatherBloom")
+        if oldBloom then oldBloom:Destroy() end
+        local oldAtmo = Lighting and Lighting:FindFirstChild("CoreXyz_WeatherAtmosphere")
+        if oldAtmo then oldAtmo:Destroy() end
         local soundSvc = safeGetService("SoundService")
         if soundSvc then
-            local oldAmb = soundSvc:FindFirstChild("CoreXyz_WeatherAmbienceSound")
-            if oldAmb then oldAmb:Destroy() end
-            local oldThun = soundSvc:FindFirstChild("CoreXyz_WeatherThunderSound")
-            if oldThun then oldThun:Destroy() end
+            for _, sName in ipairs({
+                "CoreXyz_WeatherAmbienceSound",
+                "CoreXyz_WeatherPatterSound",
+                "CoreXyz_WeatherRumblerSound",
+                "CoreXyz_WeatherThunderSound",
+                "CoreXyz_SpatialThunderSound",
+                "CoreXyz_MusicPlayerSound",
+            }) do
+                local oldSnd = soundSvc:FindFirstChild(sName)
+                if oldSnd then oldSnd:Destroy() end
+            end
         end
     end)
 end
@@ -624,6 +660,12 @@ local ConfigState = {
     ServerHopMode = "Lowest Players",
     TargetJobId = "",
     AntiAFK = false,
+    -- Music & Audio System
+    SelectedTrack = "Snowman (Slowed + Reverb) — Sia",
+    MusicPlayerVisible = true,
+    MusicVolume = 0.75,
+    MusicLooped = true,
+    MuteGameAudio = false,
     -- UI & Settings
     CustomPillTitle = "CORE.XYZ",
     RememberKey = true,
@@ -666,6 +708,23 @@ local State = {
     promptDurationCache = {},
     headlessCache = {},
     korbloxCache = {},
+    mutedGameSounds = setmetatable({}, { __mode = "k" }),
+    muteAudioDescendantConn = nil,
+    musicTrackOptions = { "Snowman (Slowed + Reverb) — Sia" },
+    musicIsPlaying = false,
+    musicDownloading = false,
+    musicScrubbing = false,
+    musicSimulatedPos = 0,
+    musicTrackLength = 184,
+    musicWaveClock = 0,
+    musicCachedAssets = {},
+    syncMusicPlayerDock = nil,
+    setMusicPlaying = nil,
+    syncPlayToggleUI = nil,
+    stepMusicTrack = nil,
+    seekMusicToRatio = nil,
+    applyMuteGameAudio = nil,
+    updateMusicPlayerFrame = nil,
     activeHighlightCount = 0,
     MAX_HIGHLIGHTS = 30,
     defaultWalkSpeed = 16,
@@ -1657,6 +1716,9 @@ local function toggleMainHub()
     if State.uiVisible then
         UI.MainWindow.Visible = true
         UI.MainScale.Scale = targetScale
+        if State.syncMusicPlayerDock then
+            State.syncMusicPlayerDock()
+        end
         tween(UI.MainScale, SpringTween, { Scale = targetScale })
         tween(UI.MainWindow, FastTween, { BackgroundTransparency = ConfigState.WindowTransparency })
         tween(UI.MainStroke, FastTween, { Transparency = 0.08 })
@@ -1666,9 +1728,15 @@ local function toggleMainHub()
         tween(UI.MainWindow, FastTween, { BackgroundTransparency = 1 })
         tween(UI.MainStroke, FastTween, { Transparency = 1 })
         tween(UI.FloatingToggle, FastTween, { BackgroundColor3 = Theme.Elevated })
+        if State.syncMusicPlayerDock then
+            State.syncMusicPlayerDock()
+        end
         task.delay(0.18, function()
             if not State.uiVisible then
                 UI.MainWindow.Visible = false
+                if State.syncMusicPlayerDock then
+                    State.syncMusicPlayerDock()
+                end
             end
         end)
     end
@@ -1951,7 +2019,11 @@ do
     addCorner(MinimizeBtn, 6)
     addStroke(MinimizeBtn, Theme.Border, 1, 0)
 
-    makeDraggable(HeaderBar, MainWindow)
+    makeDraggable(HeaderBar, MainWindow, function()
+        if State.syncMusicPlayerDock then
+            State.syncMusicPlayerDock()
+        end
+    end)
 
     UI.FloatingToggle.MouseButton1Click:Connect(function()
         spawnRipple(UI.FloatingToggle)
@@ -2002,7 +2074,7 @@ do
     NavList.Parent = Sidebar
 
     local NavLayout = Instance.new("UIListLayout")
-    NavLayout.Padding = UDim.new(0, 5)
+    NavLayout.Padding = UDim.new(0, 4)
     NavLayout.SortOrder = Enum.SortOrder.LayoutOrder
     NavLayout.Parent = NavList
 
@@ -2067,7 +2139,7 @@ local function createTab(name, order)
     local btn = Instance.new("TextButton")
     btn.Name = name .. "_TabBtn"
     btn.LayoutOrder = order
-    btn.Size = UDim2.new(1, 0, 0, 31)
+    btn.Size = UDim2.new(1, 0, 0, 28)
     btn.BackgroundColor3 = Theme.Elevated
     btn.BackgroundTransparency = 1
     btn.AutoButtonColor = false
@@ -2130,7 +2202,7 @@ local function createTab(name, order)
         })
         tween(st, FastTween, { Transparency = 0.2, Color = Theme.Accent })
 
-        local targetY = 10 + ((order - 1) * 36) + 6
+        local targetY = 10 + ((order - 1) * 32) + 5
         tween(UI.ActiveTabIndicator, SpringTween, {
             Position = UDim2.fromOffset(10, targetY),
         })
@@ -3566,6 +3638,23 @@ local function updateCrosshair(animClock)
     UI.CrosshairH.Visible = false
 end
 
+local function getSafeRaycastExcludeList()
+    local list = {}
+    if LocalPlayer.Character then
+        table.insert(list, LocalPlayer.Character)
+    end
+    if UI.WeatherEmitterPart then
+        table.insert(list, UI.WeatherEmitterPart)
+    end
+    if UI.WeatherGroundPart then
+        table.insert(list, UI.WeatherGroundPart)
+    end
+    if UI.LightningBoltPool then
+        table.insert(list, UI.LightningBoltPool)
+    end
+    return list
+end
+
 local function getClosestTarget(camera)
     local closestNormal, shortestNormal = nil, ConfigState.FOVRadius
     local closestPriority, shortestPriority = nil, ConfigState.FOVRadius
@@ -3573,7 +3662,7 @@ local function getClosestTarget(camera)
     local useWallCheck = ConfigState.AimbotWallCheck
 
     if useWallCheck then
-        rayParams.FilterDescendantsInstances = LocalPlayer.Character and { LocalPlayer.Character } or {}
+        rayParams.FilterDescendantsInstances = getSafeRaycastExcludeList()
     end
 
     for _, player in ipairs(Players:GetPlayers()) do
@@ -3671,8 +3760,7 @@ local function applyXRayVision(enabled)
     if enabled then
         for _, desc in ipairs(workspace:GetDescendants()) do
             if desc:IsA("BasePart")
-                and desc.Name ~= "CoreXyz_WeatherEmitterPart"
-                and not string.find(desc.Name or "", "^CoreXyz_Lightning") then
+                and not string.find(desc.Name or "", "^CoreXyz_") then
                 local isPlayerPart = false
                 for _, p in ipairs(Players:GetPlayers()) do
                     if p.Character and desc:IsDescendantOf(p.Character) then
@@ -3785,7 +3873,7 @@ local function updateLightingEnvironment()
         Lighting.FogEnd = 100000
         Lighting.FogStart = 100000
         for _, child in ipairs(Lighting:GetChildren()) do
-            if child:IsA("Atmosphere") then
+            if child:IsA("Atmosphere") and child.Name ~= "CoreXyz_WeatherAtmosphere" then
                 pcall(function() child.Density = 0 end)
             end
         end
@@ -3804,20 +3892,28 @@ local function updateLightingEnvironment()
     end
 end
 
--- Pre-Allocated Client Weather, Canvas Particle Overlay, 3D Lightning & Surrounding Audio Engine (Zero Per-Frame Instance Allocations!)
+-- Pre-Allocated 100% 3D In-World Volumetric Weather Engine (3D Sky Canopy Volume + 3D Ground Splash Plane + 3D Jagged Lightning Pool + SoundService Audio — Zero 2D Screen Overlay, Zero Per-Frame Instance Allocations!)
 do
     local SoundService = safeGetService("SoundService") or Lighting
+
+    local function hardenStealthWeatherPart(part)
+        part.Anchored = true
+        part.CanCollide = false
+        part.CastShadow = false
+        pcall(function()
+            part.CanQuery = false
+            part.CanTouch = false
+            part.Massless = true
+            part.Archivable = false
+        end)
+    end
+
+    -- 1. 3D Volumetric Sky Canopy Emitter Volume (Spans 160x42x160 studs in 3D space around the player/camera)
     local weatherPart = Instance.new("Part")
     weatherPart.Name = "CoreXyz_WeatherEmitterPart"
-    weatherPart.Size = Vector3.new(85, 1, 85)
+    weatherPart.Size = Vector3.new(160, 42, 160)
     weatherPart.Transparency = 1
-    weatherPart.Anchored = true
-    weatherPart.CanCollide = false
-    weatherPart.CastShadow = false
-    pcall(function()
-        weatherPart.CanQuery = false
-        weatherPart.CanTouch = false
-    end)
+    hardenStealthWeatherPart(weatherPart)
     weatherPart.Parent = workspace
 
     local weatherEmitter = Instance.new("ParticleEmitter")
@@ -3831,7 +3927,7 @@ do
     end)
     weatherEmitter.Parent = weatherPart
 
-    -- Secondary built-in local texture emitter so rain droplets & dense snow render even if asset CDN is throttled
+    -- Secondary 3D near-field depth layer for realistic parallax rain sheets & tumbling snow flurries
     local streakEmitter = Instance.new("ParticleEmitter")
     streakEmitter.Name = "CoreXyz_WeatherStreakEmitter"
     streakEmitter.Enabled = false
@@ -3843,130 +3939,84 @@ do
     end)
     streakEmitter.Parent = weatherPart
 
-    -- Pre-Allocated 2D Screen-Space Weather Canvas Overlay (Rain droplets, Ground Splashes, Dense Snowflakes, Sky Lightning Flash)
-    local weatherCanvas = Instance.new("Frame")
-    weatherCanvas.Name = "CoreXyz_WeatherCanvas"
-    weatherCanvas.Size = UDim2.fromScale(1, 1)
-    weatherCanvas.Position = UDim2.fromScale(0, 0)
-    weatherCanvas.BackgroundTransparency = 1
-    weatherCanvas.Visible = false
-    weatherCanvas.ZIndex = 2
-    weatherCanvas.Parent = UI.OverlayContainer
+    -- Volumetric 3D Mist / Storm Fog Emitter inside the 3D canopy volume
+    local mistEmitter = Instance.new("ParticleEmitter")
+    mistEmitter.Name = "CoreXyz_WeatherMistEmitter"
+    mistEmitter.Enabled = false
+    mistEmitter.Texture = "rbxasset://textures/particles/smoke_main.dds"
+    pcall(function()
+        mistEmitter.LockedToPart = false
+        if Enum.ParticleOrientation and Enum.ParticleOrientation.FacingCamera then
+            mistEmitter.Orientation = Enum.ParticleOrientation.FacingCamera
+        end
+    end)
+    mistEmitter.Parent = weatherPart
 
-    local lightningFlashFrame = Instance.new("Frame")
-    lightningFlashFrame.Name = "CoreXyz_WeatherLightningFlash"
-    lightningFlashFrame.Size = UDim2.fromScale(1, 1)
-    lightningFlashFrame.Position = UDim2.fromScale(0, 0)
-    lightningFlashFrame.BackgroundColor3 = Color3.fromRGB(220, 236, 255)
-    lightningFlashFrame.BackgroundTransparency = 1
-    lightningFlashFrame.BorderSizePixel = 0
-    lightningFlashFrame.Visible = false
-    lightningFlashFrame.ZIndex = 3
-    lightningFlashFrame.Parent = weatherCanvas
+    -- 2. 3D In-World Ground Splash & Ripple Emitter Plane (Follows ground beneath player via raycast)
+    local groundSplashPart = Instance.new("Part")
+    groundSplashPart.Name = "CoreXyz_WeatherGroundPart"
+    groundSplashPart.Size = Vector3.new(115, 0.5, 115)
+    groundSplashPart.Transparency = 1
+    groundSplashPart.CFrame = CFrame.new(Vector3.new(0, -500, 0))
+    hardenStealthWeatherPart(groundSplashPart)
+    groundSplashPart.Parent = workspace
 
-    local CANVAS_PARTICLE_COUNT = 28
-    local canvasDrops = {}
-    local canvasDropState = {}
-    for i = 1, CANVAS_PARTICLE_COUNT do
-        local drop = Instance.new("Frame")
-        drop.Name = "WeatherDrop_" .. i
-        drop.BackgroundColor3 = Color3.fromRGB(190, 220, 255)
-        drop.BackgroundTransparency = 0.25
-        drop.BorderSizePixel = 0
-        drop.Position = UDim2.fromScale(((i * 37) % 100) / 100, ((i * 19) % 100) / 100)
-        drop.Size = UDim2.fromOffset(2, 24)
-        drop.ZIndex = 2
-        drop.Parent = weatherCanvas
+    local groundSplashEmitter = Instance.new("ParticleEmitter")
+    groundSplashEmitter.Name = "CoreXyz_WeatherSplashEmitter"
+    groundSplashEmitter.Enabled = false
+    groundSplashEmitter.Texture = "rbxassetid://258128463"
+    pcall(function()
+        groundSplashEmitter.LockedToPart = false
+        if Enum.NormalId and Enum.NormalId.Top then
+            groundSplashEmitter.EmissionDirection = Enum.NormalId.Top
+        end
+        if Enum.ParticleOrientation and Enum.ParticleOrientation.VelocityPerpendicular then
+            groundSplashEmitter.Orientation = Enum.ParticleOrientation.VelocityPerpendicular
+        end
+    end)
+    groundSplashEmitter.Parent = groundSplashPart
 
-        local corner = Instance.new("UICorner")
-        corner.CornerRadius = UDim.new(1, 0)
-        corner.Parent = drop
-
-        canvasDrops[i] = drop
-        canvasDropState[i] = {
-            x = ((i * 37) % 100) / 100,
-            y = ((i * 23) % 100) / 100,
-            speedY = 0.95 + (i % 7) * 0.16,
-            speedX = -0.08 - (i % 5) * 0.02,
-            phase = i * 0.75,
-            depth = 0.45 + (i % 6) * 0.11,
-        }
-    end
-
-    local CANVAS_SPLASH_COUNT = 8
-    local canvasSplashes = {}
-    local canvasSplashState = {}
-    for i = 1, CANVAS_SPLASH_COUNT do
-        local splash = Instance.new("Frame")
-        splash.Name = "WeatherSplash_" .. i
-        splash.BackgroundColor3 = Color3.fromRGB(200, 228, 255)
-        splash.BackgroundTransparency = 0.55
-        splash.BorderSizePixel = 0
-        splash.Position = UDim2.fromScale(((i * 13) % 90 + 5) / 100, (82 + (i % 14)) / 100)
-        splash.Size = UDim2.fromOffset(8, 3)
-        splash.Visible = false
-        splash.ZIndex = 2
-        splash.Parent = weatherCanvas
-
-        local sCorner = Instance.new("UICorner")
-        sCorner.CornerRadius = UDim.new(1, 0)
-        sCorner.Parent = splash
-
-        canvasSplashes[i] = splash
-        canvasSplashState[i] = {
-            x = ((i * 13) % 90 + 5) / 100,
-            y = (82 + (i % 14)) / 100,
-            progress = (i - 1) / CANVAS_SPLASH_COUNT,
-            speed = 2.4 + (i % 4) * 0.45,
-        }
-    end
-
-    -- Pre-Allocated 3D Surrounding Lightning Bolt Pool & Spatial Thunder Emitter in Workspace
+    -- 3. Pre-Allocated 3D Surrounding Lightning Bolt Pool in Workspace (8 Trunk Segments + 4 Forked Branches + 3D PointLight)
     local lightningFolder = Instance.new("Folder")
     lightningFolder.Name = "CoreXyz_LightningBoltPool"
+    pcall(function()
+        lightningFolder.Archivable = false
+    end)
     lightningFolder.Parent = workspace
 
-    local LIGHTNING_SEGMENT_COUNT = 6
+    local LIGHTNING_SEGMENT_COUNT = 8
     local lightningSegments = {}
     for i = 1, LIGHTNING_SEGMENT_COUNT do
         local seg = Instance.new("Part")
         seg.Name = "CoreXyz_LightningSegment_" .. i
-        seg.Anchored = true
-        seg.CanCollide = false
-        seg.CastShadow = false
         seg.Transparency = 1
         seg.Color = Color3.fromRGB(215, 235, 255)
         seg.Size = Vector3.new(0.85, 0.85, 24)
         seg.CFrame = CFrame.new(Vector3.new(0, -500, 0))
+        hardenStealthWeatherPart(seg)
         pcall(function()
             if Enum.Material and Enum.Material.Neon then
                 seg.Material = Enum.Material.Neon
             end
-            seg.CanQuery = false
-            seg.CanTouch = false
         end)
         seg.Parent = lightningFolder
         lightningSegments[i] = seg
     end
 
-    local LIGHTNING_BRANCH_COUNT = 2
+    local LIGHTNING_BRANCH_COUNT = 4
     local lightningBranches = {}
     for i = 1, LIGHTNING_BRANCH_COUNT do
         local branch = Instance.new("Part")
         branch.Name = "CoreXyz_LightningBranch_" .. i
-        branch.Anchored = true
-        branch.CanCollide = false
-        branch.CastShadow = false
         branch.Transparency = 1
         branch.Color = Color3.fromRGB(185, 220, 255)
         branch.Size = Vector3.new(0.45, 0.45, 16)
         branch.CFrame = CFrame.new(Vector3.new(0, -500, 0))
+        hardenStealthWeatherPart(branch)
         pcall(function()
             if Enum.Material and Enum.Material.Neon then
                 branch.Material = Enum.Material.Neon
             end
-            branch.CanQuery = false
-            branch.CanTouch = false
         end)
         branch.Parent = lightningFolder
         lightningBranches[i] = branch
@@ -3976,37 +4026,25 @@ do
     lightningStrikeNode.Name = "CoreXyz_LightningStrikeNode"
     lightningStrikeNode.Size = Vector3.new(1, 1, 1)
     lightningStrikeNode.Transparency = 1
-    lightningStrikeNode.Anchored = true
-    lightningStrikeNode.CanCollide = false
-    lightningStrikeNode.CastShadow = false
     lightningStrikeNode.CFrame = CFrame.new(Vector3.new(0, -500, 0))
-    pcall(function()
-        lightningStrikeNode.CanQuery = false
-        lightningStrikeNode.CanTouch = false
-    end)
+    hardenStealthWeatherPart(lightningStrikeNode)
     lightningStrikeNode.Parent = lightningFolder
 
     local strikePointLight = Instance.new("PointLight")
     strikePointLight.Name = "CoreXyz_LightningPointLight"
     strikePointLight.Enabled = false
-    strikePointLight.Range = 60
-    strikePointLight.Brightness = 6.5
+    strikePointLight.Range = 120
+    strikePointLight.Brightness = 8.5
     strikePointLight.Color = Color3.fromRGB(205, 230, 255)
     strikePointLight.Parent = lightningStrikeNode
 
+    -- All weather & thunder Sound instances are parented to SoundService (never workspace) for 100% anti-cheat stealth
     local spatialThunderSound = Instance.new("Sound")
     spatialThunderSound.Name = "CoreXyz_SpatialThunderSound"
     spatialThunderSound.Looped = false
     spatialThunderSound.Volume = 0.9
     spatialThunderSound.SoundId = "rbxassetid://9114224721"
-    pcall(function()
-        if Enum.RollOffMode and Enum.RollOffMode.InverseTapered then
-            spatialThunderSound.RollOffMode = Enum.RollOffMode.InverseTapered
-        end
-        spatialThunderSound.RollOffMinDistance = 35
-        spatialThunderSound.RollOffMaxDistance = 650
-    end)
-    spatialThunderSound.Parent = lightningStrikeNode
+    spatialThunderSound.Parent = SoundService
 
     local sunRays = Instance.new("SunRaysEffect")
     sunRays.Name = "CoreXyz_WeatherSunRays"
@@ -4023,6 +4061,24 @@ do
     colorCorr.Saturation = 0
     colorCorr.TintColor = Color3.fromRGB(255, 255, 255)
     colorCorr.Parent = Lighting
+
+    local weatherBloom = Instance.new("BloomEffect")
+    weatherBloom.Name = "CoreXyz_WeatherBloom"
+    weatherBloom.Enabled = false
+    weatherBloom.Intensity = 0.4
+    weatherBloom.Size = 24
+    weatherBloom.Threshold = 0.85
+    weatherBloom.Parent = Lighting
+
+    local weatherAtmosphere = Instance.new("Atmosphere")
+    weatherAtmosphere.Name = "CoreXyz_WeatherAtmosphere"
+    pcall(function()
+        weatherAtmosphere.Density = 0
+        weatherAtmosphere.Offset = 0
+        weatherAtmosphere.Glare = 0
+        weatherAtmosphere.Haze = 0
+    end)
+    weatherAtmosphere.Parent = Lighting
 
     local ambienceSound = Instance.new("Sound")
     ambienceSound.Name = "CoreXyz_WeatherAmbienceSound"
@@ -4104,8 +4160,6 @@ do
 
     local function hideLightningBolts()
         strikePointLight.Enabled = false
-        lightningFlashFrame.Visible = false
-        lightningFlashFrame.BackgroundTransparency = 1
         for i = 1, LIGHTNING_SEGMENT_COUNT do
             lightningSegments[i].Transparency = 1
         end
@@ -4117,45 +4171,45 @@ do
     local function triggerSurroundingLightningStrike(camera)
         local camPos = camera and camera.CFrame and camera.CFrame.Position or Vector3.new(0, 20, 0)
         local angle = (math.random(0, 359) / 180) * math.pi
-        local dist = math.random(55, 145)
+        local dist = math.random(55, 155)
         local baseX = camPos.X + math.cos(angle) * dist
         local baseZ = camPos.Z + math.sin(angle) * dist
-        local topY = camPos.Y + 115
-        local bottomY = camPos.Y - 12
+        local topY = camPos.Y + 135
+        local bottomY = (State.lastGroundY or (camPos.Y - 14))
         local stepY = (topY - bottomY) / LIGHTNING_SEGMENT_COUNT
 
         local prevPoint = Vector3.new(baseX, topY, baseZ)
+        local branchIdx = 1
         for i = 1, LIGHTNING_SEGMENT_COUNT do
-            local jitterX = (i == LIGHTNING_SEGMENT_COUNT) and 0 or math.random(-9, 9)
-            local jitterZ = (i == LIGHTNING_SEGMENT_COUNT) and 0 or math.random(-9, 9)
+            local jitterX = (i == LIGHTNING_SEGMENT_COUNT) and 0 or math.random(-11, 11)
+            local jitterZ = (i == LIGHTNING_SEGMENT_COUNT) and 0 or math.random(-11, 11)
             local nextPoint = Vector3.new(baseX + jitterX, topY - stepY * i, baseZ + jitterZ)
             local diff = nextPoint - prevPoint
             local segLen = math.max(1, diff.Magnitude)
             local midPoint = (prevPoint + nextPoint) * 0.5
             local seg = lightningSegments[i]
-            local thickness = math.max(0.45, 1.05 - i * 0.08)
+            local thickness = math.max(0.45, 1.18 - i * 0.08)
             seg.Size = Vector3.new(thickness, thickness, segLen + 0.6)
             seg.CFrame = CFrame.new(midPoint, nextPoint)
             seg.Transparency = 0.02
-            if i == 2 or i == 4 then
-                local bIdx = (i == 2) and 1 or 2
-                local branch = lightningBranches[bIdx]
-                local branchEnd = nextPoint + Vector3.new(math.random(-18, 18), -stepY * 0.85, math.random(-18, 18))
+
+            if (i == 2 or i == 4 or i == 5 or i == 6) and branchIdx <= LIGHTNING_BRANCH_COUNT then
+                local branch = lightningBranches[branchIdx]
+                branchIdx = branchIdx + 1
+                local branchEnd = nextPoint + Vector3.new(math.random(-22, 22), -stepY * 0.95, math.random(-22, 22))
                 local bDiff = branchEnd - nextPoint
                 local bLen = math.max(1, bDiff.Magnitude)
                 local bMid = (nextPoint + branchEnd) * 0.5
                 branch.Size = Vector3.new(0.42, 0.42, bLen)
                 branch.CFrame = CFrame.new(bMid, branchEnd)
-                branch.Transparency = 0.15
+                branch.Transparency = 0.12
             end
             prevPoint = nextPoint
         end
 
-        lightningStrikeNode.CFrame = CFrame.new(Vector3.new(baseX, camPos.Y + 8, baseZ))
+        lightningStrikeNode.CFrame = CFrame.new(Vector3.new(baseX, bottomY + 6, baseZ))
         strikePointLight.Enabled = true
-        strikePointLight.Brightness = 7.5
-        lightningFlashFrame.Visible = true
-        lightningFlashFrame.BackgroundTransparency = 0.38
+        strikePointLight.Brightness = 9.0
         State.lightningFlashIntensity = 1.0
 
         if ConfigState.WeatherSoundEnabled then
@@ -4255,109 +4309,161 @@ do
     local function applyWeatherPreset(mode)
         ConfigState.WeatherPreset = mode or "Default"
         State.lightningFlashIntensity = 0
-        State.nextLightningTimer = 2.6
+        State.nextLightningTimer = 2.4
         State.weatherAnimClock = State.weatherAnimClock or 0
         hideLightningBolts()
 
         if ConfigState.WeatherPreset == "Rain" then
-            weatherPart.Size = Vector3.new(85, 1, 85)
+            weatherPart.Size = Vector3.new(160, 42, 160)
             weatherEmitter.Texture = "rbxassetid://258128463"
-            weatherEmitter.Rate = 450
+            weatherEmitter.Rate = 620
             streakEmitter.Texture = "rbxasset://textures/particles/smoke_main.dds"
-            streakEmitter.Rate = 220
+            streakEmitter.Rate = 320
+            mistEmitter.Rate = 48
+            groundSplashEmitter.Rate = 380
             pcall(function()
                 if Enum.ParticleOrientation and Enum.ParticleOrientation.VelocityParallel then
                     weatherEmitter.Orientation = Enum.ParticleOrientation.VelocityParallel
                     streakEmitter.Orientation = Enum.ParticleOrientation.VelocityParallel
                 end
-                weatherEmitter.Squash = makeNumSeq(2.8)
-                streakEmitter.Squash = makeNumSeq(3.2)
-                weatherEmitter.LightEmission = 0.42
+                weatherEmitter.Squash = makeNumSeq(3.0)
+                streakEmitter.Squash = makeNumSeq(3.4)
+                weatherEmitter.LightEmission = 0.45
                 streakEmitter.LightEmission = 0.35
-                weatherEmitter.Speed = makeNumRange(78, 102)
-                streakEmitter.Speed = makeNumRange(82, 108)
-                weatherEmitter.Lifetime = makeNumRange(0.55, 0.90)
-                streakEmitter.Lifetime = makeNumRange(0.50, 0.85)
-                weatherEmitter.Size = makeNumSeq(0.52)
-                streakEmitter.Size = makeNumSeq(0.38)
+                weatherEmitter.Speed = makeNumRange(84, 112)
+                streakEmitter.Speed = makeNumRange(88, 116)
+                weatherEmitter.Lifetime = makeNumRange(0.60, 0.95)
+                streakEmitter.Lifetime = makeNumRange(0.55, 0.90)
+                weatherEmitter.Size = makeNumSeq(0.55)
+                streakEmitter.Size = makeNumSeq(0.42)
                 weatherEmitter.Transparency = makeNumSeq(0.14)
-                streakEmitter.Transparency = makeNumSeq(0.28)
-                weatherEmitter.SpreadAngle = Vector2.new(5, 5)
-                streakEmitter.SpreadAngle = Vector2.new(4, 4)
-                weatherEmitter.Acceleration = Vector3.new(-6, -110, 0)
-                streakEmitter.Acceleration = Vector3.new(-6, -110, 0)
+                streakEmitter.Transparency = makeNumSeq(0.26)
+                weatherEmitter.SpreadAngle = Vector2.new(6, 6)
+                streakEmitter.SpreadAngle = Vector2.new(5, 5)
+                weatherEmitter.Acceleration = Vector3.new(-8, -118, -3)
+                streakEmitter.Acceleration = Vector3.new(-8, -118, -3)
                 local rainCol = ColorSequence.new({
                     ColorSequenceKeypoint.new(0, Color3.fromRGB(185, 215, 255)),
                     ColorSequenceKeypoint.new(1, Color3.fromRGB(145, 185, 245)),
                 })
                 weatherEmitter.Color = rainCol
                 streakEmitter.Color = rainCol
+
+                -- 3D Volumetric Mist Layer
+                mistEmitter.Speed = makeNumRange(4, 10)
+                mistEmitter.Lifetime = makeNumRange(2.4, 3.8)
+                mistEmitter.Size = makeNumSeq(14)
+                mistEmitter.Transparency = makeNumSeq(0.86)
+                mistEmitter.SpreadAngle = Vector2.new(80, 80)
+                mistEmitter.Acceleration = Vector3.new(-4, -1, 0)
+                mistEmitter.Color = rainCol
+
+                -- 3D World Ground Splash Ring Layer
+                groundSplashEmitter.Speed = makeNumRange(3, 8)
+                groundSplashEmitter.Lifetime = makeNumRange(0.18, 0.34)
+                groundSplashEmitter.Size = makeNumSeq(0.82)
+                groundSplashEmitter.Squash = makeNumSeq(0.35)
+                groundSplashEmitter.Transparency = makeNumSeq(0.28)
+                groundSplashEmitter.SpreadAngle = Vector2.new(65, 65)
+                groundSplashEmitter.Acceleration = Vector3.new(0, -32, 0)
+                groundSplashEmitter.Color = rainCol
+
+                weatherAtmosphere.Density = ConfigState.NoFog and 0 or 0.38
+                weatherAtmosphere.Haze = 1.6
+                weatherAtmosphere.Color = Color3.fromRGB(140, 160, 190)
+                weatherAtmosphere.Decay = Color3.fromRGB(95, 112, 140)
             end)
             weatherEmitter.Enabled = true
             streakEmitter.Enabled = true
-            weatherCanvas.Visible = true
-            for i = 1, CANVAS_SPLASH_COUNT do
-                canvasSplashes[i].Visible = true
-            end
+            mistEmitter.Enabled = true
+            groundSplashEmitter.Enabled = true
             sunRays.Enabled = false
+            weatherBloom.Enabled = true
+            weatherBloom.Intensity = 0.35
             colorCorr.Enabled = true
             colorCorr.Brightness = -0.02
-            colorCorr.Contrast = 0.06
-            colorCorr.Saturation = -0.16
-            colorCorr.TintColor = Color3.fromRGB(220, 232, 255)
+            colorCorr.Contrast = 0.07
+            colorCorr.Saturation = -0.18
+            colorCorr.TintColor = Color3.fromRGB(218, 232, 255)
         elseif ConfigState.WeatherPreset == "Thunderstorm" then
-            weatherPart.Size = Vector3.new(90, 1, 90)
+            weatherPart.Size = Vector3.new(175, 46, 175)
             weatherEmitter.Texture = "rbxassetid://258128463"
-            weatherEmitter.Rate = 650
+            weatherEmitter.Rate = 850
             streakEmitter.Texture = "rbxasset://textures/particles/smoke_main.dds"
-            streakEmitter.Rate = 340
+            streakEmitter.Rate = 440
+            mistEmitter.Rate = 75
+            groundSplashEmitter.Rate = 580
             pcall(function()
                 if Enum.ParticleOrientation and Enum.ParticleOrientation.VelocityParallel then
                     weatherEmitter.Orientation = Enum.ParticleOrientation.VelocityParallel
                     streakEmitter.Orientation = Enum.ParticleOrientation.VelocityParallel
                 end
-                weatherEmitter.Squash = makeNumSeq(3.4)
-                streakEmitter.Squash = makeNumSeq(3.8)
-                weatherEmitter.LightEmission = 0.48
-                streakEmitter.LightEmission = 0.40
-                weatherEmitter.Speed = makeNumRange(96, 128)
-                streakEmitter.Speed = makeNumRange(100, 134)
+                weatherEmitter.Squash = makeNumSeq(3.6)
+                streakEmitter.Squash = makeNumSeq(4.0)
+                weatherEmitter.LightEmission = 0.50
+                streakEmitter.LightEmission = 0.42
+                weatherEmitter.Speed = makeNumRange(102, 138)
+                streakEmitter.Speed = makeNumRange(108, 142)
                 weatherEmitter.Lifetime = makeNumRange(0.48, 0.82)
                 streakEmitter.Lifetime = makeNumRange(0.45, 0.78)
-                weatherEmitter.Size = makeNumSeq(0.62)
-                streakEmitter.Size = makeNumSeq(0.46)
+                weatherEmitter.Size = makeNumSeq(0.65)
+                streakEmitter.Size = makeNumSeq(0.50)
                 weatherEmitter.Transparency = makeNumSeq(0.10)
-                streakEmitter.Transparency = makeNumSeq(0.22)
-                weatherEmitter.SpreadAngle = Vector2.new(11, 11)
-                streakEmitter.SpreadAngle = Vector2.new(10, 10)
-                weatherEmitter.Acceleration = Vector3.new(-24, -135, -10)
-                streakEmitter.Acceleration = Vector3.new(-24, -135, -10)
+                streakEmitter.Transparency = makeNumSeq(0.20)
+                weatherEmitter.SpreadAngle = Vector2.new(13, 13)
+                streakEmitter.SpreadAngle = Vector2.new(12, 12)
+                weatherEmitter.Acceleration = Vector3.new(-28, -142, -12)
+                streakEmitter.Acceleration = Vector3.new(-28, -142, -12)
                 local stormCol = ColorSequence.new({
                     ColorSequenceKeypoint.new(0, Color3.fromRGB(175, 208, 255)),
                     ColorSequenceKeypoint.new(1, Color3.fromRGB(130, 168, 235)),
                 })
                 weatherEmitter.Color = stormCol
                 streakEmitter.Color = stormCol
+
+                mistEmitter.Speed = makeNumRange(10, 22)
+                mistEmitter.Lifetime = makeNumRange(2.0, 3.4)
+                mistEmitter.Size = makeNumSeq(16)
+                mistEmitter.Transparency = makeNumSeq(0.80)
+                mistEmitter.SpreadAngle = Vector2.new(90, 90)
+                mistEmitter.Acceleration = Vector3.new(-16, -2, -6)
+                mistEmitter.Color = stormCol
+
+                groundSplashEmitter.Speed = makeNumRange(4, 11)
+                groundSplashEmitter.Lifetime = makeNumRange(0.18, 0.36)
+                groundSplashEmitter.Size = makeNumSeq(1.05)
+                groundSplashEmitter.Squash = makeNumSeq(0.42)
+                groundSplashEmitter.Transparency = makeNumSeq(0.20)
+                groundSplashEmitter.SpreadAngle = Vector2.new(72, 72)
+                groundSplashEmitter.Acceleration = Vector3.new(-6, -38, -2)
+                groundSplashEmitter.Color = stormCol
+
+                weatherAtmosphere.Density = ConfigState.NoFog and 0 or 0.48
+                weatherAtmosphere.Haze = 2.1
+                weatherAtmosphere.Color = Color3.fromRGB(98, 115, 148)
+                weatherAtmosphere.Decay = Color3.fromRGB(62, 74, 98)
             end)
             weatherEmitter.Enabled = true
             streakEmitter.Enabled = true
-            weatherCanvas.Visible = true
-            for i = 1, CANVAS_SPLASH_COUNT do
-                canvasSplashes[i].Visible = true
-            end
+            mistEmitter.Enabled = true
+            groundSplashEmitter.Enabled = true
             sunRays.Enabled = false
+            weatherBloom.Enabled = true
+            weatherBloom.Intensity = 0.65
             colorCorr.Enabled = true
             colorCorr.Brightness = -0.05
             colorCorr.Contrast = 0.14
             colorCorr.Saturation = -0.26
             colorCorr.TintColor = Color3.fromRGB(198, 214, 246)
         elseif ConfigState.WeatherPreset == "Snow" then
-            -- Dense single-canopy snowfall (no laggy snow ground layer part!)
-            weatherPart.Size = Vector3.new(85, 1, 85)
+            -- 3D Volumetric Snowfall Canopy (Tumbling 3D snowflakes with dynamic wind curl in world space)
+            weatherPart.Size = Vector3.new(160, 42, 160)
             weatherEmitter.Texture = "rbxassetid://258128463"
-            weatherEmitter.Rate = 500
+            weatherEmitter.Rate = 580
             streakEmitter.Texture = "rbxassetid://258128463"
-            streakEmitter.Rate = 240
+            streakEmitter.Rate = 300
+            mistEmitter.Rate = 36
+            groundSplashEmitter.Rate = 0
             pcall(function()
                 if Enum.ParticleOrientation and Enum.ParticleOrientation.FacingCamera then
                     weatherEmitter.Orientation = Enum.ParticleOrientation.FacingCamera
@@ -4365,34 +4471,49 @@ do
                 end
                 weatherEmitter.Squash = makeNumSeq(0)
                 streakEmitter.Squash = makeNumSeq(0)
-                weatherEmitter.LightEmission = 0.55
-                streakEmitter.LightEmission = 0.60
-                weatherEmitter.Speed = makeNumRange(14, 24)
-                streakEmitter.Speed = makeNumRange(10, 18)
-                weatherEmitter.Lifetime = makeNumRange(3.4, 5.2)
-                streakEmitter.Lifetime = makeNumRange(3.8, 5.6)
-                weatherEmitter.Size = makeNumSeq(0.68)
-                streakEmitter.Size = makeNumSeq(0.48)
+                weatherEmitter.LightEmission = 0.58
+                streakEmitter.LightEmission = 0.62
+                weatherEmitter.Speed = makeNumRange(12, 22)
+                streakEmitter.Speed = makeNumRange(9, 17)
+                weatherEmitter.Lifetime = makeNumRange(3.6, 5.6)
+                streakEmitter.Lifetime = makeNumRange(4.0, 6.0)
+                weatherEmitter.Size = makeNumSeq(0.72)
+                streakEmitter.Size = makeNumSeq(0.50)
                 weatherEmitter.Transparency = makeNumSeq(0.04)
                 streakEmitter.Transparency = makeNumSeq(0.10)
-                weatherEmitter.SpreadAngle = Vector2.new(38, 38)
-                streakEmitter.SpreadAngle = Vector2.new(42, 42)
+                weatherEmitter.RotSpeed = makeNumRange(-95, 95)
+                streakEmitter.RotSpeed = makeNumRange(-120, 120)
+                weatherEmitter.SpreadAngle = Vector2.new(42, 42)
+                streakEmitter.SpreadAngle = Vector2.new(48, 48)
                 weatherEmitter.Acceleration = Vector3.new(6, -5, 3)
                 streakEmitter.Acceleration = Vector3.new(-5, -4, -3)
                 local snowCol = ColorSequence.new({
                     ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-                    ColorSequenceKeypoint.new(1, Color3.fromRGB(230, 244, 255)),
+                    ColorSequenceKeypoint.new(1, Color3.fromRGB(228, 242, 255)),
                 })
                 weatherEmitter.Color = snowCol
                 streakEmitter.Color = snowCol
+
+                mistEmitter.Speed = makeNumRange(3, 8)
+                mistEmitter.Lifetime = makeNumRange(2.8, 4.4)
+                mistEmitter.Size = makeNumSeq(15)
+                mistEmitter.Transparency = makeNumSeq(0.85)
+                mistEmitter.SpreadAngle = Vector2.new(75, 75)
+                mistEmitter.Acceleration = Vector3.new(3, -1, 2)
+                mistEmitter.Color = snowCol
+
+                weatherAtmosphere.Density = ConfigState.NoFog and 0 or 0.34
+                weatherAtmosphere.Haze = 1.5
+                weatherAtmosphere.Color = Color3.fromRGB(225, 236, 252)
+                weatherAtmosphere.Decay = Color3.fromRGB(185, 204, 232)
             end)
             weatherEmitter.Enabled = true
             streakEmitter.Enabled = true
-            weatherCanvas.Visible = true
-            for i = 1, CANVAS_SPLASH_COUNT do
-                canvasSplashes[i].Visible = false
-            end
+            mistEmitter.Enabled = true
+            groundSplashEmitter.Enabled = false
             sunRays.Enabled = false
+            weatherBloom.Enabled = true
+            weatherBloom.Intensity = 0.42
             colorCorr.Enabled = true
             colorCorr.Brightness = 0.03
             colorCorr.Contrast = 0.05
@@ -4401,13 +4522,18 @@ do
         elseif ConfigState.WeatherPreset == "Sunny" then
             weatherEmitter.Enabled = false
             streakEmitter.Enabled = false
-            weatherCanvas.Visible = false
-            for i = 1, CANVAS_SPLASH_COUNT do
-                canvasSplashes[i].Visible = false
-            end
+            mistEmitter.Enabled = false
+            groundSplashEmitter.Enabled = false
             sunRays.Enabled = true
             sunRays.Intensity = 0.32
             sunRays.Spread = 0.90
+            weatherBloom.Enabled = true
+            weatherBloom.Intensity = 0.28
+            pcall(function()
+                weatherAtmosphere.Density = 0.14
+                weatherAtmosphere.Haze = 0.3
+                weatherAtmosphere.Color = Color3.fromRGB(255, 244, 218)
+            end)
             colorCorr.Enabled = true
             colorCorr.Brightness = 0.03
             colorCorr.Contrast = 0.08
@@ -4416,12 +4542,15 @@ do
         else
             weatherEmitter.Enabled = false
             streakEmitter.Enabled = false
-            weatherCanvas.Visible = false
-            for i = 1, CANVAS_SPLASH_COUNT do
-                canvasSplashes[i].Visible = false
-            end
+            mistEmitter.Enabled = false
+            groundSplashEmitter.Enabled = false
             sunRays.Enabled = false
+            weatherBloom.Enabled = false
             colorCorr.Enabled = false
+            pcall(function()
+                weatherAtmosphere.Density = 0
+                weatherAtmosphere.Haze = 0
+            end)
         end
 
         updateLightingEnvironment()
@@ -4437,65 +4566,35 @@ do
 
         if camera and (mode == "Rain" or mode == "Thunderstorm" or mode == "Snow") then
             local camPos = camera.CFrame.Position
-            local canopyHeight = (mode == "Snow") and 18 or 20
-            weatherPart.CFrame = CFrame.new(Vector3.new(camPos.X, camPos.Y + canopyHeight, camPos.Z))
-        end
+            local hrp = State.cachedLocalHRP
+            local anchorPos = (hrp and hrp.Parent and (hrp.Position - camPos).Magnitude < 95) and hrp.Position or camPos
+            local canopyHeight = (mode == "Snow") and 22 or 26
+            weatherPart.CFrame = CFrame.new(Vector3.new(anchorPos.X, anchorPos.Y + canopyHeight, anchorPos.Z))
 
-        -- Animate 2D Canvas Weather Particles & Ground Ripples (0 allocations)
-        if weatherCanvas.Visible and (mode == "Rain" or mode == "Thunderstorm" or mode == "Snow") then
-            local isSnow = (mode == "Snow")
-            local isStorm = (mode == "Thunderstorm")
-            for i = 1, CANVAS_PARTICLE_COUNT do
-                local st = canvasDropState[i]
-                local drop = canvasDrops[i]
-                if isSnow then
-                    st.y = st.y + safeDt * (0.16 + st.depth * 0.18)
-                    st.x = st.x + math.sin(State.weatherAnimClock * 1.9 + st.phase) * safeDt * 0.08
-                    local flakePx = math.floor(4 + st.depth * 6)
-                    drop.Size = UDim2.fromOffset(flakePx, flakePx)
-                    drop.Rotation = (State.weatherAnimClock * 45 + i * 19) % 360
-                    drop.BackgroundColor3 = Color3.fromRGB(245, 250, 255)
-                    drop.BackgroundTransparency = math.clamp(0.32 - st.depth * 0.24, 0.04, 0.5)
-                else
-                    local fallMult = isStorm and 1.45 or 1.12
-                    local windDrift = isStorm and -0.22 or -0.09
-                    st.y = st.y + safeDt * st.speedY * fallMult
-                    st.x = st.x + safeDt * windDrift
-                    local streakW = (st.depth > 0.75) and 2 or 1
-                    local streakH = math.floor((isStorm and 24 or 18) + st.depth * 18)
-                    drop.Size = UDim2.fromOffset(streakW, streakH)
-                    drop.Rotation = isStorm and 14 or 7
-                    drop.BackgroundColor3 = isStorm and Color3.fromRGB(185, 218, 255) or Color3.fromRGB(170, 208, 255)
-                    drop.BackgroundTransparency = math.clamp(0.48 - st.depth * 0.26, 0.12, 0.65)
-                end
-                if st.y > 1.06 then
-                    st.y = -0.06
-                    st.x = ((st.x * 100 + i * 17) % 100) / 100
-                end
-                if st.x < -0.05 then
-                    st.x = 1.04
-                elseif st.x > 1.05 then
-                    st.x = -0.04
-                end
-                drop.Position = UDim2.fromScale(st.x, st.y)
+            -- Dynamic 3D wind turbulence for Snow & Thunderstorm so 3D particles swirl naturally in world space
+            if mode == "Snow" then
+                local swayX = math.sin(State.weatherAnimClock * 0.95) * 9.5
+                local swayZ = math.cos(State.weatherAnimClock * 0.75) * 7.5
+                pcall(function()
+                    weatherEmitter.Acceleration = Vector3.new(swayX, -5.2, swayZ)
+                    streakEmitter.Acceleration = Vector3.new(-swayX * 0.75, -4.4, -swayZ * 0.75)
+                end)
+            elseif mode == "Thunderstorm" then
+                local gustX = -26 + math.sin(State.weatherAnimClock * 1.8) * 10
+                local gustZ = -10 + math.cos(State.weatherAnimClock * 1.4) * 6
+                pcall(function()
+                    weatherEmitter.Acceleration = Vector3.new(gustX, -142, gustZ)
+                    streakEmitter.Acceleration = Vector3.new(gustX, -142, gustZ)
+                end)
             end
 
-            if not isSnow then
-                for i = 1, CANVAS_SPLASH_COUNT do
-                    local sp = canvasSplashState[i]
-                    local splashFrame = canvasSplashes[i]
-                    sp.progress = sp.progress + safeDt * sp.speed
-                    if sp.progress >= 1 then
-                        sp.progress = 0
-                        sp.x = ((sp.x * 100 + i * 29) % 88 + 6) / 100
-                        sp.y = (80 + ((i * 7 + math.floor(State.weatherAnimClock * 10)) % 16)) / 100
-                    end
-                    local rx = math.floor(4 + sp.progress * (isStorm and 18 or 13))
-                    local ry = math.max(2, math.floor(rx * 0.32))
-                    splashFrame.Position = UDim2.fromScale(sp.x, sp.y)
-                    splashFrame.Size = UDim2.fromOffset(rx, ry)
-                    splashFrame.BackgroundTransparency = math.clamp(0.35 + sp.progress * 0.62, 0.35, 0.98)
-                end
+            -- Position 3D Ground Splash Plane directly on the world surface beneath the player via downward raycast
+            if mode == "Rain" or mode == "Thunderstorm" then
+                rayParams.FilterDescendantsInstances = getSafeRaycastExcludeList()
+                local hit = workspace:Raycast(anchorPos + Vector3.new(0, 6, 0), Vector3.new(0, -140, 0), rayParams)
+                local groundY = (hit and hit.Position and hit.Position.Y) or (anchorPos.Y - 3.2)
+                State.lastGroundY = groundY
+                groundSplashPart.CFrame = CFrame.new(Vector3.new(anchorPos.X, groundY + 0.15, anchorPos.Z))
             end
         end
 
@@ -4511,13 +4610,14 @@ do
                     State.nextLightningTimer = math.random(28, 68) / 10
                 end
                 triggerSurroundingLightningStrike(camera)
-                Lighting.Brightness = (ConfigState.Fullbright and 2.0 or 0.65) + 3.5
+                Lighting.Brightness = (ConfigState.Fullbright and 2.0 or 0.65) + 3.8
             elseif (State.lightningFlashIntensity or 0) > 0 then
                 local decayDt = math.min(safeDt, 0.05)
                 State.lightningFlashIntensity = math.max(0, State.lightningFlashIntensity - decayDt * 3.2)
                 local intensity = State.lightningFlashIntensity
-                local flashBoost = intensity * 3.5
+                local flashBoost = intensity * 3.8
                 Lighting.Brightness = (ConfigState.Fullbright and 2.0 or 0.65) + flashBoost
+                colorCorr.Brightness = -0.05 + intensity * 0.24
                 if intensity > 0.04 then
                     local boltTrans = math.clamp(1 - intensity * 0.96, 0.02, 0.98)
                     for i = 1, LIGHTNING_SEGMENT_COUNT do
@@ -4526,10 +4626,9 @@ do
                     for i = 1, LIGHTNING_BRANCH_COUNT do
                         lightningBranches[i].Transparency = math.clamp(boltTrans + 0.12, 0.1, 1)
                     end
-                    strikePointLight.Brightness = intensity * 7.5
-                    lightningFlashFrame.Visible = true
-                    lightningFlashFrame.BackgroundTransparency = math.clamp(1 - intensity * 0.58, 0.35, 1)
+                    strikePointLight.Brightness = intensity * 9.0
                 else
+                    colorCorr.Brightness = -0.05
                     hideLightningBolts()
                 end
             end
@@ -4542,15 +4641,705 @@ do
     UI.WeatherEmitterPart = weatherPart
     UI.WeatherEmitter = weatherEmitter
     UI.WeatherStreakEmitter = streakEmitter
-    UI.WeatherCanvas = weatherCanvas
+    UI.WeatherMistEmitter = mistEmitter
+    UI.WeatherGroundPart = groundSplashPart
+    UI.WeatherSplashEmitter = groundSplashEmitter
     UI.LightningBoltPool = lightningFolder
     UI.SpatialThunderSound = spatialThunderSound
     UI.WeatherPatterSound = patterSound
     UI.WeatherRumblerSound = rumblerSound
     UI.WeatherSunRays = sunRays
     UI.WeatherColorCorrection = colorCorr
+    UI.WeatherBloom = weatherBloom
+    UI.WeatherAtmosphere = weatherAtmosphere
     UI.WeatherAmbienceSound = ambienceSound
     UI.WeatherThunderSound = thunderSound
+end
+
+--------------------------------------------------------------------------------
+-- 11B. COMMUNITY MUSIC SYSTEM & CONNECTED WAVY OCEAN PLAYER UI (ZERO PER-FRAME ALLOCATIONS)
+--------------------------------------------------------------------------------
+do
+    local SoundService = safeGetService("SoundService") or Lighting
+
+    local MUSIC_TRACK_LIST = {
+        {
+            Id = "Snowman (Slowed + Reverb) — Sia",
+            Title = "Snowman (Slowed + Reverb)",
+            Artist = "Sia",
+            FileName = "sia_snowman_slowed.mp3",
+            DefaultDuration = 184,
+            FallbackSoundId = "rbxasset://sounds/uuhhh.mp3",
+            Urls = {
+                "https://raw.githubusercontent.com/FeykHere/Core.xyz/main/sia%20-%20snowman%20(slowed%20%2B%20reverb)%20%5Bwith%20lyrics%5D.mp3",
+                "https://raw.githubusercontent.com/FeykHere/Core.xyz/main/sia%20-%20snowman%20(slowed%20+%20reverb)%20[with%20lyrics].mp3",
+                "https://github.com/FeykHere/Core.xyz/blob/main/sia%20-%20snowman%20(slowed%20%2B%20reverb)%20[with%20lyrics].mp3?raw=true",
+                "https://raw.githubusercontent.com/FeykHere/Core.xyz/main/music/sia%20-%20snowman%20(slowed%20%2B%20reverb)%20%5Bwith%20lyrics%5D.mp3",
+            },
+        },
+    }
+
+    local TRACK_DROPDOWN_OPTIONS = {}
+    local TRACK_BY_ID = {}
+    for idx, tr in ipairs(MUSIC_TRACK_LIST) do
+        tr.Index = idx
+        table.insert(TRACK_DROPDOWN_OPTIONS, tr.Id)
+        TRACK_BY_ID[tr.Id] = tr
+    end
+    State.musicTrackOptions = TRACK_DROPDOWN_OPTIONS
+
+    local musicSound = Instance.new("Sound")
+    musicSound.Name = "CoreXyz_MusicPlayerSound"
+    musicSound.Looped = ConfigState.MusicLooped ~= false
+    musicSound.Volume = ConfigState.MusicVolume or 0.75
+    musicSound.SoundId = ""
+    musicSound.Parent = SoundService
+    UI.MusicPlayerSound = musicSound
+
+    local function formatTimeMMSS(sec)
+        local clean = math.max(0, math.floor(tonumber(sec) or 0))
+        local m = math.floor(clean / 60)
+        local s = clean % 60
+        return string.format("%02d:%02d", m, s)
+    end
+
+    -- Connected Mini Music Player Bar (Docked underneath CoreMainWindow)
+    local PlayerBar = Instance.new("Frame")
+    PlayerBar.Name = "CoreMusicPlayerBar"
+    PlayerBar.AnchorPoint = Vector2.new(0.5, 0)
+    PlayerBar.Position = UDim2.new(0.5, 0, 0.52, 191)
+    PlayerBar.Size = UDim2.fromOffset(560, 74)
+    PlayerBar.BackgroundColor3 = Theme.Black
+    PlayerBar.BackgroundTransparency = ConfigState.WindowTransparency or 0.03
+    PlayerBar.Active = true
+    PlayerBar.Visible = false
+    PlayerBar.ClipsDescendants = true
+    PlayerBar.ZIndex = 10
+    PlayerBar.Parent = UI.ScreenGui
+    addCorner(PlayerBar, 12)
+    local PlayerStroke = addLiveBorder(PlayerBar, 1.4, 48, 0.08)
+
+    local PlayerScale = Instance.new("UIScale")
+    PlayerScale.Scale = 1
+    PlayerScale.Parent = PlayerBar
+
+    -- Top Accent Connector Line
+    local ConnectorBeam = Instance.new("Frame")
+    ConnectorBeam.Name = "MusicDockConnector"
+    ConnectorBeam.Position = UDim2.fromOffset(0, 0)
+    ConnectorBeam.Size = UDim2.new(1, 0, 0, 1)
+    ConnectorBeam.BackgroundColor3 = Theme.Accent
+    ConnectorBeam.BackgroundTransparency = 0.65
+    ConnectorBeam.BorderSizePixel = 0
+    ConnectorBeam.ZIndex = 12
+    ConnectorBeam.Parent = PlayerBar
+    registerAccentObject(ConnectorBeam, "BackgroundColor3")
+
+    -- Spinning Disc / Vinyl Badge on Left
+    local DiscBadge = Instance.new("Frame")
+    DiscBadge.Name = "MusicDiscBadge"
+    DiscBadge.Position = UDim2.fromOffset(12, 10)
+    DiscBadge.Size = UDim2.fromOffset(30, 30)
+    DiscBadge.BackgroundColor3 = Theme.Surface
+    DiscBadge.ZIndex = 12
+    DiscBadge.Parent = PlayerBar
+    addCorner(DiscBadge, 999)
+    local DiscStroke = addStroke(DiscBadge, Theme.Accent, 1.2, 0.15)
+    registerAccentObject(DiscStroke, "Color")
+    table.insert(State.liveRotators, { Instance = DiscBadge, Speed = 38 })
+
+    local DiscCenter = Instance.new("Frame")
+    DiscCenter.AnchorPoint = Vector2.new(0.5, 0.5)
+    DiscCenter.Position = UDim2.fromScale(0.5, 0.5)
+    DiscCenter.Size = UDim2.fromOffset(8, 8)
+    DiscCenter.BackgroundColor3 = Theme.Accent
+    DiscCenter.BorderSizePixel = 0
+    DiscCenter.ZIndex = 13
+    DiscCenter.Parent = DiscBadge
+    addCorner(DiscCenter, 999)
+    registerAccentObject(DiscCenter, "BackgroundColor3")
+
+    local TrackTitleLbl = Instance.new("TextLabel")
+    TrackTitleLbl.Name = "MusicTitleLabel"
+    TrackTitleLbl.Position = UDim2.fromOffset(50, 8)
+    TrackTitleLbl.Size = UDim2.fromOffset(250, 16)
+    TrackTitleLbl.BackgroundTransparency = 1
+    TrackTitleLbl.Font = Enum.Font.GothamBold
+    TrackTitleLbl.Text = "Snowman (Slowed + Reverb)"
+    TrackTitleLbl.TextColor3 = Theme.White
+    TrackTitleLbl.TextSize = 12
+    TrackTitleLbl.TextTruncate = Enum.TextTruncate.AtEnd
+    TrackTitleLbl.TextXAlignment = Enum.TextXAlignment.Left
+    TrackTitleLbl.ZIndex = 12
+    TrackTitleLbl.Parent = PlayerBar
+
+    local TrackStatusLbl = Instance.new("TextLabel")
+    TrackStatusLbl.Name = "MusicStatusLabel"
+    TrackStatusLbl.Position = UDim2.fromOffset(50, 24)
+    TrackStatusLbl.Size = UDim2.fromOffset(250, 13)
+    TrackStatusLbl.BackgroundTransparency = 1
+    TrackStatusLbl.Font = Enum.Font.Code
+    TrackStatusLbl.Text = "Sia  ·  Ready"
+    TrackStatusLbl.TextColor3 = Theme.Muted
+    TrackStatusLbl.TextSize = 10
+    TrackStatusLbl.TextTruncate = Enum.TextTruncate.AtEnd
+    TrackStatusLbl.TextXAlignment = Enum.TextXAlignment.Left
+    TrackStatusLbl.ZIndex = 12
+    TrackStatusLbl.Parent = PlayerBar
+
+    -- Center-Right Transport Controls (Backward, Play/Pause, Forward)
+    local PrevBtn = Instance.new("TextButton")
+    PrevBtn.Name = "MusicPrevButton"
+    PrevBtn.Position = UDim2.fromOffset(312, 9)
+    PrevBtn.Size = UDim2.fromOffset(28, 28)
+    PrevBtn.BackgroundColor3 = Theme.Surface
+    PrevBtn.AutoButtonColor = false
+    PrevBtn.Font = Enum.Font.GothamBold
+    PrevBtn.Text = "⏮"
+    PrevBtn.TextColor3 = Theme.Silver
+    PrevBtn.TextSize = 11
+    PrevBtn.ZIndex = 13
+    PrevBtn.Parent = PlayerBar
+    addCorner(PrevBtn, 7)
+    addStroke(PrevBtn, Theme.Border, 1, 0)
+
+    local PlayPauseBtn = Instance.new("TextButton")
+    PlayPauseBtn.Name = "MusicPlayPauseButton"
+    PlayPauseBtn.Position = UDim2.fromOffset(346, 8)
+    PlayPauseBtn.Size = UDim2.fromOffset(34, 30)
+    PlayPauseBtn.BackgroundColor3 = Theme.Accent
+    PlayPauseBtn.AutoButtonColor = false
+    PlayPauseBtn.Font = Enum.Font.GothamBlack
+    PlayPauseBtn.Text = "▶"
+    PlayPauseBtn.TextColor3 = Theme.Black
+    PlayPauseBtn.TextSize = 12
+    PlayPauseBtn.ZIndex = 13
+    PlayPauseBtn.Parent = PlayerBar
+    addCorner(PlayPauseBtn, 8)
+    registerAccentObject(PlayPauseBtn, "BackgroundColor3")
+
+    local NextBtn = Instance.new("TextButton")
+    NextBtn.Name = "MusicNextButton"
+    NextBtn.Position = UDim2.fromOffset(386, 9)
+    NextBtn.Size = UDim2.fromOffset(28, 28)
+    NextBtn.BackgroundColor3 = Theme.Surface
+    NextBtn.AutoButtonColor = false
+    NextBtn.Font = Enum.Font.GothamBold
+    NextBtn.Text = "⏭"
+    NextBtn.TextColor3 = Theme.Silver
+    NextBtn.TextSize = 11
+    NextBtn.ZIndex = 13
+    NextBtn.Parent = PlayerBar
+    addCorner(NextBtn, 7)
+    addStroke(NextBtn, Theme.Border, 1, 0)
+
+    local TimeCounterLbl = Instance.new("TextLabel")
+    TimeCounterLbl.Name = "MusicTimeLabel"
+    TimeCounterLbl.AnchorPoint = Vector2.new(1, 0)
+    TimeCounterLbl.Position = UDim2.new(1, -14, 0, 14)
+    TimeCounterLbl.Size = UDim2.fromOffset(120, 18)
+    TimeCounterLbl.BackgroundTransparency = 1
+    TimeCounterLbl.Font = Enum.Font.Code
+    TimeCounterLbl.Text = "00:00 / 03:04"
+    TimeCounterLbl.TextColor3 = Theme.Silver
+    TimeCounterLbl.TextSize = 11
+    TimeCounterLbl.TextXAlignment = Enum.TextXAlignment.Right
+    TimeCounterLbl.ZIndex = 12
+    TimeCounterLbl.Parent = PlayerBar
+
+    -- Interactive Animated Wavy Ocean Timeline Slider / Scrubber
+    local TimelineTrack = Instance.new("Frame")
+    TimelineTrack.Name = "MusicTimelineTrack"
+    TimelineTrack.Position = UDim2.fromOffset(14, 46)
+    TimelineTrack.Size = UDim2.new(1, -28, 0, 18)
+    TimelineTrack.BackgroundColor3 = Theme.Deep
+    TimelineTrack.ClipsDescendants = true
+    TimelineTrack.ZIndex = 12
+    TimelineTrack.Parent = PlayerBar
+    addCorner(TimelineTrack, 9)
+    addStroke(TimelineTrack, Theme.Border, 1, 0)
+
+    -- Baseline Subtle Track Line inside the Ocean Scrubber
+    local TimelineBaseline = Instance.new("Frame")
+    TimelineBaseline.Name = "MusicTimelineBaseline"
+    TimelineBaseline.AnchorPoint = Vector2.new(0, 0.5)
+    TimelineBaseline.Position = UDim2.fromScale(0, 0.5)
+    TimelineBaseline.Size = UDim2.new(1, 0, 0, 2)
+    TimelineBaseline.BackgroundColor3 = Theme.Elevated
+    TimelineBaseline.BorderSizePixel = 0
+    TimelineBaseline.ZIndex = 12
+    TimelineBaseline.Parent = TimelineTrack
+
+    -- Flowing Ocean Wave Crest Ribbons (Primary & Secondary Harmonic Layers)
+    local OceanCrestPrimary = Instance.new("Frame")
+    OceanCrestPrimary.Name = "OceanWaveCrestPrimary"
+    OceanCrestPrimary.AnchorPoint = Vector2.new(0, 1)
+    OceanCrestPrimary.Position = UDim2.fromScale(0, 1)
+    OceanCrestPrimary.Size = UDim2.new(0, 0, 0.65, 0)
+    OceanCrestPrimary.BackgroundColor3 = Color3.fromRGB(70, 165, 255)
+    OceanCrestPrimary.BackgroundTransparency = 0.58
+    OceanCrestPrimary.BorderSizePixel = 0
+    OceanCrestPrimary.ZIndex = 13
+    OceanCrestPrimary.Parent = TimelineTrack
+    addCorner(OceanCrestPrimary, 6)
+
+    local OceanCrestSecondary = Instance.new("Frame")
+    OceanCrestSecondary.Name = "OceanWaveCrestSecondary"
+    OceanCrestSecondary.AnchorPoint = Vector2.new(0, 1)
+    OceanCrestSecondary.Position = UDim2.fromScale(0, 1)
+    OceanCrestSecondary.Size = UDim2.new(0, 0, 0.48, 0)
+    OceanCrestSecondary.BackgroundColor3 = Color3.fromRGB(135, 215, 255)
+    OceanCrestSecondary.BackgroundTransparency = 0.45
+    OceanCrestSecondary.BorderSizePixel = 0
+    OceanCrestSecondary.ZIndex = 13
+    OceanCrestSecondary.Parent = TimelineTrack
+    addCorner(OceanCrestSecondary, 6)
+
+    -- Pre-Allocated 24 Harmonic Wavy Ocean Scrubber Bars (Zero Per-Frame Allocations)
+    local OCEAN_WAVE_SEGMENTS = 24
+    local oceanSegments = {}
+    for i = 1, OCEAN_WAVE_SEGMENTS do
+        local seg = Instance.new("Frame")
+        seg.Name = "OceanWaveSegment_" .. i
+        seg.AnchorPoint = Vector2.new(0.5, 0.5)
+        local xScale = (i - 0.5) / OCEAN_WAVE_SEGMENTS
+        seg.Position = UDim2.fromScale(xScale, 0.5)
+        seg.Size = UDim2.new(1 / OCEAN_WAVE_SEGMENTS, -3, 0, 6)
+        seg.BackgroundColor3 = Color3.fromRGB(120, 200, 255)
+        seg.BackgroundTransparency = 0.12
+        seg.BorderSizePixel = 0
+        seg.ZIndex = 14
+        seg.Parent = TimelineTrack
+        addCorner(seg, 99)
+        oceanSegments[i] = seg
+    end
+
+    -- Buoyant Ocean Wave Scrubber Thumb Knob
+    local ScrubberKnob = Instance.new("Frame")
+    ScrubberKnob.Name = "MusicScrubberKnob"
+    ScrubberKnob.AnchorPoint = Vector2.new(0.5, 0.5)
+    ScrubberKnob.Position = UDim2.fromScale(0, 0.5)
+    ScrubberKnob.Size = UDim2.fromOffset(12, 12)
+    ScrubberKnob.BackgroundColor3 = Theme.White
+    ScrubberKnob.ZIndex = 16
+    ScrubberKnob.Parent = TimelineTrack
+    addCorner(ScrubberKnob, 999)
+    local KnobStroke = addStroke(ScrubberKnob, Color3.fromRGB(110, 195, 255), 1.5, 0)
+    registerAccentObject(KnobStroke, "Color")
+
+    -- Interactive Click & Drag Scrubber Hitbox
+    local TimelineHitbox = Instance.new("TextButton")
+    TimelineHitbox.Name = "MusicTimelineHitbox"
+    TimelineHitbox.Size = UDim2.fromScale(1, 1)
+    TimelineHitbox.BackgroundTransparency = 1
+    TimelineHitbox.Text = ""
+    TimelineHitbox.AutoButtonColor = false
+    TimelineHitbox.ZIndex = 18
+    TimelineHitbox.Parent = TimelineTrack
+
+    local function syncMusicPlayerDock()
+        if not UI.MainWindow then
+            return
+        end
+        local scale = (UI.MainScale and UI.MainScale.Scale) or getResponsiveScale()
+        PlayerScale.Scale = scale
+        local mwPos = UI.MainWindow.Position
+        local halfMainH = math.floor(182.5 * scale)
+        local gapPx = math.floor(8 * scale)
+        PlayerBar.Position = UDim2.new(
+            mwPos.X.Scale,
+            mwPos.X.Offset,
+            mwPos.Y.Scale,
+            mwPos.Y.Offset + halfMainH + gapPx
+        )
+        PlayerBar.BackgroundTransparency = ConfigState.WindowTransparency or 0.03
+        local shouldShow = State.isAuthorized and State.uiVisible and (ConfigState.MusicPlayerVisible ~= false)
+        PlayerBar.Visible = shouldShow and true or false
+    end
+
+    local function getActiveTrackData()
+        return TRACK_BY_ID[ConfigState.SelectedTrack] or MUSIC_TRACK_LIST[1]
+    end
+
+    local function getEffectiveTrackLength(track)
+        local soundLen = tonumber(musicSound.TimeLength) or 0
+        if soundLen and soundLen > 1 then
+            State.musicTrackLength = soundLen
+            return soundLen
+        end
+        return (track and track.DefaultDuration) or State.musicTrackLength or 184
+    end
+
+    local function updateWavyScrubberVisuals(progressRatio, animTime)
+        local clampedRatio = math.clamp(tonumber(progressRatio) or 0, 0, 1)
+        local isPlaying = State.musicIsPlaying and true or false
+        local waveSpeed = isPlaying and 4.6 or 1.4
+        local waveAmp = isPlaying and 0.22 or 0.07
+
+        OceanCrestPrimary.Size = UDim2.new(clampedRatio, 0, 0.62 + math.sin(animTime * 2.4) * 0.08, 0)
+        OceanCrestSecondary.Size = UDim2.new(clampedRatio, 0, 0.44 + math.cos(animTime * 3.1) * 0.08, 0)
+
+        for i = 1, OCEAN_WAVE_SEGMENTS do
+            local seg = oceanSegments[i]
+            local segNorm = (i - 0.5) / OCEAN_WAVE_SEGMENTS
+            local wave1 = math.sin(animTime * waveSpeed - i * 0.52)
+            local wave2 = math.cos(animTime * (waveSpeed * 0.68) + i * 0.37)
+            local combinedWave = (wave1 * 0.65) + (wave2 * 0.35)
+
+            if segNorm <= clampedRatio then
+                local yPos = 0.5 + combinedWave * waveAmp
+                local barHeight = math.floor(6 + ((combinedWave + 1) * 0.5) * (isPlaying and 8 or 4))
+                seg.Position = UDim2.fromScale(segNorm, yPos)
+                seg.Size = UDim2.new(1 / OCEAN_WAVE_SEGMENTS, -3, 0, barHeight)
+                seg.BackgroundColor3 = (i % 2 == 0)
+                    and Color3.fromRGB(145, 220, 255)
+                    or Color3.fromRGB(85, 175, 255)
+                seg.BackgroundTransparency = 0.08
+            else
+                local idleY = 0.5 + math.sin(animTime * 1.2 - i * 0.4) * 0.04
+                seg.Position = UDim2.fromScale(segNorm, idleY)
+                seg.Size = UDim2.new(1 / OCEAN_WAVE_SEGMENTS, -3, 0, 4)
+                seg.BackgroundColor3 = Theme.Elevated
+                seg.BackgroundTransparency = 0.45
+            end
+        end
+
+        local knobY = 0.5 + math.sin(animTime * waveSpeed - (clampedRatio * OCEAN_WAVE_SEGMENTS * 0.52)) * (waveAmp * 0.85)
+        ScrubberKnob.Position = UDim2.fromScale(clampedRatio, math.clamp(knobY, 0.22, 0.78))
+    end
+
+    local function ensureTrackCachedAndLoaded(track, onReady)
+        if not track then
+            return
+        end
+        TrackTitleLbl.Text = track.Title
+        local cachedAsset = State.musicCachedAssets[track.Id]
+        if cachedAsset and cachedAsset ~= "" then
+            if musicSound.SoundId ~= cachedAsset then
+                musicSound.SoundId = cachedAsset
+            end
+            if onReady then
+                onReady(cachedAsset)
+            end
+            return
+        end
+
+        local localFilePath = MUSIC_FOLDER .. "/" .. track.FileName
+        if Env.getcustomasset and safeIsFile(localFilePath) then
+            local okAsset, assetUri = pcall(function()
+                return Env.getcustomasset(localFilePath)
+            end)
+            if okAsset and assetUri and tostring(assetUri) ~= "" then
+                State.musicCachedAssets[track.Id] = tostring(assetUri)
+                musicSound.SoundId = tostring(assetUri)
+                TrackStatusLbl.Text = track.Artist .. "  ·  Cached Locally"
+                if onReady then
+                    onReady(tostring(assetUri))
+                end
+                return
+            end
+        end
+
+        -- If executor supports writefile + getcustomasset, download the MP3 from GitHub once in background
+        if Env.writefile and Env.getcustomasset then
+            if State.musicDownloading then
+                return
+            end
+            State.musicDownloading = true
+            TrackStatusLbl.Text = track.Artist .. "  ·  Downloading MP3 from GitHub..."
+
+            task.spawn(function()
+                local mp3Bytes = nil
+                for _, rawUrl in ipairs(track.Urls or {}) do
+                    local okHttp, resBody = pcall(function()
+                        if type(Env.request) == "function" then
+                            local r = Env.request({ Url = rawUrl, Method = "GET" })
+                            if r and r.StatusCode == 200 and type(r.Body) == "string" and #r.Body > 512 then
+                                return r.Body
+                            end
+                        end
+                        return game:HttpGet(rawUrl)
+                    end)
+                    if okHttp and type(resBody) == "string" and #resBody > 512 and not string.find(string.sub(resBody, 1, 64), "<!DOCTYPE html") then
+                        mp3Bytes = resBody
+                        break
+                    end
+                end
+
+                State.musicDownloading = false
+                if mp3Bytes then
+                    safeWriteFile(localFilePath, mp3Bytes)
+                    local okCustom, customUri = pcall(function()
+                        return Env.getcustomasset(localFilePath)
+                    end)
+                    if okCustom and customUri and tostring(customUri) ~= "" then
+                        State.musicCachedAssets[track.Id] = tostring(customUri)
+                        musicSound.SoundId = tostring(customUri)
+                        TrackStatusLbl.Text = track.Artist .. "  ·  Playing (Cached)"
+                        if onReady then
+                            onReady(tostring(customUri))
+                        end
+                        return
+                    end
+                end
+
+                -- Fallback if executor asset bridge is unavailable in sandbox
+                local fallbackUri = track.FallbackSoundId or "rbxasset://sounds/uuhhh.mp3"
+                State.musicCachedAssets[track.Id] = fallbackUri
+                musicSound.SoundId = fallbackUri
+                TrackStatusLbl.Text = track.Artist .. "  ·  Ready"
+                if onReady then
+                    onReady(fallbackUri)
+                end
+            end)
+        else
+            local fallbackUri = track.FallbackSoundId or "rbxasset://sounds/uuhhh.mp3"
+            State.musicCachedAssets[track.Id] = fallbackUri
+            musicSound.SoundId = fallbackUri
+            TrackStatusLbl.Text = track.Artist .. "  ·  Ready"
+            if onReady then
+                onReady(fallbackUri)
+            end
+        end
+    end
+
+    local function setMusicPlaying(shouldPlay)
+        local track = getActiveTrackData()
+        State.musicIsPlaying = shouldPlay and true or false
+        if State.musicIsPlaying then
+            PlayPauseBtn.Text = "⏸"
+            TrackStatusLbl.Text = track.Artist .. "  ·  Playing"
+            ensureTrackCachedAndLoaded(track, function()
+                if not State.musicIsPlaying then
+                    return
+                end
+                musicSound.Volume = ConfigState.MusicVolume or 0.75
+                musicSound.Looped = ConfigState.MusicLooped ~= false
+                pcall(function()
+                    musicSound.TimePosition = State.musicSimulatedPos or 0
+                    if musicSound.Resume and musicSound.IsPaused then
+                        musicSound:Resume()
+                    else
+                        musicSound:Play()
+                    end
+                end)
+                TrackStatusLbl.Text = track.Artist .. "  ·  Playing"
+            end)
+        else
+            PlayPauseBtn.Text = "▶"
+            TrackStatusLbl.Text = track.Artist .. "  ·  Paused"
+            pcall(function()
+                if musicSound.Pause then
+                    musicSound:Pause()
+                else
+                    musicSound:Stop()
+                end
+            end)
+        end
+        if State.syncPlayToggleUI then
+            State.syncPlayToggleUI(State.musicIsPlaying)
+        end
+    end
+
+    local function seekMusicToRatio(ratio)
+        local track = getActiveTrackData()
+        local totalLen = getEffectiveTrackLength(track)
+        local clamped = math.clamp(tonumber(ratio) or 0, 0, 1)
+        local targetSec = clamped * totalLen
+        State.musicSimulatedPos = targetSec
+        pcall(function()
+            musicSound.TimePosition = targetSec
+        end)
+        TimeCounterLbl.Text = string.format("%s / %s", formatTimeMMSS(targetSec), formatTimeMMSS(totalLen))
+        updateWavyScrubberVisuals(clamped, State.musicWaveClock or 0)
+    end
+
+    local function stepMusicTrack(direction)
+        local currentTrack = getActiveTrackData()
+        local count = #MUSIC_TRACK_LIST
+        local nextIdx = ((currentTrack.Index - 1 + direction) % count) + 1
+        local nextTrack = MUSIC_TRACK_LIST[nextIdx] or MUSIC_TRACK_LIST[1]
+        ConfigState.SelectedTrack = nextTrack.Id
+        State.musicSimulatedPos = 0
+        pcall(function()
+            musicSound.TimePosition = 0
+        end)
+        TrackTitleLbl.Text = nextTrack.Title
+        local totalLen = getEffectiveTrackLength(nextTrack)
+        TimeCounterLbl.Text = string.format("00:00 / %s", formatTimeMMSS(totalLen))
+        updateWavyScrubberVisuals(0, State.musicWaveClock or 0)
+        if State.musicIsPlaying then
+            setMusicPlaying(true)
+        else
+            TrackStatusLbl.Text = nextTrack.Artist .. "  ·  Ready"
+        end
+    end
+
+    PlayPauseBtn.MouseButton1Click:Connect(function()
+        spawnRipple(PlayPauseBtn)
+        setMusicPlaying(not State.musicIsPlaying)
+    end)
+
+    PrevBtn.MouseButton1Click:Connect(function()
+        spawnRipple(PrevBtn)
+        if (State.musicSimulatedPos or 0) > 4 then
+            seekMusicToRatio(0)
+        else
+            stepMusicTrack(-1)
+        end
+    end)
+
+    NextBtn.MouseButton1Click:Connect(function()
+        spawnRipple(NextBtn)
+        stepMusicTrack(1)
+    end)
+
+    -- Interactive Click & Drag on Wavy Ocean Scrubber
+    local function updateScrubberFromInput(input)
+        local absPos = TimelineTrack.AbsolutePosition
+        local absSize = TimelineTrack.AbsoluteSize
+        local trackWidth = (absSize and absSize.X and absSize.X > 10) and absSize.X or 532
+        local trackLeft = (absPos and absPos.X) or 0
+        local relX = (input.Position.X - trackLeft) / trackWidth
+        if trackLeft == 0 and input.Position.X <= 1 and input.Position.X >= 0 then
+            relX = input.Position.X
+        end
+        seekMusicToRatio(math.clamp(relX, 0, 1))
+    end
+
+    TimelineHitbox.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            State.musicScrubbing = true
+            updateScrubberFromInput(input)
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if State.musicScrubbing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            updateScrubberFromInput(input)
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            State.musicScrubbing = false
+        end
+    end)
+
+    -- Mute Game Audio (Excludes CoreXyz_ sounds, caches original volumes in weak-key table, hooks new sounds)
+    local function isCoreInternalSound(snd)
+        if not snd or not snd:IsA("Sound") then
+            return true
+        end
+        local name = snd.Name or ""
+        return string.find(name, "^CoreXyz_") ~= nil
+    end
+
+    local function muteSingleGameSound(snd)
+        if not isCoreInternalSound(snd) then
+            if State.mutedGameSounds[snd] == nil then
+                State.mutedGameSounds[snd] = snd.Volume
+            end
+            pcall(function()
+                snd.Volume = 0
+            end)
+        end
+    end
+
+    local function applyMuteGameAudio(enabled)
+        ConfigState.MuteGameAudio = enabled and true or false
+        if ConfigState.MuteGameAudio then
+            for _, desc in ipairs(workspace:GetDescendants()) do
+                if desc:IsA("Sound") then
+                    muteSingleGameSound(desc)
+                end
+            end
+            for _, desc in ipairs(SoundService:GetDescendants()) do
+                if desc:IsA("Sound") then
+                    muteSingleGameSound(desc)
+                end
+            end
+            if not State.muteAudioDescendantConn and workspace.DescendantAdded then
+                State.muteAudioDescendantConn = workspace.DescendantAdded:Connect(function(inst)
+                    if ConfigState.MuteGameAudio and inst and inst:IsA("Sound") then
+                        muteSingleGameSound(inst)
+                    end
+                end)
+            end
+        else
+            if State.muteAudioDescendantConn then
+                pcall(function()
+                    State.muteAudioDescendantConn:Disconnect()
+                end)
+                State.muteAudioDescendantConn = nil
+            end
+            for snd, origVol in pairs(State.mutedGameSounds) do
+                if snd and snd.Parent then
+                    pcall(function()
+                        snd.Volume = origVol
+                    end)
+                end
+            end
+            table.clear(State.mutedGameSounds)
+        end
+    end
+
+    local function updateMusicPlayerFrame(safeDt)
+        State.musicWaveClock = (State.musicWaveClock or 0) + safeDt
+        local track = getActiveTrackData()
+        local totalLen = getEffectiveTrackLength(track)
+
+        if State.musicIsPlaying and not State.musicScrubbing then
+            local realTimePos = tonumber(musicSound.TimePosition) or 0
+            local realLen = tonumber(musicSound.TimeLength) or 0
+            if realLen > 1 and musicSound.IsPlaying then
+                State.musicSimulatedPos = realTimePos
+            else
+                State.musicSimulatedPos = (State.musicSimulatedPos or 0) + safeDt
+                if State.musicSimulatedPos >= totalLen then
+                    if ConfigState.MusicLooped ~= false then
+                        State.musicSimulatedPos = 0
+                        pcall(function()
+                            musicSound.TimePosition = 0
+                        end)
+                    else
+                        State.musicSimulatedPos = totalLen
+                        setMusicPlaying(false)
+                    end
+                end
+            end
+        end
+
+        local curPos = math.clamp(State.musicSimulatedPos or 0, 0, totalLen)
+        local ratio = (totalLen > 0) and (curPos / totalLen) or 0
+        if PlayerBar.Visible then
+            TimeCounterLbl.Text = string.format("%s / %s", formatTimeMMSS(curPos), formatTimeMMSS(totalLen))
+            updateWavyScrubberVisuals(ratio, State.musicWaveClock)
+        end
+    end
+
+    -- Initialize scrubber wave visuals in idle state
+    updateWavyScrubberVisuals(0, 0)
+
+    State.syncMusicPlayerDock = syncMusicPlayerDock
+    State.setMusicPlaying = setMusicPlaying
+    State.seekMusicToRatio = seekMusicToRatio
+    State.stepMusicTrack = stepMusicTrack
+    State.applyMuteGameAudio = applyMuteGameAudio
+    State.updateMusicPlayerFrame = updateMusicPlayerFrame
+    UI.MusicPlayerBar = PlayerBar
+    UI.MusicPlayerScale = PlayerScale
+    UI.MusicPlayerStroke = PlayerStroke
+    UI.MusicTitleLabel = TrackTitleLbl
+    UI.MusicStatusLabel = TrackStatusLbl
+    UI.MusicTimeLabel = TimeCounterLbl
+    UI.MusicPrevButton = PrevBtn
+    UI.MusicPlayPauseButton = PlayPauseBtn
+    UI.MusicNextButton = NextBtn
+    UI.MusicTimelineTrack = TimelineTrack
+    UI.MusicTimelineHitbox = TimelineHitbox
+    UI.MusicScrubberKnob = ScrubberKnob
+    UI.OceanWaveSegments = oceanSegments
 end
 
 -- Glitch-Free Freecam Toggle
@@ -4917,7 +5706,7 @@ local function formatRemainingKeyTime()
 end
 
 --------------------------------------------------------------------------------
--- 12. BUILD ALL 7 TABS (SCOPED IN DO-BLOCKS TO FREE LOCAL REGISTERS)
+-- 12. BUILD ALL 8 TABS (SCOPED IN DO-BLOCKS TO FREE LOCAL REGISTERS)
 --------------------------------------------------------------------------------
 local HomeTab = createTab("Home", 1)
 local CombatTab = createTab("Combat", 2)
@@ -4925,7 +5714,8 @@ local VisualsTab = createTab("Visuals", 3)
 local MovementTab = createTab("Movement", 4)
 local PlayersTab = createTab("Players", 5)
 local WorldTab = createTab("World", 6)
-local SettingsTab = createTab("Settings", 7)
+local MusicTab = createTab("Music", 7)
+local SettingsTab = createTab("Settings", 8)
 
 -- TAB 1: HOME (INTERACTIVE 3D CHARACTER SHOWCASE BOX + SIDE PROFILE & LIVE KEY TIME INFO)
 do
@@ -6540,7 +7330,135 @@ do
     end)
 end
 
--- TAB 7: SETTINGS (CUSTOM FLOATING PILL + REMEMBER KEY + THEME FREEDOM + CONFIG MANAGER)
+-- TAB 7: MUSIC (DISCORD COMMUNITY CURATED NOTE + TRACKS DROPDOWN + CONNECTED WAVY PLAYER UI + MUTE GAME AUDIO)
+do
+    createLabel(MusicTab, "Community-Curated Soundtrack & Player")
+
+    local CommunityNoteCard = Instance.new("Frame")
+    CommunityNoteCard.Name = "MusicCommunityNoteCard"
+    CommunityNoteCard.Size = UDim2.new(1, 0, 0, 88)
+    CommunityNoteCard.BackgroundColor3 = Theme.Surface
+    CommunityNoteCard.ZIndex = 14
+    CommunityNoteCard.Parent = MusicTab
+    addCorner(CommunityNoteCard, 8)
+    local NoteStroke = addStroke(CommunityNoteCard, Color3.fromRGB(88, 101, 242), 1.2, 0.25)
+    registerAccentObject(NoteStroke, "Color")
+
+    local NoteBadge = Instance.new("TextLabel")
+    NoteBadge.Position = UDim2.fromOffset(12, 8)
+    NoteBadge.Size = UDim2.new(1, -24, 0, 14)
+    NoteBadge.BackgroundTransparency = 1
+    NoteBadge.Font = Enum.Font.GothamBold
+    NoteBadge.Text = "DISCORD COMMUNITY TRACK SELECTION"
+    NoteBadge.TextColor3 = Color3.fromRGB(145, 195, 255)
+    NoteBadge.TextSize = 10
+    NoteBadge.TextXAlignment = Enum.TextXAlignment.Left
+    NoteBadge.ZIndex = 15
+    NoteBadge.Parent = CommunityNoteCard
+
+    local NoteBody = Instance.new("TextLabel")
+    NoteBody.Name = "MusicCommunityNoteText"
+    NoteBody.Position = UDim2.fromOffset(12, 24)
+    NoteBody.Size = UDim2.new(1, -24, 0, 32)
+    NoteBody.BackgroundTransparency = 1
+    NoteBody.Font = Enum.Font.GothamMedium
+    NoteBody.Text = "All tracks are handpicked from our Discord community on every script update. Want a specific song added next? Join our Discord community to submit your track requests."
+    NoteBody.TextColor3 = Theme.Silver
+    NoteBody.TextSize = 10
+    NoteBody.TextWrapped = true
+    NoteBody.TextXAlignment = Enum.TextXAlignment.Left
+    if Enum.TextYAlignment and Enum.TextYAlignment.Top then
+        NoteBody.TextYAlignment = Enum.TextYAlignment.Top
+    end
+    NoteBody.ZIndex = 15
+    NoteBody.Parent = CommunityNoteCard
+
+    local CopyDiscordSongBtn = Instance.new("TextButton")
+    CopyDiscordSongBtn.Name = "MusicJoinDiscordButton"
+    CopyDiscordSongBtn.Position = UDim2.fromOffset(12, 58)
+    CopyDiscordSongBtn.Size = UDim2.new(1, -24, 0, 22)
+    CopyDiscordSongBtn.BackgroundColor3 = Color3.fromRGB(88, 101, 242)
+    CopyDiscordSongBtn.AutoButtonColor = false
+    CopyDiscordSongBtn.Font = Enum.Font.GothamBold
+    CopyDiscordSongBtn.Text = "Submit a Song in Discord  (Copy Invite: discord.gg/TVyFdDwDkn)"
+    CopyDiscordSongBtn.TextColor3 = Theme.White
+    CopyDiscordSongBtn.TextSize = 10
+    CopyDiscordSongBtn.ZIndex = 15
+    CopyDiscordSongBtn.Parent = CommunityNoteCard
+    addCorner(CopyDiscordSongBtn, 5)
+
+    CopyDiscordSongBtn.MouseButton1Click:Connect(function()
+        spawnRipple(CopyDiscordSongBtn)
+        if Env.setclipboard then
+            Env.setclipboard("https://discord.gg/TVyFdDwDkn")
+        end
+        CopyDiscordSongBtn.Text = "Copied Discord Invite! (discord.gg/TVyFdDwDkn)"
+        notify("Music Community", "Discord invite copied! Join to submit your song requests.", 4)
+        task.delay(2.2, function()
+            if CopyDiscordSongBtn and CopyDiscordSongBtn.Parent then
+                CopyDiscordSongBtn.Text = "Submit a Song in Discord  (Copy Invite: discord.gg/TVyFdDwDkn)"
+            end
+        end)
+    end)
+
+    createDropdown(MusicTab, "Select Track", State.musicTrackOptions or { "Snowman (Slowed + Reverb) — Sia" }, ConfigState.SelectedTrack or "Snowman (Slowed + Reverb) — Sia", function(opt)
+        ConfigState.SelectedTrack = opt
+        State.musicSimulatedPos = 0
+        if State.seekMusicToRatio then
+            State.seekMusicToRatio(0)
+        end
+        if State.musicIsPlaying and State.setMusicPlaying then
+            State.setMusicPlaying(true)
+        end
+        notify("Music Player", "Selected track: " .. tostring(opt), 3)
+    end)
+
+    createToggle(MusicTab, "Toggle Player UI", ConfigState.MusicPlayerVisible ~= false, function(val)
+        ConfigState.MusicPlayerVisible = val
+        if State.syncMusicPlayerDock then
+            State.syncMusicPlayerDock()
+        end
+    end)
+
+    local PlayMusicToggleCtrl
+    PlayMusicToggleCtrl = createToggle(MusicTab, "Play / Pause Music", false, function(val)
+        if State.setMusicPlaying and State.musicIsPlaying ~= val then
+            State.setMusicPlaying(val)
+        end
+    end)
+
+    State.syncPlayToggleUI = function(isPlaying)
+        if PlayMusicToggleCtrl and PlayMusicToggleCtrl.Set then
+            PlayMusicToggleCtrl.Set(isPlaying, false)
+        end
+    end
+
+    createLabel(MusicTab, "Game Audio & Volume Mixer")
+
+    createToggle(MusicTab, "Mute Game Audio", ConfigState.MuteGameAudio or false, function(val)
+        if State.applyMuteGameAudio then
+            State.applyMuteGameAudio(val)
+        end
+        notify("Audio Mixer", val and "In-game audio muted (Music Player active)." or "In-game audio restored.", 3)
+    end)
+
+    createSlider(MusicTab, "Music Volume", 0, 100, math.floor((ConfigState.MusicVolume or 0.75) * 100), 1, "%", function(val)
+        local norm = math.clamp((tonumber(val) or 75) / 100, 0, 1)
+        ConfigState.MusicVolume = norm
+        if UI.MusicPlayerSound then
+            UI.MusicPlayerSound.Volume = norm
+        end
+    end)
+
+    createToggle(MusicTab, "Loop Track", ConfigState.MusicLooped ~= false, function(val)
+        ConfigState.MusicLooped = val
+        if UI.MusicPlayerSound then
+            UI.MusicPlayerSound.Looped = val
+        end
+    end)
+end
+
+-- TAB 8: SETTINGS (CUSTOM FLOATING PILL + REMEMBER KEY + THEME FREEDOM + CONFIG MANAGER)
 do
     createLabel(SettingsTab, "Customizable Floating Pill & Telemetry (Max 3)")
 
@@ -6605,11 +7523,17 @@ do
     createSlider(SettingsTab, "Window Background Transparency", 0, 0.45, 0.03, 0.01, "", function(val)
         ConfigState.WindowTransparency = val
         UI.MainWindow.BackgroundTransparency = val
+        if State.syncMusicPlayerDock then
+            State.syncMusicPlayerDock()
+        end
     end)
 
     createSlider(SettingsTab, "UI Scale Override", 0.70, 1.15, 1.00, 0.01, "x", function(val)
         State.customUIScaleOverride = val
         UI.MainScale.Scale = val
+        if State.syncMusicPlayerDock then
+            State.syncMusicPlayerDock()
+        end
     end)
 
     createToggle(SettingsTab, "Live Particle Starfield", true, function(val)
@@ -6682,6 +7606,12 @@ do
         else
             updateLightingEnvironment()
         end
+        if State.applyMuteGameAudio then
+            State.applyMuteGameAudio(ConfigState.MuteGameAudio or false)
+        end
+        if State.syncMusicPlayerDock then
+            State.syncMusicPlayerDock()
+        end
         updateCrosshair(0)
         State.lastPillText = ""
         updateFloatingPillTelemetry()
@@ -6744,6 +7674,9 @@ local function launchMainHub()
         tween(UI.MainWindow, SmoothTween, { BackgroundTransparency = ConfigState.WindowTransparency })
         tween(UI.MainStroke, SmoothTween, { Transparency = 0.08 })
         tween(UI.MainScale, SpringTween, { Scale = targetScale })
+    end
+    if State.syncMusicPlayerDock then
+        State.syncMusicPlayerDock()
     end
 
     local autoCfg = safeReadFile(AUTO_LOAD_FILE)
@@ -6960,7 +7893,7 @@ do
 
         -- Spider Climb (Wall Walk)
         if ConfigState.SpiderClimb and myHRP then
-            rayParams.FilterDescendantsInstances = { char }
+            rayParams.FilterDescendantsInstances = getSafeRaycastExcludeList()
             local lookDir = myHRP.CFrame.LookVector
             local wallHit = workspace:Raycast(myHRP.Position, lookDir * 4.0, rayParams)
             if wallHit and wallHit.Instance then
@@ -7299,6 +8232,10 @@ do
 
         if State.updateWeatherFrame then
             State.updateWeatherFrame(workspace.CurrentCamera, safeDt)
+        end
+
+        if State.updateMusicPlayerFrame then
+            State.updateMusicPlayerFrame(safeDt)
         end
 
         if ConfigState.Crosshair then

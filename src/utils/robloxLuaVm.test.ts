@@ -51,6 +51,10 @@ function isfile(path)
 end
 function makefolder() end
 function isfolder() return true end
+function getcustomasset(path)
+    return "rbxasset://custom/" .. tostring(path)
+end
+getsynasset = getcustomasset
 
 _G.__FPS_CAP = 60
 function setfpscap(fps)
@@ -108,6 +112,11 @@ function request(reqOpts)
         return {
             StatusCode = 200,
             Body = '{"code":"TVyFdDwDkn","guild":{"id":"1565870578613752008","name":"Core | BETA","icon":"241614e0c238a40ff43e061065d35f5a"},"approximate_member_count":148,"approximate_presence_count":42}',
+        }
+    elseif string.find(url, "snowman") or string.find(url, "%.mp3") then
+        return {
+            StatusCode = 200,
+            Body = string.rep("ID3_MP3_AUDIO_FRAME_", 40),
         }
     end
     return { StatusCode = 200, Body = '{"success":true}' }
@@ -334,6 +343,7 @@ Enum = {
     HorizontalAlignment = { Right = "Right", Left = "Left", Center = "Center" },
     Font = { GothamBlack = "GothamBlack", GothamBold = "GothamBold", GothamMedium = "GothamMedium", Gotham = "Gotham", Code = "Code" },
     TextXAlignment = { Left = "Left", Right = "Right", Center = "Center" },
+    TextYAlignment = { Top = "Top", Center = "Center", Bottom = "Bottom" },
     TextTruncate = { AtEnd = "AtEnd" },
     SortOrder = { LayoutOrder = "LayoutOrder" },
     AutomaticSize = { Y = "Y", X = "X", XY = "XY" },
@@ -453,12 +463,26 @@ local function createInstance(className)
 
     function props:Play()
         props.IsPlaying = true
+        props.IsPaused = false
         props.Playing = true
         props.__playCount = (props.__playCount or 0) + 1
     end
 
+    function props:Pause()
+        props.IsPlaying = false
+        props.IsPaused = true
+        props.Playing = false
+    end
+
+    function props:Resume()
+        props.IsPlaying = true
+        props.IsPaused = false
+        props.Playing = true
+    end
+
     function props:Stop()
         props.IsPlaying = false
+        props.IsPaused = false
         props.Playing = false
     end
 
@@ -829,6 +853,12 @@ ClickDet.Parent = ChestPart
 local LagParticle = createInstance("ParticleEmitter")
 LagParticle.Enabled = true
 LagParticle.Parent = ChestPart
+
+local GameBgSound = createInstance("Sound")
+GameBgSound.Name = "GameBackgroundMusic"
+GameBgSound.Volume = 0.8
+GameBgSound.IsPlaying = true
+GameBgSound.Parent = WorkspaceObj
 
 function WorkspaceObj:Raycast(origin, direction, params)
     -- Return whichever enemy is along the ray
@@ -1296,41 +1326,134 @@ end
 assert(res1280x1024Btn ~= nil and res1728x1080Btn ~= nil, "Resolution Preset options (1280x960, 1440x1080, 1280x1024, 1728x1080) must exist")
 assert(weatherRainBtn ~= nil and weatherStormBtn ~= nil and weatherSnowBtn ~= nil and weatherSunnyBtn ~= nil, "Weather Preset options (Default, Rain, Thunderstorm, Snow, Sunny) must exist in Visuals_Page")
 
--- Test Weather Presets, Canvas Particle Overlay, 3D Surrounding Lightning & Sound Effects (Rain, Thunderstorm, Snow, Sunny)
+-- Test 100% 3D In-World Volumetric Weather Engine (3D Sky Canopy Volume + 3D Ground Splash Plane + 3D Jagged Lightning Pool + SoundService Audio — Zero Flat 2D Screen Overlay!)
 local weatherPart = workspace:FindFirstChild("CoreXyz_WeatherEmitterPart")
 local weatherEmitter = weatherPart and weatherPart:FindFirstChild("CoreXyz_WeatherEmitter")
 local streakEmitter = weatherPart and weatherPart:FindFirstChild("CoreXyz_WeatherStreakEmitter")
+local mistEmitter = weatherPart and weatherPart:FindFirstChild("CoreXyz_WeatherMistEmitter")
+local groundSplashPart = workspace:FindFirstChild("CoreXyz_WeatherGroundPart")
+local groundSplashEmitter = groundSplashPart and groundSplashPart:FindFirstChild("CoreXyz_WeatherSplashEmitter")
 local lightningPool = workspace:FindFirstChild("CoreXyz_LightningBoltPool")
 local lightningSeg1 = lightningPool and lightningPool:FindFirstChild("CoreXyz_LightningSegment_1")
+local lightningSeg8 = lightningPool and lightningPool:FindFirstChild("CoreXyz_LightningSegment_8")
+local lightningBranch4 = lightningPool and lightningPool:FindFirstChild("CoreXyz_LightningBranch_4")
 local lightningStrikeNode = lightningPool and lightningPool:FindFirstChild("CoreXyz_LightningStrikeNode")
-local spatialThunderSound = lightningStrikeNode and lightningStrikeNode:FindFirstChild("CoreXyz_SpatialThunderSound")
+local spatialThunderSound = game:GetService("SoundService"):FindFirstChild("CoreXyz_SpatialThunderSound")
 local weatherCanvas = overlaysFolder:FindFirstChild("CoreXyz_WeatherCanvas")
-local weatherDrop1 = weatherCanvas and weatherCanvas:FindFirstChild("WeatherDrop_1")
-local weatherSplash1 = weatherCanvas and weatherCanvas:FindFirstChild("WeatherSplash_1")
 local weatherSunRays = game:GetService("Lighting"):FindFirstChild("CoreXyz_WeatherSunRays")
+local weatherBloom = game:GetService("Lighting"):FindFirstChild("CoreXyz_WeatherBloom")
+local weatherAtmosphere = game:GetService("Lighting"):FindFirstChild("CoreXyz_WeatherAtmosphere")
 local ambienceSound = game:GetService("SoundService"):FindFirstChild("CoreXyz_WeatherAmbienceSound")
 local patterSound = game:GetService("SoundService"):FindFirstChild("CoreXyz_WeatherPatterSound")
 local rumblerSound = game:GetService("SoundService"):FindFirstChild("CoreXyz_WeatherRumblerSound")
 local thunderSound = game:GetService("SoundService"):FindFirstChild("CoreXyz_WeatherThunderSound")
-assert(weatherPart ~= nil and weatherEmitter ~= nil and streakEmitter ~= nil and lightningPool ~= nil and lightningSeg1 ~= nil and spatialThunderSound ~= nil and weatherCanvas ~= nil and weatherDrop1 ~= nil and weatherSplash1 ~= nil and weatherSunRays ~= nil and ambienceSound ~= nil and patterSound ~= nil and rumblerSound ~= nil and thunderSound ~= nil, "Pre-allocated Weather Emitters, Canvas Overlay, 3D Lightning Pool, SunRaysEffect, and Multi-Layer Spatial/Ambience Sounds must exist")
+
+assert(weatherCanvas == nil, "Flat 2D CoreXyz_WeatherCanvas screen overlay must be completely removed in favor of 3D in-world weather")
+assert(weatherPart ~= nil and weatherEmitter ~= nil and streakEmitter ~= nil and mistEmitter ~= nil and groundSplashPart ~= nil and groundSplashEmitter ~= nil and lightningPool ~= nil and lightningSeg1 ~= nil and lightningSeg8 ~= nil and lightningBranch4 ~= nil and spatialThunderSound ~= nil and weatherSunRays ~= nil and weatherBloom ~= nil and weatherAtmosphere ~= nil and ambienceSound ~= nil and patterSound ~= nil and rumblerSound ~= nil and thunderSound ~= nil, "Pre-allocated 3D Weather Canopy Emitters, 3D Ground Splash Part, 8-Segment/4-Branch 3D Lightning Pool, Bloom/Atmosphere, and SoundService Audio must exist")
+assert(weatherPart.CanCollide == false and weatherPart.CanQuery == false and weatherPart.CanTouch == false and weatherPart.Massless == true and weatherPart.Archivable == false, "3D Weather Canopy Part must have strict anti-cheat stealth flags")
+assert(groundSplashPart.CanCollide == false and groundSplashPart.CanQuery == false and groundSplashPart.CanTouch == false and groundSplashPart.Massless == true and groundSplashPart.Archivable == false, "3D Ground Splash Part must have strict anti-cheat stealth flags")
 
 weatherRainBtn.MouseButton1Click:Fire()
-assert(weatherEmitter.Enabled == true and weatherEmitter.Rate == 450 and streakEmitter.Enabled == true and weatherCanvas.Visible == true and weatherSplash1.Visible == true and ambienceSound.IsPlaying == true and patterSound.IsPlaying == true, "Selecting Rain must enable high-density rain emitters, canvas rain streaks + ground splashes, and multi-layer rain audio")
-local dropYBefore = weatherDrop1.Position.Y.Scale
+assert(weatherEmitter.Enabled == true and weatherEmitter.Rate == 620 and streakEmitter.Enabled == true and mistEmitter.Enabled == true and groundSplashEmitter.Enabled == true and groundSplashEmitter.Rate == 380 and ambienceSound.IsPlaying == true and patterSound.IsPlaying == true, "Selecting Rain must enable 3D volumetric rain canopy, 3D ground splash emitter (380 rate), 3D mist, and multi-layer rain audio")
 game:GetService("RunService").RenderStepped:Fire(0.1)
-assert(weatherDrop1.Position.Y.Scale ~= dropYBefore, "WeatherCanvas rain droplets must dynamically animate across frames")
+assert(groundSplashPart.Position.Y > -100, "3D Ground Splash Part must position itself on the world surface beneath the player via raycast")
 
 weatherStormBtn.MouseButton1Click:Fire()
-assert(weatherEmitter.Enabled == true and weatherEmitter.Rate == 650 and streakEmitter.Enabled == true and weatherCanvas.Visible == true and ambienceSound.IsPlaying == true and patterSound.IsPlaying == true and rumblerSound.IsPlaying == true, "Selecting Thunderstorm must enable 650-rate storm emitter, canvas rain overlay, and multi-layer storm audio")
+assert(weatherEmitter.Enabled == true and weatherEmitter.Rate == 850 and streakEmitter.Enabled == true and mistEmitter.Enabled == true and groundSplashEmitter.Enabled == true and groundSplashEmitter.Rate == 580 and ambienceSound.IsPlaying == true and patterSound.IsPlaying == true and rumblerSound.IsPlaying == true, "Selecting Thunderstorm must enable 850-rate 3D storm canopy, 580-rate 3D ground splash plane, and multi-layer storm audio")
 game:GetService("RunService").RenderStepped:Fire(3.0)
-assert((thunderSound.__playCount or 0) >= 1 and (spatialThunderSound.__playCount or 0) >= 1, "Thunderstorm must trigger periodic 3D surrounding lightning strike & spatial thunder audio")
-assert(lightningSeg1.Transparency < 1, "3D surrounding Neon lightning bolt segments must flash visible during strike")
+assert((thunderSound.__playCount or 0) >= 1 and (spatialThunderSound.__playCount or 0) >= 1, "Thunderstorm must trigger periodic 3D surrounding lightning strike & spatial thunder audio in SoundService")
+assert(lightningSeg1.Transparency < 1 and lightningSeg8.Transparency < 1, "3D surrounding Neon lightning bolt segments must flash visible in world space during strike")
 
 weatherSnowBtn.MouseButton1Click:Fire()
-assert(weatherEmitter.Enabled == true and weatherEmitter.Rate == 500 and streakEmitter.Enabled == true and weatherCanvas.Visible == true and weatherSplash1.Visible == false and ambienceSound.IsPlaying == true and patterSound.IsPlaying == true, "Selecting Snow must enable dense 500-rate snowflake emitter, canvas snowflakes (no ground layer), and winter wind audio")
+assert(weatherEmitter.Enabled == true and weatherEmitter.Rate == 580 and streakEmitter.Enabled == true and mistEmitter.Enabled == true and groundSplashEmitter.Enabled == false and ambienceSound.IsPlaying == true and patterSound.IsPlaying == true, "Selecting Snow must enable 580-rate 3D tumbling snowflake canopy, disable rain splashes, and play winter wind audio")
 
 weatherSunnyBtn.MouseButton1Click:Fire()
-assert(weatherEmitter.Enabled == false and streakEmitter.Enabled == false and weatherCanvas.Visible == false and weatherSunRays.Enabled == true and ambienceSound.IsPlaying == true, "Selecting Sunny must disable precipitation emitters & canvas, enable SunRaysEffect, and play sunny ambience")
+assert(weatherEmitter.Enabled == false and streakEmitter.Enabled == false and mistEmitter.Enabled == false and groundSplashEmitter.Enabled == false and weatherSunRays.Enabled == true and ambienceSound.IsPlaying == true, "Selecting Sunny must disable 3D precipitation emitters, enable SunRaysEffect, and play sunny ambience")
+
+-- Test Community Music System, Track Auto-Downloader, Connected Wavy Ocean Player UI & Mute Game Audio
+local musicTabBtn, musicPage
+for _, desc in ipairs(mainWindow:GetDescendants()) do
+    if desc.Name == "Music_TabBtn" then musicTabBtn = desc end
+    if desc.Name == "Music_Page" then musicPage = desc end
+end
+assert(musicTabBtn ~= nil and musicPage ~= nil, "Music_TabBtn and Music_Page must exist in MainWindow")
+musicTabBtn.MouseButton1Click:Fire()
+assert(musicPage.Visible == true, "Clicking Music_TabBtn must open Music_Page")
+
+local communityNoteCard = musicPage:FindFirstChild("MusicCommunityNoteCard")
+local communityNoteText = communityNoteCard and communityNoteCard:FindFirstChild("MusicCommunityNoteText")
+local musicDiscordBtn = communityNoteCard and communityNoteCard:FindFirstChild("MusicJoinDiscordButton")
+assert(communityNoteCard ~= nil and communityNoteText ~= nil and musicDiscordBtn ~= nil, "MusicCommunityNoteCard with note text and Discord invite button must exist at top of Music_Page")
+assert(string.find(communityNoteText.Text, "handpicked from our Discord community") ~= nil, "MusicCommunityNoteText must explain Discord community song selection")
+_G.__CLIPBOARD = ""
+musicDiscordBtn.MouseButton1Click:Fire()
+assert(_G.__CLIPBOARD == "https://discord.gg/TVyFdDwDkn", "Clicking MusicJoinDiscordButton must copy https://discord.gg/TVyFdDwDkn to clipboard")
+
+local musicPlayerBar = screenGui:FindFirstChild("CoreMusicPlayerBar")
+assert(musicPlayerBar ~= nil and musicPlayerBar.Visible == true, "CoreMusicPlayerBar must exist and be visible below MainWindow when authorized")
+local musicTitleLbl = musicPlayerBar:FindFirstChild("MusicTitleLabel")
+local musicStatusLbl = musicPlayerBar:FindFirstChild("MusicStatusLabel")
+local musicTimeLbl = musicPlayerBar:FindFirstChild("MusicTimeLabel")
+local musicPrevBtn = musicPlayerBar:FindFirstChild("MusicPrevButton")
+local musicPlayPauseBtn = musicPlayerBar:FindFirstChild("MusicPlayPauseButton")
+local musicNextBtn = musicPlayerBar:FindFirstChild("MusicNextButton")
+local musicTimelineTrack = musicPlayerBar:FindFirstChild("MusicTimelineTrack")
+local musicTimelineHitbox = musicTimelineTrack and musicTimelineTrack:FindFirstChild("MusicTimelineHitbox")
+local musicScrubberKnob = musicTimelineTrack and musicTimelineTrack:FindFirstChild("MusicScrubberKnob")
+local oceanSeg1 = musicTimelineTrack and musicTimelineTrack:FindFirstChild("OceanWaveSegment_1")
+local oceanSeg24 = musicTimelineTrack and musicTimelineTrack:FindFirstChild("OceanWaveSegment_24")
+assert(musicTitleLbl ~= nil and musicStatusLbl ~= nil and musicTimeLbl ~= nil and musicPrevBtn ~= nil and musicPlayPauseBtn ~= nil and musicNextBtn ~= nil and musicTimelineTrack ~= nil and musicTimelineHitbox ~= nil and musicScrubberKnob ~= nil and oceanSeg1 ~= nil and oceanSeg24 ~= nil, "CoreMusicPlayerBar must contain title/status/time labels, transport buttons, and 24-segment Wavy Ocean timeline scrubber")
+assert(musicTitleLbl.Text == "Snowman (Slowed + Reverb)", "Default track title must be 'Snowman (Slowed + Reverb)'")
+
+-- Click Play on Connected Music Player Bar -> downloads & caches MP3 to CoreXyz_Music/sia_snowman_slowed.mp3 and plays!
+local musicSound = game:GetService("SoundService"):FindFirstChild("CoreXyz_MusicPlayerSound")
+assert(musicSound ~= nil, "CoreXyz_MusicPlayerSound must exist in SoundService")
+musicPlayPauseBtn.MouseButton1Click:Fire()
+assert(_G.__FILES["CoreXyz_Music/sia_snowman_slowed.mp3"] ~= nil, "Playing track must auto-download and cache MP3 to CoreXyz_Music/sia_snowman_slowed.mp3")
+assert(musicSound.IsPlaying == true and musicPlayPauseBtn.Text == "⏸", "CoreXyz_MusicPlayerSound must be playing and button must show pause icon")
+
+-- Step RenderStepped -> verify Wavy Ocean Scrubber segments and time counter animate smoothly
+local seg1YBefore = oceanSeg1.Position.Y.Scale
+game:GetService("RunService").RenderStepped:Fire(5.2)
+assert(oceanSeg1.Position.Y.Scale ~= seg1YBefore, "Wavy Ocean Scrubber segments must animate wave motion across RenderStepped frames")
+assert(musicTimeLbl.Text ~= "00:00 / 03:04", "MusicTimeLabel must advance as track plays")
+
+-- Test interactive click/drag seeking on MusicTimelineHitbox (seek to 50% of track)
+musicTimelineTrack.AbsolutePosition = Vector2.new(100, 400)
+musicTimelineTrack.AbsoluteSize = Vector2.new(400, 18)
+musicTimelineHitbox.InputBegan:Fire({
+    UserInputType = Enum.UserInputType.MouseButton1,
+    Position = Vector2.new(300, 409),
+})
+musicTimelineHitbox.InputEnded:Fire({
+    UserInputType = Enum.UserInputType.MouseButton1,
+    Position = Vector2.new(300, 409),
+})
+assert(math.abs(musicScrubberKnob.Position.X.Scale - 0.5) < 0.03, "Clicking/scrubbing middle of MusicTimelineHitbox must seek scrubber knob to ~0.5")
+
+-- Test Toggle Player UI and Mute Game Audio toggles in Music_Page
+local togglePlayerUiBtn, muteGameAudioBtn
+for _, ctrl in ipairs(musicPage:GetDescendants()) do
+    if ctrl.ClassName == "TextButton" and ctrl.Text == "" then
+        local lbl = ctrl:FindFirstChildOfClass("TextLabel")
+        if lbl and lbl.Text == "Toggle Player UI" then togglePlayerUiBtn = ctrl end
+        if lbl and lbl.Text == "Mute Game Audio" then muteGameAudioBtn = ctrl end
+    end
+end
+assert(togglePlayerUiBtn ~= nil and muteGameAudioBtn ~= nil, "Toggle Player UI and Mute Game Audio toggles must exist in Music_Page")
+
+togglePlayerUiBtn.MouseButton1Click:Fire()
+assert(musicPlayerBar.Visible == false, "Toggling off 'Toggle Player UI' must hide CoreMusicPlayerBar")
+togglePlayerUiBtn.MouseButton1Click:Fire()
+assert(musicPlayerBar.Visible == true, "Toggling on 'Toggle Player UI' must show CoreMusicPlayerBar")
+
+local gameBgSound = workspace:FindFirstChild("GameBackgroundMusic")
+assert(gameBgSound.Volume == 0.8, "GameBackgroundMusic starts at 0.8 volume")
+muteGameAudioBtn.MouseButton1Click:Fire()
+assert(gameBgSound.Volume == 0, "Enabling Mute Game Audio must silence in-game Sound instances")
+assert(musicSound.Volume > 0, "Mute Game Audio must NOT mute CoreXyz_MusicPlayerSound")
+muteGameAudioBtn.MouseButton1Click:Fire()
+assert(gameBgSound.Volume == 0.8, "Disabling Mute Game Audio must restore original in-game Sound volumes")
 
 res1280x1024Btn.MouseButton1Click:Fire()
 game:GetService("RunService").RenderStepped:Fire(0.016)

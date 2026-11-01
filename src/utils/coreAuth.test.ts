@@ -135,4 +135,32 @@ test('weatherEngine creates and steps dense snow, heavy rain droplets with groun
   assert.ok(bolt.stereoPan >= -0.92 && bolt.stereoPan <= 0.92, 'Lightning bolt must compute stereo pan position');
 });
 
+test('Community Music System defines Discord track submission note, Sia Snowman raw URLs, and wavy ocean timeline math', async () => {
+  const {
+    COMMUNITY_MUSIC_NOTE,
+    COMMUNITY_MUSIC_TRACKS,
+    formatTrackTimestamp,
+    computeOceanWaveDisplacement,
+  } = await import('./coreAuth');
+
+  assert.ok(
+    COMMUNITY_MUSIC_NOTE.includes('handpicked from our Discord community') &&
+      COMMUNITY_MUSIC_NOTE.includes('Join our Discord community to submit your track requests')
+  );
+  assert.equal(COMMUNITY_MUSIC_TRACKS.length, 1);
+  assert.equal(COMMUNITY_MUSIC_TRACKS[0].label, 'Snowman (Slowed + Reverb) — Sia');
+  assert.ok(
+    COMMUNITY_MUSIC_TRACKS[0].rawUrls[0].includes(
+      'raw.githubusercontent.com/FeykHere/Core.xyz/main/sia%20-%20snowman'
+    )
+  );
+  assert.equal(formatTrackTimestamp(0), '00:00');
+  assert.equal(formatTrackTimestamp(184), '03:04');
+
+  const wavePlaying = computeOceanWaveDisplacement(0.35, 1.2, true);
+  const waveIdle = computeOceanWaveDisplacement(0.35, 1.2, false);
+  assert.ok(Math.abs(wavePlaying) > Math.abs(waveIdle), 'Playing state must amplify ocean wave crest motion');
+});
+
+
 

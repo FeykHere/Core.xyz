@@ -135,14 +135,22 @@ test('weatherEngine creates and steps dense snow, heavy rain droplets with groun
   assert.ok(bolt.stereoPan >= -0.92 && bolt.stereoPan <= 0.92, 'Lightning bolt must compute stereo pan position');
 });
 
-test('Community Music System defines Discord track submission note, Sia Snowman raw URLs, and wavy ocean timeline math', async () => {
+test('Community Music System defines Discord track submission note, default hidden player UI, Sia Snowman raw URLs, and 3-harmonic wavy ocean timeline math', async () => {
   const {
     COMMUNITY_MUSIC_NOTE,
     COMMUNITY_MUSIC_TRACKS,
+    DEFAULT_CORE_CONFIG,
     formatTrackTimestamp,
     computeOceanWaveDisplacement,
+    computeOceanWaveCrestMetrics,
+    buildOceanWaveSvgPath,
   } = await import('./coreAuth');
 
+  assert.equal(
+    DEFAULT_CORE_CONFIG.musicPlayerVisible,
+    false,
+    'Connected Music Player UI must be toggled OFF by default'
+  );
   assert.ok(
     COMMUNITY_MUSIC_NOTE.includes('handpicked from our Discord community') &&
       COMMUNITY_MUSIC_NOTE.includes('Join our Discord community to submit your track requests')
@@ -160,7 +168,29 @@ test('Community Music System defines Discord track submission note, Sia Snowman 
   const wavePlaying = computeOceanWaveDisplacement(0.35, 1.2, true);
   const waveIdle = computeOceanWaveDisplacement(0.35, 1.2, false);
   assert.ok(Math.abs(wavePlaying) > Math.abs(waveIdle), 'Playing state must amplify ocean wave crest motion');
+
+  const metricsPlaying = computeOceanWaveCrestMetrics(0.42, 1.8, true);
+  const metricsIdle = computeOceanWaveCrestMetrics(0.42, 1.8, false);
+  assert.ok(metricsPlaying.crestFactor >= 0 && metricsPlaying.crestFactor <= 1);
+  assert.ok(Math.abs(metricsPlaying.tiltDeg) >= Math.abs(metricsIdle.tiltDeg));
+
+  const svgPaths = buildOceanWaveSvgPath(300, 26, 1.5, true);
+  assert.ok(svgPaths.linePath.startsWith('M 0.0 '));
+  assert.ok(svgPaths.areaPath.endsWith('Z'));
+
+  const { buildCloudflareLoadstringSnippet, CLOUDFLARE_WORKER_DEFAULT_URL } = await import(
+    './coreAuth'
+  );
+  assert.equal(
+    buildCloudflareLoadstringSnippet(CLOUDFLARE_WORKER_DEFAULT_URL, false),
+    'loadstring(game:HttpGet("https://core-xyz-gateway.feykhere.workers.dev"))()'
+  );
+  assert.equal(
+    buildCloudflareLoadstringSnippet('https://core-xyz-gateway.feyk.workers.dev/', true),
+    'loadstring(game:HttpGet("https://core-xyz-gateway.feyk.workers.dev?sig=CORE_V44_EXEC"))()'
+  );
 });
+
 
 
 

@@ -947,7 +947,30 @@ keyInputBox.Text = "KEY_INVALID_000"
 unlockBtn.MouseButton1Click:Fire()
 assert(keyCard.Visible == true and mainWindow.Visible == false, "Invalid Platoboost key must be rejected and keep KeyCard open")
 
--- 3) Submit valid Platoboost key -> verifies SHA-256 nonce hash, hides KeyCard, launches MainHub, and tracks live Key Time Left!
+-- 2B) Security Layer 1 Test: Active HTTP Spy (_G.SimpleSpy) must block even a valid key!
+_G.SimpleSpy = true
+keyInputBox.Text = "KEY_PLATOBOOST_LIVE_2026"
+unlockBtn.MouseButton1Click:Fire()
+assert(keyCard.Visible == true and mainWindow.Visible == false, "Layer 1 Anti-HTTP Spy Guard must block key verification while SimpleSpy is active")
+_G.SimpleSpy = nil
+
+-- 2C) Security Layer 2 Test: Hooked request() that blindly returns valid=true for all keys must be caught by Canary Trap!
+local legitimateRequest = request
+request = function(reqOpts)
+    local url = tostring(reqOpts and reqOpts.Url or "")
+    local body = tostring(reqOpts and reqOpts.Body or "")
+    local nonce = string.match(url, "nonce=([%a%d]+)") or string.match(body, '"nonce":"([^"]+)"') or ""
+    local forgedHash = mockSha256("true-" .. nonce .. "-" .. PLATO_SECRET)
+    return { StatusCode = 200, Body = '{"success":true,"data":{"valid":true,"hash":"' .. forgedHash .. '"}}' }
+end
+http_request = request
+keyInputBox.Text = "KEY_PLATOBOOST_LIVE_2026"
+unlockBtn.MouseButton1Click:Fire()
+assert(keyCard.Visible == true and mainWindow.Visible == false, "Layer 2 Canary Trap must detect spoofed HTTP responses that return valid=true on canary keys")
+request = legitimateRequest
+http_request = legitimateRequest
+
+-- 3) Submit valid Platoboost key -> verifies SHA-256 nonce hash + passes Canary Trap, seals Session Entanglement, hides KeyCard, launches MainHub!
 keyInputBox.Text = "KEY_PLATOBOOST_LIVE_2026"
 unlockBtn.MouseButton1Click:Fire()
 
@@ -1390,7 +1413,25 @@ musicDiscordBtn.MouseButton1Click:Fire()
 assert(_G.__CLIPBOARD == "https://discord.gg/TVyFdDwDkn", "Clicking MusicJoinDiscordButton must copy https://discord.gg/TVyFdDwDkn to clipboard")
 
 local musicPlayerBar = screenGui:FindFirstChild("CoreMusicPlayerBar")
-assert(musicPlayerBar ~= nil and musicPlayerBar.Visible == true, "CoreMusicPlayerBar must exist and be visible below MainWindow when authorized")
+assert(musicPlayerBar ~= nil and musicPlayerBar.Visible == false, "CoreMusicPlayerBar must exist and be toggled OFF (Visible == false) by default")
+
+-- Verify Toggle Player UI and Mute Game Audio toggles exist in Music_Page, and redundant Play / Pause Music toggle is removed
+local togglePlayerUiBtn, muteGameAudioBtn, redundantPlayPauseToggleBtn
+for _, ctrl in ipairs(musicPage:GetDescendants()) do
+    if ctrl.ClassName == "TextButton" and ctrl.Text == "" then
+        local lbl = ctrl:FindFirstChildOfClass("TextLabel")
+        if lbl and lbl.Text == "Toggle Player UI" then togglePlayerUiBtn = ctrl end
+        if lbl and lbl.Text == "Mute Game Audio" then muteGameAudioBtn = ctrl end
+        if lbl and lbl.Text == "Play / Pause Music" then redundantPlayPauseToggleBtn = ctrl end
+    end
+end
+assert(togglePlayerUiBtn ~= nil and muteGameAudioBtn ~= nil, "Toggle Player UI and Mute Game Audio toggles must exist in Music_Page")
+assert(redundantPlayPauseToggleBtn == nil, "Redundant 'Play / Pause Music' toggle must be removed from Music_Page since the player UI has transport controls")
+
+-- Toggle Player UI ON -> verify CoreMusicPlayerBar becomes visible below MainWindow
+togglePlayerUiBtn.MouseButton1Click:Fire()
+assert(musicPlayerBar.Visible == true, "Clicking 'Toggle Player UI' must reveal CoreMusicPlayerBar below MainWindow")
+
 local musicTitleLbl = musicPlayerBar:FindFirstChild("MusicTitleLabel")
 local musicStatusLbl = musicPlayerBar:FindFirstChild("MusicStatusLabel")
 local musicTimeLbl = musicPlayerBar:FindFirstChild("MusicTimeLabel")
@@ -1400,9 +1441,10 @@ local musicNextBtn = musicPlayerBar:FindFirstChild("MusicNextButton")
 local musicTimelineTrack = musicPlayerBar:FindFirstChild("MusicTimelineTrack")
 local musicTimelineHitbox = musicTimelineTrack and musicTimelineTrack:FindFirstChild("MusicTimelineHitbox")
 local musicScrubberKnob = musicTimelineTrack and musicTimelineTrack:FindFirstChild("MusicScrubberKnob")
+local musicScrubberKnobHalo = musicTimelineTrack and musicTimelineTrack:FindFirstChild("MusicScrubberKnobHalo")
 local oceanSeg1 = musicTimelineTrack and musicTimelineTrack:FindFirstChild("OceanWaveSegment_1")
-local oceanSeg24 = musicTimelineTrack and musicTimelineTrack:FindFirstChild("OceanWaveSegment_24")
-assert(musicTitleLbl ~= nil and musicStatusLbl ~= nil and musicTimeLbl ~= nil and musicPrevBtn ~= nil and musicPlayPauseBtn ~= nil and musicNextBtn ~= nil and musicTimelineTrack ~= nil and musicTimelineHitbox ~= nil and musicScrubberKnob ~= nil and oceanSeg1 ~= nil and oceanSeg24 ~= nil, "CoreMusicPlayerBar must contain title/status/time labels, transport buttons, and 24-segment Wavy Ocean timeline scrubber")
+local oceanSeg28 = musicTimelineTrack and musicTimelineTrack:FindFirstChild("OceanWaveSegment_28")
+assert(musicTitleLbl ~= nil and musicStatusLbl ~= nil and musicTimeLbl ~= nil and musicPrevBtn ~= nil and musicPlayPauseBtn ~= nil and musicNextBtn ~= nil and musicTimelineTrack ~= nil and musicTimelineHitbox ~= nil and musicScrubberKnob ~= nil and musicScrubberKnobHalo ~= nil and oceanSeg1 ~= nil and oceanSeg28 ~= nil, "CoreMusicPlayerBar must contain title/status/time labels, transport buttons, and 28-segment Wavy Ocean timeline scrubber with knob halo")
 assert(musicTitleLbl.Text == "Snowman (Slowed + Reverb)", "Default track title must be 'Snowman (Slowed + Reverb)'")
 
 -- Click Play on Connected Music Player Bar -> downloads & caches MP3 to CoreXyz_Music/sia_snowman_slowed.mp3 and plays!
@@ -1412,10 +1454,11 @@ musicPlayPauseBtn.MouseButton1Click:Fire()
 assert(_G.__FILES["CoreXyz_Music/sia_snowman_slowed.mp3"] ~= nil, "Playing track must auto-download and cache MP3 to CoreXyz_Music/sia_snowman_slowed.mp3")
 assert(musicSound.IsPlaying == true and musicPlayPauseBtn.Text == "⏸", "CoreXyz_MusicPlayerSound must be playing and button must show pause icon")
 
--- Step RenderStepped -> verify Wavy Ocean Scrubber segments and time counter animate smoothly
+-- Step RenderStepped -> verify Wavy Ocean Scrubber segments animate both vertical crest position and tangential wave slope rotation
 local seg1YBefore = oceanSeg1.Position.Y.Scale
 game:GetService("RunService").RenderStepped:Fire(5.2)
 assert(oceanSeg1.Position.Y.Scale ~= seg1YBefore, "Wavy Ocean Scrubber segments must animate wave motion across RenderStepped frames")
+assert(oceanSeg1.Rotation ~= 0, "Wavy Ocean Scrubber segments must tilt tangentially along the ocean wave slope")
 assert(musicTimeLbl.Text ~= "00:00 / 03:04", "MusicTimeLabel must advance as track plays")
 
 -- Test interactive click/drag seeking on MusicTimelineHitbox (seek to 50% of track)
@@ -1431,17 +1474,7 @@ musicTimelineHitbox.InputEnded:Fire({
 })
 assert(math.abs(musicScrubberKnob.Position.X.Scale - 0.5) < 0.03, "Clicking/scrubbing middle of MusicTimelineHitbox must seek scrubber knob to ~0.5")
 
--- Test Toggle Player UI and Mute Game Audio toggles in Music_Page
-local togglePlayerUiBtn, muteGameAudioBtn
-for _, ctrl in ipairs(musicPage:GetDescendants()) do
-    if ctrl.ClassName == "TextButton" and ctrl.Text == "" then
-        local lbl = ctrl:FindFirstChildOfClass("TextLabel")
-        if lbl and lbl.Text == "Toggle Player UI" then togglePlayerUiBtn = ctrl end
-        if lbl and lbl.Text == "Mute Game Audio" then muteGameAudioBtn = ctrl end
-    end
-end
-assert(togglePlayerUiBtn ~= nil and muteGameAudioBtn ~= nil, "Toggle Player UI and Mute Game Audio toggles must exist in Music_Page")
-
+-- Toggle Player UI OFF and back ON
 togglePlayerUiBtn.MouseButton1Click:Fire()
 assert(musicPlayerBar.Visible == false, "Toggling off 'Toggle Player UI' must hide CoreMusicPlayerBar")
 togglePlayerUiBtn.MouseButton1Click:Fire()

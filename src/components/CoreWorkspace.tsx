@@ -22,6 +22,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import {
+  CLOUDFLARE_WORKER_DEFAULT_URL,
   COMMUNITY_MUSIC_NOTE,
   COMMUNITY_MUSIC_TRACKS,
   CoreConfigState,
@@ -40,8 +41,11 @@ import {
   PLATOBOOST_SERVICE_ID,
   WEATHER_PRESETS,
   WeatherPresetType,
+  buildCloudflareLoadstringSnippet,
   buildGithubRawUrl,
   buildLoadstringSnippet,
+  buildOceanWaveSvgPath,
+  computeOceanWaveCrestMetrics,
   computeOceanWaveDisplacement,
   formatRemainingKeyTime,
   formatTrackTimestamp,
@@ -59,7 +63,7 @@ interface CoreWorkspaceProps {
 type ActiveSection = 'simulator' | 'github' | 'improvements';
 type RobloxTab = 'Home' | 'Combat' | 'Visuals' | 'Movement' | 'Music' | 'Misc';
 
-const OCEAN_SEGMENT_INDICES = Array.from({ length: 24 }, (_, i) => i);
+const OCEAN_SEGMENT_INDICES = Array.from({ length: 28 }, (_, i) => i);
 
 const ACCENT_HEX: Record<CoreConfigState['espAccent'], string> = {
   White: '#FFFFFF',
@@ -83,7 +87,8 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
   const [robloxTab, setRobloxTab] = useState<RobloxTab>('Home');
   const [config, setConfig] = useState<CoreConfigState>(DEFAULT_CORE_CONFIG);
   const [githubConfig, setGithubConfig] = useState<GithubRepoConfig>(DEFAULT_GITHUB_CONFIG);
-  const [useLiveHost, setUseLiveHost] = useState(true);
+  const [loaderSourceMode, setLoaderSourceMode] = useState<'cloudflare' | 'live' | 'github'>('cloudflare');
+  const [cloudflareWorkerUrl, setCloudflareWorkerUrl] = useState<string>(CLOUDFLARE_WORKER_DEFAULT_URL);
   const [copiedLoadstring, setCopiedLoadstring] = useState(false);
   const [copiedLua, setCopiedLua] = useState(false);
   const [copiedDiscord, setCopiedDiscord] = useState(false);
@@ -120,6 +125,13 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
     const audio = audioRef.current;
     if (!audio) return;
     if (config.musicPlaying) {
+      if (Math.abs(audio.currentTime - trackTimeSec) > 1.5) {
+        try {
+          audio.currentTime = trackTimeSec;
+        } catch {
+          // ignore on unbuffered stream
+        }
+      }
       audio.play().catch(() => {
         // Fallback to simulated timeline progression when external audio stream is blocked
       });
@@ -128,17 +140,17 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
     }
   }, [config.musicPlaying, activeTrack]);
 
-  // Continuous Wavy Ocean Phase & Playback Time Ticker
+  // Continuous 20 FPS Wavy Ocean Phase & Playback Time Ticker
   useEffect(() => {
     const id = window.setInterval(() => {
-      setWavePhase((prev) => prev + (config.musicPlaying ? 0.24 : 0.08));
+      setWavePhase((prev) => prev + (config.musicPlaying ? 0.16 : 0.055));
       if (config.musicPlaying && !isScrubbing) {
         const audio = audioRef.current;
         if (audio && !audio.paused && audio.currentTime > 0) {
           setTrackTimeSec(audio.currentTime);
         } else {
           setTrackTimeSec((prev) => {
-            const next = prev + 0.1;
+            const next = prev + 0.05;
             if (next >= activeTrack.durationSec) {
               return config.musicLooped ? 0 : activeTrack.durationSec;
             }
@@ -146,7 +158,7 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
           });
         }
       }
-    }, 100);
+    }, 50);
     return () => window.clearInterval(id);
   }, [config.musicPlaying, config.musicLooped, isScrubbing, activeTrack.durationSec]);
 
@@ -216,17 +228,25 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
       .catch(() => {});
   }, []);
 
-  const rawUrl = useMemo(
-    () => (useLiveHost ? LIVE_RAW_SCRIPT_URL : buildGithubRawUrl(githubConfig)),
-    [useLiveHost, githubConfig]
-  );
-  const loadstringSnippet = useMemo(
-    () =>
-      useLiveHost
-        ? LIVE_LOADSTRING_SNIPPET
-        : buildLoadstringSnippet(githubConfig, false),
-    [useLiveHost, githubConfig]
-  );
+  const rawUrl = useMemo(() => {
+    if (loaderSourceMode === 'cloudflare') {
+      return cloudflareWorkerUrl.trim() || CLOUDFLARE_WORKER_DEFAULT_URL;
+    }
+    if (loaderSourceMode === 'live') {
+      return LIVE_RAW_SCRIPT_URL;
+    }
+    return buildGithubRawUrl(githubConfig);
+  }, [loaderSourceMode, cloudflareWorkerUrl, githubConfig]);
+
+  const loadstringSnippet = useMemo(() => {
+    if (loaderSourceMode === 'cloudflare') {
+      return buildCloudflareLoadstringSnippet(cloudflareWorkerUrl, false);
+    }
+    if (loaderSourceMode === 'live') {
+      return LIVE_LOADSTRING_SNIPPET;
+    }
+    return buildLoadstringSnippet(githubConfig, false);
+  }, [loaderSourceMode, cloudflareWorkerUrl, githubConfig]);
   const generatedLua = useMemo(
     () => fullLuaFile || generateCoreLuaScript(config),
     [fullLuaFile, config]
@@ -383,11 +403,11 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
                 </span>
               </div>
               <h2 className="text-xl font-bold text-white">
-                Working 1-Line Loadstring (Fixed HTTP 404 for Delta Executor)
+                Protected 1-Line Loadstring (Cloudflare Private Gateway + 3-Layer Anti-Crack)
               </h2>
               <p className="text-sm text-neutral-400 max-w-2xl">
-                Paste this directly into Delta Executor—it points to the live hosted{' '}
-                <code className="text-white">Core.xyz.lua</code> script so it will not return HTTP 404.
+                Serves <code className="text-white">Core.xyz.lua</code> from your private GitHub repository via your{' '}
+                <code className="text-white">core-xyz-gateway</code> Cloudflare Worker while blocking browser &amp; scraper inspection (403 Access Denied).
               </p>
             </div>
 
@@ -395,9 +415,20 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
               <div className="flex items-center gap-1 p-1 bg-[#141414] border border-white/10 rounded-lg">
                 <button
                   type="button"
-                  onClick={() => setUseLiveHost(true)}
+                  onClick={() => setLoaderSourceMode('cloudflare')}
                   className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                    useLiveHost
+                    loaderSourceMode === 'cloudflare'
+                      ? 'bg-white text-black'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  Cloudflare Gateway (Private Repo)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLoaderSourceMode('live')}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    loaderSourceMode === 'live'
                       ? 'bg-white text-black'
                       : 'text-neutral-400 hover:text-white'
                   }`}
@@ -406,9 +437,9 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setUseLiveHost(false)}
+                  onClick={() => setLoaderSourceMode('github')}
                   className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                    !useLiveHost
+                    loaderSourceMode === 'github'
                       ? 'bg-white text-black'
                       : 'text-neutral-400 hover:text-white'
                   }`}
@@ -428,7 +459,29 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
             </div>
           </div>
 
-          <div className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 bg-[#060606] border border-white/10 rounded-lg p-3">
+          {loaderSourceMode === 'cloudflare' && (
+            <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-3 bg-[#09090C] border border-white/10 rounded-lg px-3.5 py-2.5">
+              <label
+                htmlFor="cf-worker-url"
+                className="text-xs font-semibold text-neutral-300 whitespace-nowrap"
+              >
+                Your Cloudflare Worker URL:
+              </label>
+              <input
+                id="cf-worker-url"
+                type="url"
+                value={cloudflareWorkerUrl}
+                onChange={(e) => setCloudflareWorkerUrl(e.target.value)}
+                placeholder="https://core-xyz-gateway.<your-subdomain>.workers.dev"
+                className="flex-1 bg-[#121216] border border-white/15 rounded-md px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-white"
+              />
+              <span className="text-[11px] font-mono text-emerald-400 whitespace-nowrap">
+                ● 403 Browser Shield Active
+              </span>
+            </div>
+          )}
+
+          <div className="mt-3 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 bg-[#060606] border border-white/10 rounded-lg p-3">
             <code
               className="flex-1 text-xs sm:text-sm font-mono text-white overflow-x-auto whitespace-nowrap py-1 px-2"
               data-testid="loadstring-code"
@@ -463,23 +516,32 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
                   }
                 }}
               />
-              <div className="rounded-xl bg-[#0A0A0A] border border-white/15 overflow-hidden flex flex-col">
+              <div className="rounded-xl bg-[#09090B] border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.75)] overflow-hidden flex flex-col">
                 {/* Simulated Roblox Window Title Bar */}
-                <div className="px-5 py-3.5 bg-[#121212] border-b border-white/10 flex items-center justify-between">
-                  <span className="font-mono text-sm font-bold tracking-tight text-white">
-                    CORE.XYZ
-                  </span>
+                <div className="relative px-5 py-3.5 bg-gradient-to-r from-[#111114] via-[#151519] to-[#111114] border-b border-white/10 flex items-center justify-between">
+                  <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/35 to-transparent" />
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-2 h-2 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.9)]" />
+                    <span className="font-mono text-sm font-extrabold tracking-tight text-white">
+                      CORE.XYZ
+                    </span>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/[0.07] border border-white/10 text-neutral-300">
+                      v4.4 PRO
+                    </span>
+                  </div>
                   <div className="flex items-center gap-3 text-xs text-neutral-400 font-mono tabular-nums">
                     <span>Key Time Left: {liveKeyTimeLeft}</span>
                     <span>·</span>
-                    <span>[R-SHIFT] Toggle</span>
+                    <span className="px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/10 text-[11px] text-neutral-300">
+                      [R-SHIFT]
+                    </span>
                   </div>
                 </div>
 
                 {/* Window Body: Sidebar + Active Tab Controls */}
                 <div className="flex-1 grid grid-cols-1 sm:grid-cols-12 min-h-[420px]">
                   {/* Sidebar Tabs */}
-                  <div className="sm:col-span-4 bg-[#0E0E0E] border-b sm:border-b-0 sm:border-r border-white/10 p-3 flex sm:flex-col gap-1.5 overflow-x-auto">
+                  <div className="sm:col-span-4 bg-[#0C0C0E] border-b sm:border-b-0 sm:border-r border-white/10 p-3 flex sm:flex-col gap-1.5 overflow-x-auto">
                     {(
                       [
                         { id: 'Home', icon: Home },
@@ -496,29 +558,36 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
                         key={id}
                         type="button"
                         onClick={() => setRobloxTab(id)}
-                        className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                        className={`relative flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer overflow-hidden ${
                           isActive
-                            ? 'bg-white text-black'
+                            ? 'text-black'
                             : 'text-neutral-400 hover:text-white hover:bg-white/[0.05]'
                         }`}
                       >
-                        <Icon className="w-4 h-4 shrink-0" />
-                        <span>{id}</span>
+                        {isActive && (
+                          <motion.div
+                            layoutId="core-sidebar-active-pill"
+                            transition={{ type: 'spring', stiffness: 460, damping: 34 }}
+                            className="absolute inset-0 bg-white rounded-lg shadow-[0_0_20px_rgba(255,255,255,0.28)]"
+                          />
+                        )}
+                        <Icon className="relative z-10 w-4 h-4 shrink-0" />
+                        <span className="relative z-10">{id}</span>
                       </button>
                     );
                   })}
                 </div>
 
                 {/* Controls Pane */}
-                <div className="sm:col-span-8 p-5 space-y-4 overflow-y-auto">
+                <div className="sm:col-span-8 p-5 space-y-3.5 overflow-y-auto bg-[#09090B]">
                   <AnimatePresence mode="wait">
                     <motion.div
                       key={robloxTab}
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -6 }}
-                      transition={{ duration: 0.16 }}
-                      className="space-y-4"
+                      initial={{ opacity: 0, y: 8, filter: 'blur(2px)' }}
+                      animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                      exit={{ opacity: 0, y: -6, filter: 'blur(2px)' }}
+                      transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                      className="space-y-3"
                     >
                       {robloxTab === 'Home' && (
                         <>
@@ -1059,11 +1128,6 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
                             onChange={(v) => updateConfig('musicPlayerVisible', v)}
                           />
                           <ToggleRow
-                            label="Play / Pause Music"
-                            checked={config.musicPlaying}
-                            onChange={(v) => updateConfig('musicPlaying', v)}
-                          />
-                          <ToggleRow
                             label="Mute Game Audio (Silences Non-Core Sounds)"
                             checked={config.muteGameAudio}
                             onChange={(v) => updateConfig('muteGameAudio', v)}
@@ -1123,208 +1187,295 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
               </div>
               </div>
 
-              {/* CONNECTED MINI MUSIC PLAYER UI (Docked Directly Below CORE.XYZ Window) */}
-              {config.musicPlayerVisible && (
-                <div
-                  className="rounded-xl bg-[#0A0A0A] border border-white/20 px-4 py-3.5 shadow-xl space-y-3"
-                  data-testid="connected-music-player"
-                >
-                  {/* Top Row: Track Metadata + Transport Controls + Time Counter */}
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-9 h-9 rounded-lg bg-[#141414] border border-white/15 flex items-center justify-center shrink-0">
-                        <Music className="w-4 h-4 text-white" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="text-xs font-bold text-white truncate"
-                            data-testid="player-track-title"
-                          >
-                            {activeTrack.title}
-                          </span>
-                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-neutral-300">
-                            {activeTrack.artist}
-                          </span>
+              {/* CONNECTED MINI MUSIC PLAYER UI (Docked Directly Below CORE.XYZ Window — Off by Default) */}
+              <AnimatePresence>
+                {config.musicPlayerVisible && (
+                  <motion.div
+                    key="connected-music-player-dock"
+                    initial={{ opacity: 0, y: -12, scale: 0.985 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -10, scale: 0.985 }}
+                    transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+                    className="relative rounded-xl bg-gradient-to-b from-[#101218] to-[#090A0E] border border-white/20 px-4 py-3.5 shadow-[0_18px_42px_rgba(0,0,0,0.8)] space-y-3 overflow-hidden"
+                    data-testid="connected-music-player"
+                  >
+                    {/* Top Specular Edge Highlight */}
+                    <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-[#78AFFF]/60 to-transparent" />
+
+                    {/* Top Row: Track Metadata + Transport Controls + Time Counter */}
+                    <div className="flex items-center justify-between gap-2.5">
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <div className="relative w-9 h-9 rounded-lg bg-[#141720] border border-[#78AFFF]/35 flex items-center justify-center shrink-0 shadow-[0_0_16px_rgba(120,175,255,0.18)]">
+                          <Music className="w-4 h-4 text-white" />
+                          {config.musicPlaying && (
+                            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[#38BDF8] ring-2 ring-[#090A0E] animate-pulse" />
+                          )}
                         </div>
-                        <div className="text-[10px] font-mono text-neutral-400 truncate mt-0.5">
-                          {config.musicPlaying ? 'Playing · ' : 'Paused · '}
-                          Cached: CoreXyz_Music/{activeTrack.fileName}
-                          {config.muteGameAudio ? ' · Game Audio Muted' : ''}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className="text-xs font-bold text-white truncate"
+                              data-testid="player-track-title"
+                            >
+                              {activeTrack.title}
+                            </span>
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#78AFFF]/15 border border-[#78AFFF]/30 text-[#BAE0FF] shrink-0">
+                              {activeTrack.artist}
+                            </span>
+                          </div>
+                          <div className="text-[10px] font-mono text-neutral-400 truncate mt-0.5">
+                            {config.musicPlaying ? 'Playing' : 'Paused'} · CoreXyz_Music/
+                            {activeTrack.fileName}
+                            {config.muteGameAudio ? ' · Game Muted' : ''}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Transport Buttons + Live Time Counter */}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <motion.button
+                          whileHover={{ scale: 1.06 }}
+                          whileTap={{ scale: 0.94 }}
+                          type="button"
+                          aria-label="Previous or Rewind Track"
+                          onClick={() => seekToRatio(0)}
+                          className="w-8 h-8 rounded-lg bg-[#151821] hover:bg-[#1E2230] border border-white/12 flex items-center justify-center text-white transition-colors cursor-pointer"
+                        >
+                          <SkipBack className="w-3.5 h-3.5" />
+                        </motion.button>
+                        <motion.button
+                          whileHover={{ scale: 1.06 }}
+                          whileTap={{ scale: 0.94 }}
+                          type="button"
+                          aria-label={config.musicPlaying ? 'Pause Track' : 'Play Track'}
+                          data-testid="player-play-pause-btn"
+                          onClick={() => updateConfig('musicPlaying', !config.musicPlaying)}
+                          className="w-9 h-8 rounded-lg bg-white hover:bg-neutral-100 text-black flex items-center justify-center shadow-[0_0_16px_rgba(255,255,255,0.35)] transition-colors cursor-pointer"
+                        >
+                          {config.musicPlaying ? (
+                            <Pause className="w-4 h-4 fill-current" />
+                          ) : (
+                            <Play className="w-4 h-4 fill-current" />
+                          )}
+                        </motion.button>
+                        <motion.button
+                          whileHover={{ scale: 1.06 }}
+                          whileTap={{ scale: 0.94 }}
+                          type="button"
+                          aria-label="Next Track"
+                          onClick={() => seekToRatio(0)}
+                          className="w-8 h-8 rounded-lg bg-[#151821] hover:bg-[#1E2230] border border-white/12 flex items-center justify-center text-white transition-colors cursor-pointer"
+                        >
+                          <SkipForward className="w-3.5 h-3.5" />
+                        </motion.button>
+                        <motion.button
+                          whileHover={{ scale: 1.03 }}
+                          whileTap={{ scale: 0.96 }}
+                          type="button"
+                          aria-label={
+                            config.muteGameAudio ? 'Unmute Game Audio' : 'Mute Game Audio'
+                          }
+                          onClick={() => updateConfig('muteGameAudio', !config.muteGameAudio)}
+                          className={`px-2 h-8 rounded-lg border text-[10px] font-mono inline-flex items-center gap-1 transition-colors cursor-pointer ${
+                            config.muteGameAudio
+                              ? 'bg-white text-black border-white font-bold shadow-[0_0_14px_rgba(255,255,255,0.28)]'
+                              : 'bg-[#151821] text-neutral-300 border-white/12 hover:text-white hover:bg-[#1E2230]'
+                          }`}
+                        >
+                          {config.muteGameAudio ? (
+                            <VolumeX className="w-3.5 h-3.5" />
+                          ) : (
+                            <Volume2 className="w-3.5 h-3.5" />
+                          )}
+                          <span className="hidden sm:inline">
+                            {config.muteGameAudio ? 'Muted' : 'Game'}
+                          </span>
+                        </motion.button>
+                        <div
+                          className="text-[11px] font-mono text-neutral-200 bg-[#141720] border border-white/10 px-2 py-1.5 rounded-lg tabular-nums shrink-0"
+                          data-testid="player-time-counter"
+                        >
+                          {formatTrackTimestamp(trackTimeSec)} /{' '}
+                          {formatTrackTimestamp(activeTrack.durationSec)}
                         </div>
                       </div>
                     </div>
 
-                    {/* Transport Buttons: Backward, Play/Pause, Forward */}
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        aria-label="Previous or Rewind Track"
-                        onClick={() => seekToRatio(0)}
-                        className="w-8 h-8 rounded-lg bg-[#141414] hover:bg-[#222222] border border-white/10 flex items-center justify-center text-white transition-colors cursor-pointer"
-                      >
-                        <SkipBack className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={config.musicPlaying ? 'Pause Track' : 'Play Track'}
-                        data-testid="player-play-pause-btn"
-                        onClick={() => updateConfig('musicPlaying', !config.musicPlaying)}
-                        className="w-9 h-8 rounded-lg bg-white hover:bg-neutral-200 text-black flex items-center justify-center transition-colors cursor-pointer"
-                      >
-                        {config.musicPlaying ? (
-                          <Pause className="w-4 h-4 fill-current" />
-                        ) : (
-                          <Play className="w-4 h-4 fill-current" />
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        aria-label="Next Track"
-                        onClick={() => seekToRatio(0)}
-                        className="w-8 h-8 rounded-lg bg-[#141414] hover:bg-[#222222] border border-white/10 flex items-center justify-center text-white transition-colors cursor-pointer"
-                      >
-                        <SkipForward className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={
-                          config.muteGameAudio ? 'Unmute Game Audio' : 'Mute Game Audio'
-                        }
-                        onClick={() => updateConfig('muteGameAudio', !config.muteGameAudio)}
-                        className={`px-2.5 h-8 rounded-lg border text-[10px] font-mono inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
-                          config.muteGameAudio
-                            ? 'bg-white text-black border-white font-bold'
-                            : 'bg-[#141414] text-neutral-300 border-white/10 hover:text-white'
-                        }`}
-                      >
-                        {config.muteGameAudio ? (
-                          <VolumeX className="w-3.5 h-3.5" />
-                        ) : (
-                          <Volume2 className="w-3.5 h-3.5" />
-                        )}
-                        <span>{config.muteGameAudio ? 'Game Muted' : 'Game Audio'}</span>
-                      </button>
-                    </div>
-
-                    {/* Live Time Counter */}
-                    <div
-                      className="text-xs font-mono text-neutral-300 tabular-nums shrink-0"
-                      data-testid="player-time-counter"
-                    >
-                      {formatTrackTimestamp(trackTimeSec)} /{' '}
-                      {formatTrackTimestamp(activeTrack.durationSec)}
-                    </div>
-                  </div>
-
-                  {/* Interactive Animated Wavy Ocean Timeline Slider / Scrubber */}
-                  <div className="space-y-1">
-                    <div
-                      ref={scrubberTrackRef}
-                      role="slider"
-                      tabIndex={0}
-                      aria-label="Wavy Ocean Music Timeline Scrubber"
-                      aria-valuemin={0}
-                      aria-valuemax={activeTrack.durationSec}
-                      aria-valuenow={Math.floor(trackTimeSec)}
-                      data-testid="wavy-ocean-scrubber"
-                      onPointerDown={(e) => {
-                        setIsScrubbing(true);
-                        handleScrubberPointer(e.clientX);
-                      }}
-                      onPointerMove={(e) => {
-                        if (isScrubbing) {
-                          handleScrubberPointer(e.clientX);
-                        }
-                      }}
-                      onPointerUp={() => setIsScrubbing(false)}
-                      onPointerLeave={() => setIsScrubbing(false)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'ArrowRight') {
-                          seekToRatio((trackTimeSec + 5) / activeTrack.durationSec);
-                        } else if (e.key === 'ArrowLeft') {
-                          seekToRatio((trackTimeSec - 5) / activeTrack.durationSec);
-                        }
-                      }}
-                      className="relative h-8 rounded-lg bg-[#111318] border border-white/10 px-2 flex items-center cursor-pointer select-none overflow-hidden"
-                    >
-                      {/* Ocean Deep Undercurrent Fill */}
-                      <div
-                        style={{
-                          width: `${Math.max(
-                            2,
-                            Math.min(100, (trackTimeSec / activeTrack.durationSec) * 100)
-                          )}%`,
-                        }}
-                        className="pointer-events-none absolute inset-y-0 left-0 bg-gradient-to-r from-[#5865F2]/25 via-[#78AFFF]/30 to-white/25 transition-all duration-75"
-                      />
-
-                      {/* 24 Pre-Allocated Wavy Ocean Harmonic Segments (Mirrors OceanWaveSegment_1..24 in Core.xyz.lua) */}
-                      <div className="relative z-10 w-full flex items-center justify-between gap-1 px-1">
-                        {OCEAN_SEGMENT_INDICES.map((idx) => {
-                          const normX = idx / (OCEAN_SEGMENT_INDICES.length - 1);
-                          const progressRatio = trackTimeSec / activeTrack.durationSec;
-                          const isPassed = normX <= progressRatio;
-                          const waveDisp = computeOceanWaveDisplacement(
-                            normX,
-                            wavePhase,
-                            config.musicPlaying
-                          );
-                          const heightPx = Math.max(
-                            4,
-                            Math.min(
-                              20,
-                              Math.round(
-                                (isPassed ? 10 : 6) +
-                                  Math.abs(waveDisp) * (isPassed ? 1.8 : 0.85)
-                              )
-                            )
-                          );
-
-                          return (
-                            <div
-                              key={idx}
-                              data-testid={`ocean-wave-segment-${idx + 1}`}
-                              style={{
-                                height: `${heightPx}px`,
-                                transform: `translateY(${waveDisp.toFixed(2)}px)`,
-                              }}
-                              className={`flex-1 rounded-full transition-colors duration-75 ${
-                                isPassed
-                                  ? 'bg-gradient-to-t from-[#78AFFF] to-white shadow-[0_0_8px_rgba(255,255,255,0.45)]'
-                                  : 'bg-white/20'
-                              }`}
-                            />
-                          );
-                        })}
-                      </div>
-
-                      {/* Scrubber Thumb Riding the Ocean Wave Crest */}
+                    {/* Interactive Multi-Harmonic Wavy Ocean Timeline Slider / Scrubber */}
+                    <div className="space-y-1">
                       {(() => {
                         const progressRatio = Math.max(
                           0,
                           Math.min(1, trackTimeSec / activeTrack.durationSec)
+                        );
+                        const progressPercent = progressRatio * 100;
+                        const primaryWaveSvg = buildOceanWaveSvgPath(
+                          560,
+                          36,
+                          wavePhase,
+                          config.musicPlaying,
+                          0
+                        );
+                        const secondaryWaveSvg = buildOceanWaveSvgPath(
+                          560,
+                          36,
+                          wavePhase * 0.82,
+                          config.musicPlaying,
+                          1.35
                         );
                         const thumbWaveY = computeOceanWaveDisplacement(
                           progressRatio,
                           wavePhase,
                           config.musicPlaying
                         );
+
                         return (
                           <div
-                            data-testid="ocean-scrubber-thumb"
-                            style={{
-                              left: `calc(${(progressRatio * 100).toFixed(2)}% - 7px)`,
-                              transform: `translateY(${(thumbWaveY * 0.65).toFixed(2)}px)`,
+                            ref={scrubberTrackRef}
+                            role="slider"
+                            tabIndex={0}
+                            aria-label="Wavy Ocean Music Timeline Scrubber"
+                            aria-valuemin={0}
+                            aria-valuemax={activeTrack.durationSec}
+                            aria-valuenow={Math.floor(trackTimeSec)}
+                            data-testid="wavy-ocean-scrubber"
+                            onPointerDown={(e) => {
+                              setIsScrubbing(true);
+                              handleScrubberPointer(e.clientX);
                             }}
-                            className="pointer-events-none absolute z-20 w-3.5 h-3.5 rounded-full bg-white ring-2 ring-[#78AFFF] shadow-[0_0_12px_rgba(255,255,255,0.9)]"
-                          />
+                            onPointerMove={(e) => {
+                              if (isScrubbing) {
+                                handleScrubberPointer(e.clientX);
+                              }
+                            }}
+                            onPointerUp={() => setIsScrubbing(false)}
+                            onPointerLeave={() => setIsScrubbing(false)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'ArrowRight') {
+                                seekToRatio((trackTimeSec + 5) / activeTrack.durationSec);
+                              } else if (e.key === 'ArrowLeft') {
+                                seekToRatio((trackTimeSec - 5) / activeTrack.durationSec);
+                              }
+                            }}
+                            className="group relative h-9 rounded-lg bg-[#0B0E14] border border-[#78AFFF]/25 hover:border-[#78AFFF]/55 px-2 flex items-center cursor-pointer select-none overflow-hidden transition-colors"
+                          >
+                            {/* Continuous Dual-Layer SVG Ocean Swell Ribbon (Clipped to Active Progress) */}
+                            <div
+                              style={{
+                                width: `${Math.max(2, Math.min(100, progressPercent))}%`,
+                              }}
+                              className="pointer-events-none absolute inset-y-0 left-0 overflow-hidden transition-[width] duration-75"
+                            >
+                              <svg
+                                viewBox="0 0 560 36"
+                                preserveAspectRatio="none"
+                                className="w-[560px] h-full opacity-85"
+                              >
+                                <defs>
+                                  <linearGradient
+                                    id="coreOceanSwellGrad"
+                                    x1="0%"
+                                    y1="0%"
+                                    x2="100%"
+                                    y2="0%"
+                                  >
+                                    <stop offset="0%" stopColor="#3B82F6" stopOpacity="0.28" />
+                                    <stop offset="60%" stopColor="#38BDF8" stopOpacity="0.42" />
+                                    <stop offset="100%" stopColor="#E0F7FF" stopOpacity="0.58" />
+                                  </linearGradient>
+                                </defs>
+                                <path
+                                  d={secondaryWaveSvg.areaPath}
+                                  fill="rgba(88, 101, 242, 0.24)"
+                                />
+                                <path
+                                  d={primaryWaveSvg.areaPath}
+                                  fill="url(#coreOceanSwellGrad)"
+                                />
+                                <path
+                                  d={primaryWaveSvg.linePath}
+                                  fill="none"
+                                  stroke="#BAE6FD"
+                                  strokeWidth="1.5"
+                                  strokeOpacity="0.85"
+                                />
+                              </svg>
+                            </div>
+
+                            {/* 28 Pre-Allocated Tangential Wavy Ocean Harmonic Segments (Mirrors OceanWaveSegment_1..28 in Core.xyz.lua) */}
+                            <div className="relative z-10 w-full flex items-center justify-between gap-1 px-1">
+                              {OCEAN_SEGMENT_INDICES.map((idx) => {
+                                const normX = idx / (OCEAN_SEGMENT_INDICES.length - 1);
+                                const isPassed = normX <= progressRatio;
+                                const metrics = computeOceanWaveCrestMetrics(
+                                  normX,
+                                  wavePhase,
+                                  config.musicPlaying
+                                );
+                                const heightPx = isPassed
+                                  ? Math.max(
+                                      7,
+                                      Math.min(
+                                        23,
+                                        metrics.barHeightPx +
+                                          Math.round(Math.abs(metrics.displacementPx) * 1.25)
+                                      )
+                                    )
+                                  : Math.max(
+                                      5,
+                                      Math.min(
+                                        12,
+                                        5 + Math.round(Math.abs(metrics.displacementPx) * 0.65)
+                                      )
+                                    );
+                                const yOffset = isPassed
+                                  ? metrics.displacementPx * 0.82
+                                  : metrics.displacementPx * 0.48;
+                                const tiltDeg = isPassed ? metrics.tiltDeg : metrics.tiltDeg * 0.55;
+
+                                return (
+                                  <div
+                                    key={idx}
+                                    data-testid={`ocean-wave-segment-${idx + 1}`}
+                                    style={{
+                                      height: `${heightPx}px`,
+                                      transform: `translateY(${yOffset.toFixed(
+                                        2
+                                      )}px) rotate(${tiltDeg.toFixed(1)}deg)`,
+                                    }}
+                                    className={`flex-1 rounded-full transition-colors duration-75 ${
+                                      isPassed
+                                        ? 'bg-gradient-to-t from-[#38BDF8] via-[#93C5FD] to-white shadow-[0_0_10px_rgba(165,230,255,0.75)]'
+                                        : 'bg-[#78AFFF]/25 group-hover:bg-[#78AFFF]/40'
+                                    }`}
+                                  />
+                                );
+                              })}
+                            </div>
+
+                            {/* Bioluminescent Wave-Rider Playhead Thumb & Halo */}
+                            <div
+                              data-testid="ocean-scrubber-thumb"
+                              style={{
+                                left: `calc(${progressPercent.toFixed(2)}% - 8px)`,
+                                transform: `translateY(${(thumbWaveY * 0.58).toFixed(2)}px)`,
+                              }}
+                              className="pointer-events-none absolute z-20 w-4 h-4 rounded-full bg-white ring-2 ring-[#78AFFF] shadow-[0_0_16px_rgba(165,230,255,0.95)] flex items-center justify-center"
+                            >
+                              <span
+                                className={`absolute -inset-1.5 rounded-full bg-[#78AFFF]/35 blur-[2px] ${
+                                  config.musicPlaying ? 'animate-ping' : ''
+                                }`}
+                              />
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#090A0E]" />
+                            </div>
+                          </div>
                         );
                       })()}
                     </div>
-                  </div>
-                </div>
-              )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* Right Column: Live Interactive Viewport Preview */}
@@ -1707,23 +1858,49 @@ interface ToggleRowProps {
 }
 
 const ToggleRow: React.FC<ToggleRowProps> = ({ label, checked, onChange }) => (
-  <div className="flex items-center justify-between gap-4 py-1.5">
-    <span className="text-xs font-medium text-neutral-200">{label}</span>
+  <div
+    onClick={() => onChange(!checked)}
+    className={`group relative flex items-center justify-between gap-4 px-3.5 py-2.5 rounded-lg border transition-all duration-150 cursor-pointer select-none ${
+      checked
+        ? 'bg-[#141418] border-white/20 shadow-[0_4px_16px_rgba(0,0,0,0.4)]'
+        : 'bg-[#0E0E11] border-white/[0.07] hover:bg-[#131317] hover:border-white/15'
+    }`}
+  >
+    {/* Left Active Status Accent Bar */}
+    <span
+      className={` w-1 rounded-full transition-all duration-200 ${
+        checked
+          ? 'h-4 bg-white shadow-[0_0_8px_rgba(255,255,255,0.85)]'
+          : 'h-2.5 bg-white/15 group-hover:bg-white/30'
+      }`}
+    />
+    <span
+      className={`flex-1 text-xs font-medium transition-colors ${
+        checked ? 'text-white font-semibold' : 'text-neutral-300 group-hover:text-white'
+      }`}
+    >
+      {label}
+    </span>
     <button
       type="button"
       role="switch"
       aria-checked={checked}
       aria-label={label}
-      onClick={() => onChange(!checked)}
-      className={`relative w-10 h-5 rounded-full transition-colors cursor-pointer shrink-0 ${
-        checked ? 'bg-white' : 'bg-[#1F1F1F] border border-white/15'
+      onClick={(e) => {
+        e.stopPropagation();
+        onChange(!checked);
+      }}
+      className={`relative w-10 h-5 rounded-full p-0.5 flex items-center transition-colors cursor-pointer shrink-0 ${
+        checked
+          ? 'bg-white justify-end shadow-[0_0_14px_rgba(255,255,255,0.35)]'
+          : 'bg-[#1D1D22] border border-white/15 justify-start'
       }`}
     >
-      <span
-        className={`block w-3.5 h-3.5 rounded-full transition-transform ${
-          checked
-            ? 'translate-x-5 bg-black'
-            : 'translate-x-1 bg-neutral-400'
+      <motion.span
+        layout
+        transition={{ type: 'spring', stiffness: 540, damping: 32 }}
+        className={`block w-3.5 h-3.5 rounded-full ${
+          checked ? 'bg-black' : 'bg-neutral-400 group-hover:bg-neutral-200'
         }`}
       />
     </button>
@@ -1748,24 +1925,35 @@ const SliderRow: React.FC<SliderRowProps> = ({
   step = 1,
   unit,
   onChange,
-}) => (
-  <div className="space-y-1.5 py-1">
-    <div className="flex items-center justify-between text-xs">
-      <label className="font-medium text-neutral-300">{label}</label>
-      <span className="font-mono text-white tabular-nums">
-        {value}
-        {unit}
-      </span>
+}) => {
+  const ratio = Math.max(0, Math.min(100, ((value - min) / Math.max(0.0001, max - min)) * 100));
+  return (
+    <div className="px-3.5 py-2.5 rounded-lg bg-[#0E0E11] hover:bg-[#131317] border border-white/[0.07] hover:border-white/15 transition-colors space-y-2">
+      <div className="flex items-center justify-between text-xs">
+        <label className="font-medium text-neutral-200">{label}</label>
+        <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-[#18181D] border border-white/10 text-white tabular-nums">
+          {value}
+          {unit}
+        </span>
+      </div>
+      <div className="relative flex items-center h-4">
+        <div className="pointer-events-none absolute inset-x-0 h-1.5 rounded-full bg-[#1C1C22] overflow-hidden">
+          <div
+            style={{ width: `${ratio}%` }}
+            className="h-full rounded-full bg-gradient-to-r from-neutral-300 to-white shadow-[0_0_10px_rgba(255,255,255,0.6)]"
+          />
+        </div>
+        <input
+          type="range"
+          aria-label={label}
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={(e) => onChange(Number(e.target.value))}
+          className="relative z-10 w-full accent-white bg-transparent h-4 cursor-pointer"
+        />
+      </div>
     </div>
-    <input
-      type="range"
-      aria-label={label}
-      min={min}
-      max={max}
-      step={step}
-      value={value}
-      onChange={(e) => onChange(Number(e.target.value))}
-      className="w-full accent-white bg-[#1A1A1A] h-1.5 rounded-lg cursor-pointer"
-    />
-  </div>
-);
+  );
+};

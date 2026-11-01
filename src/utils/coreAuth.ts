@@ -115,17 +115,75 @@ export function formatTrackTimestamp(seconds: number): string {
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
+export interface OceanWaveCrestMetrics {
+  displacementPx: number;
+  tiltDeg: number;
+  crestFactor: number;
+  barHeightPx: number;
+}
+
 export function computeOceanWaveDisplacement(
   normX: number,
   phase: number,
   isPlaying: boolean
 ): number {
   const clampedX = Math.max(0, Math.min(1, normX));
-  const primary = Math.sin(clampedX * Math.PI * 3.5 - phase);
-  const secondary = Math.cos(clampedX * Math.PI * 6.0 - phase * 1.38) * 0.45;
-  const swell = Math.sin(clampedX * Math.PI * 1.75 + phase * 0.62) * 0.25;
-  const amplitude = isPlaying ? 3.8 : 1.35;
-  return (primary + secondary + swell) * amplitude;
+  const primary = Math.sin(clampedX * Math.PI * 3.8 - phase);
+  const secondary = Math.cos(clampedX * Math.PI * 6.4 - phase * 1.38) * 0.46;
+  const capillary = Math.sin(clampedX * Math.PI * 9.5 + phase * 1.85) * 0.22;
+  const swell = Math.sin(clampedX * Math.PI * 1.75 + phase * 0.62) * 0.28;
+  const amplitude = isPlaying ? 4.4 : 1.45;
+  return (primary * 0.62 + secondary + capillary + swell) * amplitude;
+}
+
+export function computeOceanWaveCrestMetrics(
+  normX: number,
+  phase: number,
+  isPlaying: boolean
+): OceanWaveCrestMetrics {
+  const clampedX = Math.max(0, Math.min(1, normX));
+  const wave1 = Math.sin(clampedX * Math.PI * 3.8 - phase);
+  const wave2 = Math.cos(clampedX * Math.PI * 6.4 - phase * 1.38);
+  const wave3 = Math.sin(clampedX * Math.PI * 9.5 + phase * 1.85);
+  const combined = wave1 * 0.56 + wave2 * 0.29 + wave3 * 0.15;
+  const crestFactor = Math.max(0, Math.min(1, (combined + 1) * 0.5));
+  const displacementPx = computeOceanWaveDisplacement(clampedX, phase, isPlaying);
+  const slopeDerivative =
+    Math.cos(clampedX * Math.PI * 3.8 - phase) * 0.65 -
+    Math.sin(clampedX * Math.PI * 6.4 - phase * 1.38) * 0.35;
+  const tiltDeg = slopeDerivative * (isPlaying ? 12.5 : 4.2);
+  const barHeightPx = Math.round(5 + crestFactor * (isPlaying ? 9 : 4));
+  return {
+    displacementPx,
+    tiltDeg,
+    crestFactor,
+    barHeightPx,
+  };
+}
+
+export function buildOceanWaveSvgPath(
+  width: number,
+  height: number,
+  phase: number,
+  isPlaying: boolean,
+  harmonicShift: number = 0
+): { linePath: string; areaPath: string } {
+  const steps = 36;
+  const midY = height * 0.52;
+  const points: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i <= steps; i++) {
+    const normX = i / steps;
+    const x = normX * width;
+    const disp = computeOceanWaveDisplacement(normX, phase + harmonicShift, isPlaying);
+    const y = Math.max(2, Math.min(height - 2, midY + disp));
+    points.push({ x, y });
+  }
+  const lineParts = points.map((pt, idx) =>
+    idx === 0 ? `M ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}` : `L ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`
+  );
+  const linePath = lineParts.join(' ');
+  const areaPath = `${linePath} L ${width.toFixed(1)} ${height.toFixed(1)} L 0 ${height.toFixed(1)} Z`;
+  return { linePath, areaPath };
 }
 
 export interface CoreConfigState {
@@ -190,7 +248,7 @@ export const DEFAULT_CORE_CONFIG: CoreConfigState = {
   noClipEnabled: false,
   antiAFKEnabled: true,
   selectedTrack: COMMUNITY_MUSIC_TRACKS[0].label,
-  musicPlayerVisible: true,
+  musicPlayerVisible: false,
   musicPlaying: false,
   musicVolume: 75,
   musicLooped: true,
@@ -258,10 +316,23 @@ export function validateAccessKey(input: string, nowMs: number = Date.now()): Ke
   };
 }
 
+export const CLOUDFLARE_WORKER_DEFAULT_URL = 'https://core-xyz-gateway.feykhere.workers.dev';
+export const CLOUDFLARE_HANDSHAKE_SIG = 'CORE_V44_EXEC';
 export const LIVE_RAW_SCRIPT_URL = 'https://dpaste.com/52EQ6RXLR.txt';
 export const LIVE_LOADSTRING_SNIPPET = `loadstring(game:HttpGet("${LIVE_RAW_SCRIPT_URL}"))()`;
 export const GITHUB_CACHE_BUST_LOADSTRING =
   'loadstring(game:HttpGet("https://raw.githubusercontent.com/FeykHere/Core.xyz/main/Core.xyz.lua?t=" .. tostring(os.time())))()';
+
+export function buildCloudflareLoadstringSnippet(
+  workerUrl: string = CLOUDFLARE_WORKER_DEFAULT_URL,
+  includeHandshakeSig: boolean = false
+): string {
+  const cleaned = (workerUrl || CLOUDFLARE_WORKER_DEFAULT_URL).trim().replace(/\/+$/, '');
+  const finalUrl = includeHandshakeSig
+    ? `${cleaned}${cleaned.includes('?') ? '&' : '?'}sig=${CLOUDFLARE_HANDSHAKE_SIG}`
+    : cleaned;
+  return `loadstring(game:HttpGet("${finalUrl}"))()`;
+}
 
 export function buildGithubRawUrl(config: GithubRepoConfig): string {
   const owner = (config.owner || 'FeykHere').trim().replace(/^\/+|\/+$/g, '');

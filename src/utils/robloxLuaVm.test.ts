@@ -83,13 +83,21 @@ local mockSha256 = (function()
 end)()
 
 local PLATO_SECRET = "993b9964-e0c4-4c5d-878b-82cf17ddef9f"
+_G.__REDEEMED_DEV_KEY = false
 function request(reqOpts)
     local url = tostring(reqOpts and reqOpts.Url or "")
     local body = tostring(reqOpts and reqOpts.Body or "")
     if string.find(url, "/public/connectivity") then
         return { StatusCode = 200, Body = '{"success":true}' }
     elseif string.find(url, "/public/start") then
-        return { StatusCode = 200, Body = '{"success":true,"data":{"url":"https://gateway.platoboost.com/a/36271?id=mockhwid"}}' }
+        return { StatusCode = 200, Body = '{"success":true,"data":{"url":"https://gateway.platoboost.com/a/36271?id=mockhwid&d=mock_ticket_36271"}}' }
+    elseif string.find(url, "/api/session/status") then
+        if _G.__REDEEMED_DEV_KEY then
+            return { StatusCode = 200, Body = '{"success":true,"data":{"key":"KEY_PLATOBOOST_LIVE_2026","minutesLeft":30000000}}' }
+        end
+        return { StatusCode = 200, Body = '{"success":true,"data":{"key":"KEY_NOT_FOUND","minutesLeft":0}}' }
+    elseif string.find(url, "/api/session/metadata") then
+        return { StatusCode = 200, Body = '{"success":true,"data":{"name":"platoboost","duration":24}}' }
     elseif string.find(url, "/public/whitelist/36271") then
         local nonce = string.match(url, "nonce=([%a%d]+)") or ""
         local key = string.match(url, "key=([^&]+)") or ""
@@ -103,6 +111,7 @@ function request(reqOpts)
         local nonce = string.match(body, '"nonce":"([^"]+)"') or ""
         local key = string.match(body, '"key":"([^"]+)"') or ""
         if key == "KEY_PLATOBOOST_LIVE_2026" then
+            _G.__REDEEMED_DEV_KEY = true
             local h = mockSha256("true-" .. nonce .. "-" .. PLATO_SECRET)
             return { StatusCode = 200, Body = '{"success":true,"data":{"valid":true,"hash":"' .. h .. '"}}' }
         else
@@ -490,6 +499,9 @@ local function createInstance(className)
         local cloned = createInstance(props.ClassName)
         cloned.Name = props.Name
         cloned.CFrame = props.CFrame
+        cloned.Rate = props.Rate
+        cloned.Texture = props.Texture
+        cloned.SoundId = props.SoundId
         for _, child in ipairs(children) do
             if child.Clone then
                 local cc = child:Clone()
@@ -878,6 +890,7 @@ workspace = WorkspaceObj
 
 local SoundServiceObj = createInstance("SoundService")
 
+_G.__LAST_RAIN_ASSET_SCRIPT = nil
 game = {
     PlaceId = 55555,
     JobId = "job_current_1",
@@ -885,6 +898,42 @@ game = {
     IsLoaded = function() return true end,
     HttpGet = function(self, url)
         return '{"data":[{"id":"srv_low_ping","playing":4,"maxPlayers":20,"ping":25}]}'
+    end,
+    GetObjects = function(self, assetUri)
+        if tostring(assetUri) == "rbxassetid://1250626578" then
+            local rootModel = createInstance("Model")
+            rootModel.Name = "RealisticRainAndThunderstorm_1250626578"
+            local embeddedScript = createInstance("Script")
+            embeddedScript.Name = "RainControllerScript"
+            embeddedScript.Parent = rootModel
+            _G.__LAST_RAIN_ASSET_SCRIPT = embeddedScript
+
+            local rainPart = createInstance("Part")
+            rainPart.Name = "RainCanopyPart"
+            rainPart.Parent = rootModel
+            local rainPE = createInstance("ParticleEmitter")
+            rainPE.Name = "RealisticRainEmitter"
+            rainPE.Rate = 640
+            rainPE.Texture = "rbxassetid://258128463"
+            rainPE.Parent = rainPart
+
+            local splashPart = createInstance("Part")
+            splashPart.Name = "GroundSplashPart"
+            splashPart.Parent = rootModel
+            local splashPE = createInstance("ParticleEmitter")
+            splashPE.Name = "GroundSplashEmitter"
+            splashPE.Rate = 410
+            splashPE.Texture = "rbxassetid://241685484"
+            splashPE.Parent = splashPart
+
+            local rainSnd = createInstance("Sound")
+            rainSnd.Name = "HeavyRainSound"
+            rainSnd.SoundId = "rbxassetid://9112759140"
+            rainSnd.Parent = rootModel
+
+            return { rootModel }
+        end
+        return {}
     end,
     GetService = function(self, name)
         if name == "Players" then return PlayersService end
@@ -1005,7 +1054,7 @@ end
 assert(infoUser and string.find(infoUser.Text, "FeykHere"), "Info_User must display local player username")
 assert(infoExec and infoExec.Text ~= "", "Info_Executor must display executor name")
 assert(infoUserId and infoUserId.Text == "12345678", "Info_UserId must display LocalPlayer.UserId")
-assert(infoKeyTime and string.find(infoKeyTime.Text, "h ") ~= nil and string.find(infoKeyTime.Text, "m ") ~= nil and string.find(infoKeyTime.Text, "s") ~= nil, "Info_KeyTime must show live countdown (e.g. 24h 00m 00s / 23h 59m 59s)")
+assert(infoKeyTime and (string.find(infoKeyTime.Text, "500000h") ~= nil or string.find(infoKeyTime.Text, "499999h") ~= nil) and string.find(infoKeyTime.Text, "20833d") ~= nil, "Info_KeyTime must show accurate 500,000h developer key duration (e.g. 500000h 00m 00s (20833d)) from /api/session/status instead of defaulting to 24h, got: " .. tostring(infoKeyTime and infoKeyTime.Text))
 
 -- Confirm Testing Keys Dropdown (FEYKDEV / FEYKPERM / FEYK24H) and old Quick Utilities ("Reset Character Camera") are completely removed from Home_Page
 for _, desc in ipairs(homePage:GetDescendants()) do
@@ -1376,22 +1425,27 @@ assert(weatherPart ~= nil and weatherEmitter ~= nil and streakEmitter ~= nil and
 assert(weatherPart.CanCollide == false and weatherPart.CanQuery == false and weatherPart.CanTouch == false and weatherPart.Massless == true and weatherPart.Archivable == false, "3D Weather Canopy Part must have strict anti-cheat stealth flags")
 assert(groundSplashPart.CanCollide == false and groundSplashPart.CanQuery == false and groundSplashPart.CanTouch == false and groundSplashPart.Massless == true and groundSplashPart.Archivable == false, "3D Ground Splash Part must have strict anti-cheat stealth flags")
 
+local harvestedRain1 = weatherPart and weatherPart:FindFirstChild("CoreXyz_Asset1250626578_Rain_1")
+local harvestedSplash1 = groundSplashPart and groundSplashPart:FindFirstChild("CoreXyz_Asset1250626578_Splash_1")
+assert(harvestedRain1 ~= nil and harvestedSplash1 ~= nil, "Realistic Rain & Thunderstorm asset (rbxassetid://1250626578) ParticleEmitters must be harvested onto weatherPart and groundSplashPart")
+assert(_G.__LAST_RAIN_ASSET_SCRIPT ~= nil and _G.__LAST_RAIN_ASSET_SCRIPT.Parent == nil, "Embedded Script inside rbxassetid://1250626578 must be destroyed for anti-cheat stealth")
+
 weatherRainBtn.MouseButton1Click:Fire()
-assert(weatherEmitter.Enabled == true and weatherEmitter.Rate == 620 and streakEmitter.Enabled == true and mistEmitter.Enabled == true and groundSplashEmitter.Enabled == true and groundSplashEmitter.Rate == 380 and ambienceSound.IsPlaying == true and patterSound.IsPlaying == true, "Selecting Rain must enable 3D volumetric rain canopy, 3D ground splash emitter (380 rate), 3D mist, and multi-layer rain audio")
+assert(weatherEmitter.Enabled == true and weatherEmitter.Rate == 620 and streakEmitter.Enabled == true and mistEmitter.Enabled == true and groundSplashEmitter.Enabled == true and groundSplashEmitter.Rate == 380 and harvestedRain1.Enabled == true and harvestedRain1.Rate == 640 and harvestedSplash1.Enabled == true and harvestedSplash1.Rate == 410 and ambienceSound.IsPlaying == true and patterSound.IsPlaying == true, "Selecting Rain must enable 3D volumetric rain canopy, harvested rbxassetid://1250626578 emitters, 3D ground splash emitter (380 rate), 3D mist, and multi-layer rain audio")
 game:GetService("RunService").RenderStepped:Fire(0.1)
 assert(groundSplashPart.Position.Y > -100, "3D Ground Splash Part must position itself on the world surface beneath the player via raycast")
 
 weatherStormBtn.MouseButton1Click:Fire()
-assert(weatherEmitter.Enabled == true and weatherEmitter.Rate == 850 and streakEmitter.Enabled == true and mistEmitter.Enabled == true and groundSplashEmitter.Enabled == true and groundSplashEmitter.Rate == 580 and ambienceSound.IsPlaying == true and patterSound.IsPlaying == true and rumblerSound.IsPlaying == true, "Selecting Thunderstorm must enable 850-rate 3D storm canopy, 580-rate 3D ground splash plane, and multi-layer storm audio")
+assert(weatherEmitter.Enabled == true and weatherEmitter.Rate == 850 and streakEmitter.Enabled == true and mistEmitter.Enabled == true and groundSplashEmitter.Enabled == true and groundSplashEmitter.Rate == 580 and harvestedRain1.Enabled == true and harvestedRain1.Rate == math.floor(640 * 1.35) and harvestedSplash1.Enabled == true and harvestedSplash1.Rate == math.floor(410 * 1.35) and ambienceSound.IsPlaying == true and patterSound.IsPlaying == true and rumblerSound.IsPlaying == true, "Selecting Thunderstorm must enable 850-rate 3D storm canopy, 1.35x boosted rbxassetid://1250626578 emitters, 580-rate 3D ground splash plane, and multi-layer storm audio")
 game:GetService("RunService").RenderStepped:Fire(3.0)
 assert((thunderSound.__playCount or 0) >= 1 and (spatialThunderSound.__playCount or 0) >= 1, "Thunderstorm must trigger periodic 3D surrounding lightning strike & spatial thunder audio in SoundService")
 assert(lightningSeg1.Transparency < 1 and lightningSeg8.Transparency < 1, "3D surrounding Neon lightning bolt segments must flash visible in world space during strike")
 
 weatherSnowBtn.MouseButton1Click:Fire()
-assert(weatherEmitter.Enabled == true and weatherEmitter.Rate == 580 and streakEmitter.Enabled == true and mistEmitter.Enabled == true and groundSplashEmitter.Enabled == false and ambienceSound.IsPlaying == true and patterSound.IsPlaying == true, "Selecting Snow must enable 580-rate 3D tumbling snowflake canopy, disable rain splashes, and play winter wind audio")
+assert(weatherEmitter.Enabled == true and weatherEmitter.Rate == 580 and streakEmitter.Enabled == true and mistEmitter.Enabled == true and groundSplashEmitter.Enabled == false and harvestedRain1.Enabled == false and harvestedSplash1.Enabled == false and ambienceSound.IsPlaying == true and patterSound.IsPlaying == true, "Selecting Snow must enable 580-rate 3D tumbling snowflake canopy, disable rain splashes and harvested rain asset emitters, and play winter wind audio")
 
 weatherSunnyBtn.MouseButton1Click:Fire()
-assert(weatherEmitter.Enabled == false and streakEmitter.Enabled == false and mistEmitter.Enabled == false and groundSplashEmitter.Enabled == false and weatherSunRays.Enabled == true and ambienceSound.IsPlaying == true, "Selecting Sunny must disable 3D precipitation emitters, enable SunRaysEffect, and play sunny ambience")
+assert(weatherEmitter.Enabled == false and streakEmitter.Enabled == false and mistEmitter.Enabled == false and groundSplashEmitter.Enabled == false and harvestedRain1.Enabled == false and harvestedSplash1.Enabled == false and weatherSunRays.Enabled == true and ambienceSound.IsPlaying == true, "Selecting Sunny must disable 3D precipitation emitters and harvested rain asset emitters, enable SunRaysEffect, and play sunny ambience")
 
 -- Test Community Music System, Track Auto-Downloader, Connected Wavy Ocean Player UI & Mute Game Audio
 local musicTabBtn, musicPage

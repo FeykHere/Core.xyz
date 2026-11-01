@@ -269,18 +269,27 @@ export interface KeyValidationResult {
   expiresAtMs?: number;
 }
 
+export const REALISTIC_RAIN_ASSET_ID = 'rbxassetid://1250626578';
+
 export function formatRemainingKeyTime(expiresAtMs: number, nowMs: number = Date.now()): string {
+  if (expiresAtMs === -1) {
+    return 'LIFETIME';
+  }
   const remainingSec = Math.max(0, Math.floor((expiresAtMs - nowMs) / 1000));
   if (remainingSec <= 0) {
     return 'EXPIRED';
   }
+  const totalHours = Math.floor(remainingSec / 3600);
   const days = Math.floor(remainingSec / 86400);
   const hours = Math.floor((remainingSec % 86400) / 3600);
   const mins = Math.floor((remainingSec % 3600) / 60);
   const secs = remainingSec % 60;
   const pad = (n: number) => String(n).padStart(2, '0');
+  if (totalHours >= 100) {
+    return `${totalHours}h ${pad(mins)}m ${pad(secs)}s (${days}d)`;
+  }
   if (days > 0) {
-    return `${days}d ${pad(hours)}h ${pad(mins)}m ${pad(secs)}s`;
+    return `${days}d ${pad(hours)}h ${pad(mins)}m ${pad(secs)}s (${totalHours}h)`;
   }
   return `${pad(hours)}h ${pad(mins)}m ${pad(secs)}s`;
 }

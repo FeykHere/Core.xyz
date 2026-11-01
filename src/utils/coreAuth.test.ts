@@ -48,10 +48,15 @@ test('validateAccessKey accepts Platoboost KEY_ format and returns 24h expiry ti
   assert.equal(result.expiresAtMs, now + 24 * 60 * 60 * 1000);
 });
 
-test('formatRemainingKeyTime formats accurate HHh MMm SSs live countdown', () => {
+test('formatRemainingKeyTime formats accurate HHh MMm SSs live countdown and 500,000h developer key durations', async () => {
+  const { REALISTIC_RAIN_ASSET_ID } = await import('./coreAuth');
+  assert.equal(REALISTIC_RAIN_ASSET_ID, 'rbxassetid://1250626578');
   const now = 1_700_000_000_000;
   const expires = now + (23 * 3600 + 59 * 60 + 42) * 1000;
   assert.equal(formatRemainingKeyTime(expires, now), '23h 59m 42s');
+  const dev500kExpires = now + 500_000 * 3600 * 1000;
+  assert.equal(formatRemainingKeyTime(dev500kExpires, now), '500000h 00m 00s (20833d)');
+  assert.equal(formatRemainingKeyTime(-1, now), 'LIFETIME');
   assert.equal(formatRemainingKeyTime(now - 1000, now), 'EXPIRED');
 });
 

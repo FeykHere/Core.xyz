@@ -4854,6 +4854,7 @@ do
             DefaultDuration = 184,
             FallbackSoundId = "rbxasset://sounds/uuhhh.mp3",
             Urls = {
+                "https://core-xyz-gateway.feykhere.workers.dev/music/sia%20-%20snowman%20(slowed%20%2B%20reverb)%20%5Bwith%20lyrics%5D.mp3",
                 "https://raw.githubusercontent.com/FeykHere/Core.xyz/main/sia%20-%20snowman%20(slowed%20%2B%20reverb)%20%5Bwith%20lyrics%5D.mp3",
                 "https://raw.githubusercontent.com/FeykHere/Core.xyz/main/sia%20-%20snowman%20(slowed%20+%20reverb)%20[with%20lyrics].mp3",
                 "https://github.com/FeykHere/Core.xyz/blob/main/sia%20-%20snowman%20(slowed%20%2B%20reverb)%20[with%20lyrics].mp3?raw=true",

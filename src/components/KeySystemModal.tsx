@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { KeyRound, Eye, EyeOff, Check, Copy, ArrowRight, RotateCcw, X } from 'lucide-react';
+import { KeyRound, Eye, EyeOff, Check, Copy, ArrowRight, RotateCcw } from 'lucide-react';
 import {
   PLATOBOOST_GATEWAY_URL,
   PLATOBOOST_SERVICE_ID,
@@ -22,6 +22,7 @@ export const KeySystemModal: React.FC<KeySystemModalProps> = ({
     'Status: Enter your key or click Get Key to continue.'
   );
   const [isError, setIsError] = useState(false);
+  const [cardFlashState, setCardFlashState] = useState<'neutral' | 'error' | 'success'>('neutral');
   const [copiedLink, setCopiedLink] = useState(false);
   const [shakeTrigger, setShakeTrigger] = useState(0);
 
@@ -30,17 +31,25 @@ export const KeySystemModal: React.FC<KeySystemModalProps> = ({
     const validation = validateAccessKey(keyInput);
     if (!validation.valid) {
       setIsError(true);
+      setCardFlashState('error');
       setStatusMsg(`Status: ${validation.error}`);
       setShakeTrigger((prev) => prev + 1);
+      window.setTimeout(() => {
+        setCardFlashState((prev) => (prev === 'error' ? 'neutral' : prev));
+      }, 1400);
       return;
     }
     setIsError(false);
+    setCardFlashState('success');
     setStatusMsg('Status: Key verified! Launching Core.xyz...');
-    onAuthorized(validation.normalizedKey, validation.expiresAtMs);
+    window.setTimeout(() => {
+      onAuthorized(validation.normalizedKey, validation.expiresAtMs);
+    }, 340);
   };
 
   const handleGetKey = async () => {
     setIsError(false);
+    setCardFlashState('neutral');
     try {
       await navigator.clipboard.writeText(PLATOBOOST_GATEWAY_URL);
     } catch {
@@ -56,8 +65,23 @@ export const KeySystemModal: React.FC<KeySystemModalProps> = ({
   const handleClearKey = () => {
     setKeyInput('');
     setIsError(false);
+    setCardFlashState('neutral');
     setStatusMsg('Status: Input cleared. Paste your key or click Get Key.');
   };
+
+  const cardGradientClasses =
+    cardFlashState === 'error'
+      ? 'bg-gradient-to-br from-red-950/90 via-red-900/55 to-[#0A0A0A] border-red-500/80 shadow-[0_0_45px_rgba(239,68,68,0.28)]'
+      : cardFlashState === 'success'
+      ? 'bg-gradient-to-br from-emerald-950/90 via-emerald-900/55 to-[#0A0A0A] border-emerald-400/80 shadow-[0_0_45px_rgba(16,185,129,0.28)]'
+      : 'bg-[#0A0A0A] border-white/15 shadow-2xl';
+
+  const topAccentClasses =
+    cardFlashState === 'error'
+      ? 'from-red-500/30 via-red-400 to-red-500/30'
+      : cardFlashState === 'success'
+      ? 'from-emerald-500/30 via-emerald-400 to-emerald-500/30'
+      : 'from-white/10 via-white/90 to-white/10';
 
   return (
     <div
@@ -104,12 +128,16 @@ export const KeySystemModal: React.FC<KeySystemModalProps> = ({
             x: shakeTrigger > 0 ? [0, -8, 8, -6, 6, 0] : 0,
           }}
           transition={{ duration: 0.35 }}
-          className="relative w-full max-w-md rounded-xl bg-[#0A0A0A] border border-white/15 p-8 shadow-2xl overflow-hidden"
+          data-testid="key-system-card"
+          data-flash-state={cardFlashState}
+          className={`relative w-full max-w-md rounded-xl border p-8 overflow-hidden transition-all duration-300 ${cardGradientClasses}`}
         >
           {/* Top Accent Line */}
-          <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-white/10 via-white/90 to-white/10" />
+          <div
+            className={`absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r transition-colors duration-300 ${topAccentClasses}`}
+          />
 
-          <div className="flex items-start justify-between gap-4 mb-4">
+          <div className="flex items-start justify-between gap-4 mb-5">
             <div>
               <div className="flex items-center gap-2.5">
                 <h1 className="text-xl font-extrabold tracking-tight text-white">
@@ -131,16 +159,7 @@ export const KeySystemModal: React.FC<KeySystemModalProps> = ({
             </div>
           </div>
 
-          <div className="h-px w-full bg-white/10 mb-4" />
-
-          {/* 3-Step Guided Verification Flow Bar */}
-          <div className="mb-4 rounded-lg bg-[#0F0F13] border border-white/10 px-3 py-2 flex items-center justify-between text-[11px] font-medium text-neutral-300">
-            <span>1. Click Get Key</span>
-            <span className="text-neutral-600">→</span>
-            <span>2. Complete Link</span>
-            <span className="text-neutral-600">→</span>
-            <span>3. Paste &amp; Submit</span>
-          </div>
+          <div className="h-px w-full bg-white/10 mb-5" />
 
           <form onSubmit={handleSubmitKey} className="space-y-4" noValidate>
             <div>
@@ -153,13 +172,20 @@ export const KeySystemModal: React.FC<KeySystemModalProps> = ({
                     setKeyInput(e.target.value);
                     if (isError) {
                       setIsError(false);
+                      setCardFlashState('neutral');
                       setStatusMsg('Status: Enter your key or click Get Key to continue.');
                     }
                   }}
                   placeholder="Paste your Platoboost key here..."
                   aria-label="Platoboost Key"
                   autoComplete="off"
-                  className="w-full rounded-lg bg-[#121216] border border-white/15 px-4 py-3 pr-20 text-sm font-mono text-white placeholder:text-neutral-500 focus:outline-none focus:border-white transition-colors"
+                  className={`w-full rounded-lg bg-[#121216]/90 border px-4 py-3 pr-20 text-sm font-mono text-white placeholder:text-neutral-500 focus:outline-none transition-colors ${
+                    cardFlashState === 'error'
+                      ? 'border-red-400 focus:border-red-300'
+                      : cardFlashState === 'success'
+                      ? 'border-emerald-400 focus:border-emerald-300'
+                      : 'border-white/15 focus:border-white'
+                  }`}
                 />
                 <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
                   {keyInput.length > 0 && (
@@ -197,14 +223,18 @@ export const KeySystemModal: React.FC<KeySystemModalProps> = ({
                     className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                       isError
                         ? 'bg-red-400'
-                        : copiedLink
+                        : cardFlashState === 'success' || copiedLink
                         ? 'bg-emerald-400'
                         : 'bg-neutral-400'
                     }`}
                   />
                   <p
                     className={`text-xs font-medium ${
-                      isError ? 'text-red-400' : 'text-neutral-300'
+                      isError
+                        ? 'text-red-300'
+                        : cardFlashState === 'success'
+                        ? 'text-emerald-300'
+                        : 'text-neutral-300'
                     }`}
                   >
                     {statusMsg}
@@ -263,5 +293,6 @@ export const KeySystemModal: React.FC<KeySystemModalProps> = ({
     </div>
   );
 };
+
 
 

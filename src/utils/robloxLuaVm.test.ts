@@ -2177,27 +2177,44 @@ do
     assert(perfAutoBtn ~= nil and perfQualBtn ~= nil and pauseRenderToggle ~= nil, "Performance Profile options and Pause Rendering When Tabbed Out toggle must exist")
     perfQualBtn.MouseButton1Click:Fire()
     assert(_G.__FPS_CAP == 240, "Selecting Quality Performance Profile must set FPS cap to 240")
-    -- Test Auto On PC (KeyboardEnabled = true -> Balanced = 120 FPS)
+    -- Test Auto On PC (KeyboardEnabled = true -> Balanced = 120 FPS & Keybinds Visible)
     game:GetService("UserInputService").KeyboardEnabled = true
     perfAutoBtn.MouseButton1Click:Fire()
     assert(_G.__FPS_CAP == 120, "Selecting Auto Performance Profile on PC (KeyboardEnabled=true) must apply Balanced profile (120 FPS cap)")
-    -- Test Auto On Mobile (TouchEnabled = true, KeyboardEnabled = false -> Performance = 60 FPS)
+
+    local aimbotKeybindBadgeRef
+    for _, desc in ipairs(mainWindow:GetDescendants()) do
+        if desc.Name == "KeybindBadge_Aimbot" then
+            aimbotKeybindBadgeRef = desc
+            break
+        end
+    end
+    assert(aimbotKeybindBadgeRef ~= nil and aimbotKeybindBadgeRef.Visible == true, "KeybindBadge_Aimbot must be visible when PC device is detected (KeyboardEnabled=true)")
+
+    -- Test Auto On Mobile (TouchEnabled = true, KeyboardEnabled = false -> Performance = 60 FPS & Keybinds Hidden!)
     game:GetService("UserInputService").KeyboardEnabled = false
     perfAutoBtn.MouseButton1Click:Fire()
     assert(_G.__FPS_CAP == 60, "Selecting Auto Performance Profile on Mobile (TouchEnabled=true, KeyboardEnabled=false) must apply Performance profile (60 FPS cap)")
+    assert(aimbotKeybindBadgeRef.Visible == false, "Keybinds ([...]) must be hidden when Mobile device is detected (TouchEnabled=true, KeyboardEnabled=false)")
+
+    -- Restore PC mode for subsequent tests
+    game:GetService("UserInputService").KeyboardEnabled = true
+    perfAutoBtn.MouseButton1Click:Fire()
+    assert(aimbotKeybindBadgeRef.Visible == true, "Keybinds ([...]) must reappear when PC device is detected")
 
     pauseRenderToggle.MouseButton1Click:Fire()
     game:GetService("UserInputService").WindowFocusReleased:Fire()
     assert(_G.__FPS_CAP == 15, "WindowFocusReleased must throttle FPS to TabbedOutFPS (15)")
     game:GetService("UserInputService").WindowFocused:Fire()
-    assert(_G.__FPS_CAP == 60, "WindowFocused must restore active profile FPS cap")
+    assert(_G.__FPS_CAP == 120, "WindowFocused must restore active profile FPS cap")
 
-    -- Test Client Telemetry & Info (Executor, Device, Kills This Session)
+    -- Test Client Telemetry & Info (Executor & Device ONLY — Kill Count Removed!)
     local execLbl = clientSec:FindFirstChild("SectionContent"):FindFirstChild("ClientExecutorLabel")
     local devLbl = clientSec:FindFirstChild("SectionContent"):FindFirstChild("ClientDeviceLabel")
     local killsLbl = clientSec:FindFirstChild("SectionContent"):FindFirstChild("ClientKillsLabel")
-    assert(execLbl ~= nil and devLbl ~= nil and killsLbl ~= nil, "ClientExecutorLabel, ClientDeviceLabel, and ClientKillsLabel must exist in SectionBox_Client")
-    assert(string.find(execLbl.Text, "Executor:") ~= nil and string.find(devLbl.Text, "Device:") ~= nil and string.find(killsLbl.Text, "Kills This Session:") ~= nil, "Client Telemetry labels must format Executor, Device, and Kills This Session")
+    assert(execLbl ~= nil and devLbl ~= nil, "ClientExecutorLabel and ClientDeviceLabel must exist in SectionBox_Client")
+    assert(killsLbl == nil, "ClientKillsLabel (killcount) must be completely removed from SectionBox_Client")
+    assert(string.find(execLbl.Text, "Executor:") ~= nil and string.find(devLbl.Text, "Device:") ~= nil, "Client Telemetry labels must format Executor and Device")
 
     -- Test Server Management & Utilities (Game, Players, Time in server, Ping, Region, Job ID + 5 Server Buttons)
     local srvContent = serverSec:FindFirstChild("SectionContent")
@@ -2274,18 +2291,39 @@ do
     headerSearchClearBtn.MouseButton1Click:Fire()
     assert(headerSearchBox.Text == "" and perfSec.Visible == true and serverSec.Visible == true, "Clicking HeaderSearchClearBtn must clear filter text and restore visibility of all section boxes")
 
-    -- Verify Upgraded Loader (LoaderStageBadge, LoaderSubDetail) & Polished KeySystem (KeyStepsBar, KeyClearBtn, KeyStatusDot)
+    -- Verify Upgraded Loader (LoaderStageBadge, LoaderSubDetail) & Polished KeySystem (NO KeyStepsBar, has KeyGradientOverlay, KeyCardGradient, KeyClearBtn, KeyStatusDot)
     local loaderStageBadge = loaderCard:FindFirstChild("LoaderStageBadge")
     local loaderSubDetail = loaderCard:FindFirstChild("LoaderSubDetail")
     assert(loaderStageBadge ~= nil and loaderSubDetail ~= nil, "CoreLoader must include LoaderStageBadge and LoaderSubDetail for comfortable 6-stage loading feedback")
 
     local keyStepsBar = keyCard:FindFirstChild("KeyStepsBar")
+    local keyGradOverlay = keyCard:FindFirstChild("KeyGradientOverlay")
+    local keyCardGrad = keyCard:FindFirstChild("KeyCardGradient")
     local keyClearBtn, keyStatusDot
     for _, desc in ipairs(keyCard:GetDescendants()) do
         if desc.Name == "KeyClearBtn" then keyClearBtn = desc end
         if desc.Name == "KeyStatusDot" then keyStatusDot = desc end
     end
-    assert(keyStepsBar ~= nil and keyClearBtn ~= nil and keyStatusDot ~= nil, "CoreKeySystem must include KeyStepsBar, KeyClearBtn, and KeyStatusDot")
+    assert(keyStepsBar == nil, "3-step verification guide (KeyStepsBar) must be removed from CoreKeySystem")
+    assert(keyGradOverlay ~= nil and keyCardGrad ~= nil and keyClearBtn ~= nil and keyStatusDot ~= nil, "CoreKeySystem must include KeyGradientOverlay, KeyCardGradient, KeyClearBtn, and KeyStatusDot")
+
+    -- Verify Pill & FOV Circle Gradient Animations Continue Rotating When MainWindow is Closed!
+    local fovCircle = overlays:FindFirstChild("FOVCircle")
+    fovCircle.Visible = true
+    mainWindow.Visible = false
+    local pillGrad, fovGrad
+    for _, desc in ipairs(floatingToggle:GetDescendants()) do
+        if desc.ClassName == "UIGradient" then pillGrad = desc end
+    end
+    for _, desc in ipairs(fovCircle:GetDescendants()) do
+        if desc.ClassName == "UIGradient" then fovGrad = desc end
+    end
+    assert(pillGrad ~= nil and fovGrad ~= nil, "FloatingToggle and FOVCircle must have live UIGradient borders")
+    local pillRotBefore = pillGrad.Rotation
+    local fovRotBefore = fovGrad.Rotation
+    RunService.RenderStepped:Fire(0.08)
+    assert(pillGrad.Rotation ~= pillRotBefore and fovGrad.Rotation ~= fovRotBefore, "Pill and FOV Circle UIGradient animations must continue rotating smoothly even when MainWindow is closed!")
+    mainWindow.Visible = true
 end
 
 _G.__TEST_PASSED = true

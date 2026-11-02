@@ -2248,6 +2248,44 @@ do
     cyberThemeBtn.MouseButton1Click:Fire()
     saveThemeBtn.MouseButton1Click:Fire()
     assert(_G.__FILES["CoreXYZ_Data/CustomThemes.json"] ~= nil, "Clicking Save Custom Theme must persist CustomThemes.json")
+
+    -- Test Collapsible Section Header Button (SectionCollapseBtn)
+    local perfCollapseBtn = perfSec:FindFirstChild("SectionHeaderBadge"):FindFirstChild("SectionCollapseBtn")
+    local perfSecContent = perfSec:FindFirstChild("SectionContent")
+    assert(perfCollapseBtn ~= nil and perfSecContent ~= nil and perfSecContent.Visible == true, "SectionCollapseBtn must exist and SectionContent must start expanded")
+    perfCollapseBtn.MouseButton1Click:Fire()
+    assert(perfSecContent.Visible == false and perfCollapseBtn.Text == "▸", "Clicking SectionCollapseBtn must collapse SectionContent")
+    perfCollapseBtn.MouseButton1Click:Fire()
+    assert(perfSecContent.Visible == true and perfCollapseBtn.Text == "▾", "Clicking SectionCollapseBtn again must re-expand SectionContent")
+
+    -- Test HeaderSearchBox Real-Time Feature Filter & Clear Button
+    local headerSearchBox, headerSearchClearBtn, headerSubtitle
+    for _, desc in ipairs(mainWindow:GetDescendants()) do
+        if desc.Name == "HeaderSearchBox" then headerSearchBox = desc end
+        if desc.Name == "HeaderSearchClearBtn" then headerSearchClearBtn = desc end
+        if desc.Name == "HeaderSubtitle" then headerSubtitle = desc end
+    end
+    assert(headerSearchBox ~= nil and headerSearchClearBtn ~= nil, "HeaderSearchBox and HeaderSearchClearBtn must exist in MainWindow HeaderBar")
+    assert(headerSubtitle ~= nil and string.find(string.upper(headerSubtitle.Text or ""), "STEALTH") == nil, "HeaderSubtitle on top-left must not contain 'Ultra stealth' text")
+    headerSearchBox.Text = "Performance Settings"
+    headerSearchBox.FocusLost:Fire()
+    assert(perfSec.Visible == true and serverSec.Visible == false, "HeaderSearchBox must keep matching SectionBox_Performance Settings visible and hide non-matching SectionBox_Server")
+    assert(headerSearchClearBtn.Visible == true, "HeaderSearchClearBtn must become visible when a filter query is active")
+    headerSearchClearBtn.MouseButton1Click:Fire()
+    assert(headerSearchBox.Text == "" and perfSec.Visible == true and serverSec.Visible == true, "Clicking HeaderSearchClearBtn must clear filter text and restore visibility of all section boxes")
+
+    -- Verify Upgraded Loader (LoaderStageBadge, LoaderSubDetail) & Polished KeySystem (KeyStepsBar, KeyClearBtn, KeyStatusDot)
+    local loaderStageBadge = loaderCard:FindFirstChild("LoaderStageBadge")
+    local loaderSubDetail = loaderCard:FindFirstChild("LoaderSubDetail")
+    assert(loaderStageBadge ~= nil and loaderSubDetail ~= nil, "CoreLoader must include LoaderStageBadge and LoaderSubDetail for comfortable 6-stage loading feedback")
+
+    local keyStepsBar = keyCard:FindFirstChild("KeyStepsBar")
+    local keyClearBtn, keyStatusDot
+    for _, desc in ipairs(keyCard:GetDescendants()) do
+        if desc.Name == "KeyClearBtn" then keyClearBtn = desc end
+        if desc.Name == "KeyStatusDot" then keyStatusDot = desc end
+    end
+    assert(keyStepsBar ~= nil and keyClearBtn ~= nil and keyStatusDot ~= nil, "CoreKeySystem must include KeyStepsBar, KeyClearBtn, and KeyStatusDot")
 end
 
 _G.__TEST_PASSED = true

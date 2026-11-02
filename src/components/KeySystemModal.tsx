@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { KeyRound, Eye, EyeOff, Check, Copy, ArrowRight, RotateCcw } from 'lucide-react';
+import { KeyRound, Eye, EyeOff, Check, Copy, ArrowRight, RotateCcw, X } from 'lucide-react';
 import {
   PLATOBOOST_GATEWAY_URL,
   PLATOBOOST_SERVICE_ID,
@@ -53,6 +53,12 @@ export const KeySystemModal: React.FC<KeySystemModalProps> = ({
     window.setTimeout(() => setCopiedLink(false), 2500);
   };
 
+  const handleClearKey = () => {
+    setKeyInput('');
+    setIsError(false);
+    setStatusMsg('Status: Input cleared. Paste your key or click Get Key.');
+  };
+
   return (
     <div
       className="min-h-screen w-full bg-[#050505] text-white flex flex-col justify-between p-6 relative overflow-hidden"
@@ -98,23 +104,26 @@ export const KeySystemModal: React.FC<KeySystemModalProps> = ({
             x: shakeTrigger > 0 ? [0, -8, 8, -6, 6, 0] : 0,
           }}
           transition={{ duration: 0.35 }}
-          className="w-full max-w-md rounded-xl bg-[#0A0A0A] border border-white/15 p-8 shadow-2xl"
+          className="relative w-full max-w-md rounded-xl bg-[#0A0A0A] border border-white/15 p-8 shadow-2xl overflow-hidden"
         >
-          <div className="flex items-start justify-between gap-4 mb-5">
+          {/* Top Accent Line */}
+          <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-white/10 via-white/90 to-white/10" />
+
+          <div className="flex items-start justify-between gap-4 mb-4">
             <div>
               <div className="flex items-center gap-2.5">
                 <h1 className="text-xl font-extrabold tracking-tight text-white">
                   Core.xyz &nbsp;|&nbsp; Key System
                 </h1>
               </div>
-              <p className="text-xs text-neutral-400 mt-1.5">
-                Verify your license key to launch the workspace
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 mt-1">
+                License Verification Gateway
               </p>
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
-              <span className="px-2.5 py-1 rounded-md bg-[#141414] border border-white/15 font-mono text-[10px] font-bold tracking-wider text-neutral-300">
-                PLATOBOOST
+              <span className="px-2.5 py-1 rounded-md bg-[#141414] border border-white/15 font-mono text-[10px] font-bold tracking-wider text-white">
+                ● PLATOBOOST
               </span>
               <div className="w-8 h-8 rounded-lg bg-white/[0.06] border border-white/15 flex items-center justify-center shrink-0">
                 <KeyRound className="w-4 h-4 text-white" />
@@ -122,11 +131,20 @@ export const KeySystemModal: React.FC<KeySystemModalProps> = ({
             </div>
           </div>
 
-          <div className="h-px w-full bg-white/10 mb-5" />
+          <div className="h-px w-full bg-white/10 mb-4" />
+
+          {/* 3-Step Guided Verification Flow Bar */}
+          <div className="mb-4 rounded-lg bg-[#0F0F13] border border-white/10 px-3 py-2 flex items-center justify-between text-[11px] font-medium text-neutral-300">
+            <span>1. Click Get Key</span>
+            <span className="text-neutral-600">→</span>
+            <span>2. Complete Link</span>
+            <span className="text-neutral-600">→</span>
+            <span>3. Paste &amp; Submit</span>
+          </div>
 
           <form onSubmit={handleSubmitKey} className="space-y-4" noValidate>
             <div>
-              <div className="relative">
+              <div className="relative flex items-center">
                 <input
                   id="access-key-input"
                   type={showKey ? 'text' : 'password'}
@@ -141,32 +159,57 @@ export const KeySystemModal: React.FC<KeySystemModalProps> = ({
                   placeholder="Paste your Platoboost key here..."
                   aria-label="Platoboost Key"
                   autoComplete="off"
-                  className="w-full rounded-lg bg-[#121212] border border-white/15 px-4 py-3 pr-11 text-sm font-mono text-white placeholder:text-neutral-500 focus:outline-none focus:border-white transition-colors"
+                  className="w-full rounded-lg bg-[#121216] border border-white/15 px-4 py-3 pr-20 text-sm font-mono text-white placeholder:text-neutral-500 focus:outline-none focus:border-white transition-colors"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowKey((prev) => !prev)}
-                  aria-label={showKey ? 'Hide key' : 'Show key'}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-neutral-400 hover:text-white transition-colors cursor-pointer"
-                >
-                  {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+                <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                  {keyInput.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearKey}
+                      aria-label="Clear key input"
+                      className="px-1.5 py-1 rounded bg-white/[0.06] hover:bg-white/15 text-[10px] font-bold text-neutral-300 hover:text-white transition-colors cursor-pointer"
+                    >
+                      CLEAR
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowKey((prev) => !prev)}
+                    aria-label={showKey ? 'Hide key' : 'Show key'}
+                    className="p-1 text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                  >
+                    {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
 
               <AnimatePresence mode="wait">
-                <motion.p
+                <motion.div
                   key={statusMsg}
                   initial={{ opacity: 0, y: -2 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -2 }}
                   role={isError ? 'alert' : 'status'}
                   data-testid="key-feedback-status"
-                  className={`mt-2.5 text-xs font-medium ${
-                    isError ? 'text-red-400' : 'text-neutral-300'
-                  }`}
+                  className="mt-2.5 flex items-center gap-2"
                 >
-                  {statusMsg}
-                </motion.p>
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                      isError
+                        ? 'bg-red-400'
+                        : copiedLink
+                        ? 'bg-emerald-400'
+                        : 'bg-neutral-400'
+                    }`}
+                  />
+                  <p
+                    className={`text-xs font-medium ${
+                      isError ? 'text-red-400' : 'text-neutral-300'
+                    }`}
+                  >
+                    {statusMsg}
+                  </p>
+                </motion.div>
               </AnimatePresence>
             </div>
 
@@ -185,7 +228,7 @@ export const KeySystemModal: React.FC<KeySystemModalProps> = ({
                 type="button"
                 onClick={handleGetKey}
                 data-testid="key-get-button"
-                className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-xs font-bold bg-[#141414] text-white hover:bg-[#1F1F1F] border border-white/15 transition-colors whitespace-nowrap cursor-pointer"
+                className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-xs font-bold bg-[#141418] text-white hover:bg-[#1F1F26] border border-white/15 transition-colors whitespace-nowrap cursor-pointer"
               >
                 {copiedLink ? (
                   <>
@@ -207,7 +250,7 @@ export const KeySystemModal: React.FC<KeySystemModalProps> = ({
             <span>·</span>
             <span>SHA-256 Nonce Auth</span>
             <span>·</span>
-            <span>No Auto-Save Bypass</span>
+            <span>Live Session Key Tracking</span>
           </div>
         </motion.div>
       </main>
@@ -220,4 +263,5 @@ export const KeySystemModal: React.FC<KeySystemModalProps> = ({
     </div>
   );
 };
+
 

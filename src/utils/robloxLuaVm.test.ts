@@ -393,7 +393,18 @@ Enum = {
     ZIndexBehavior = { Sibling = "Sibling", Global = "Global" },
     VerticalAlignment = { Bottom = "Bottom", Top = "Top", Center = "Center" },
     HorizontalAlignment = { Right = "Right", Left = "Left", Center = "Center" },
-    Font = { GothamBlack = "GothamBlack", GothamBold = "GothamBold", GothamMedium = "GothamMedium", Gotham = "Gotham", Code = "Code" },
+    Font = {
+        GothamBlack = "GothamBlack",
+        GothamBold = "GothamBold",
+        GothamMedium = "GothamMedium",
+        Gotham = "Gotham",
+        Code = "Code",
+        SourceSansBold = "SourceSansBold",
+        SourceSans = "SourceSans",
+        Ubuntu = "Ubuntu",
+        Arcade = "Arcade",
+        SciFi = "SciFi",
+    },
     TextXAlignment = { Left = "Left", Right = "Right", Center = "Center" },
     TextYAlignment = { Top = "Top", Center = "Center", Bottom = "Bottom" },
     TextTruncate = { AtEnd = "AtEnd" },
@@ -401,7 +412,16 @@ Enum = {
     AutomaticSize = { Y = "Y", X = "X", XY = "XY" },
     UserInputType = { MouseButton1 = "MouseButton1", Touch = "Touch", MouseMovement = "MouseMovement", Keyboard = "Keyboard" },
     UserInputState = { Begin = "Begin", Change = "Change", End = "End" },
-    KeyCode = { RightShift = "RightShift" },
+    KeyCode = {
+        RightShift = { Name = "RightShift" },
+        Unknown = { Name = "Unknown" },
+        Backspace = { Name = "Backspace" },
+        Delete = { Name = "Delete" },
+        Escape = { Name = "Escape" },
+        Q = { Name = "Q" },
+        E = { Name = "E" },
+        F = { Name = "F" },
+    },
     HumanoidStateType = { Jumping = "Jumping", Swimming = "Swimming", Ragdoll = "Ragdoll" },
     CameraType = { Custom = "Custom", Scriptable = "Scriptable" },
     DevCameraOcclusionMode = { Zoom = "Zoom", Invisicam = "Invisicam" },
@@ -417,8 +437,14 @@ Enum = {
         CrackedLava = "CrackedLava",
         Fabric = "Fabric",
     },
-    QualityLevel = { Level01 = "Level01" },
-    ScaleType = { Fit = "Fit", Crop = "Crop", Stretch = "Stretch" },
+    QualityLevel = {
+        Level01 = "Level01",
+        Level04 = "Level04",
+        Level10 = "Level10",
+        Level21 = "Level21",
+        Automatic = "Automatic",
+    },
+    ScaleType = { Fit = "Fit", Crop = "Crop", Stretch = "Stretch", Tile = "Tile" },
     RenderPriority = { Camera = { Value = 200 }, Character = { Value = 300 }, First = { Value = 0 }, Last = { Value = 2000 } },
 }
 
@@ -773,6 +799,7 @@ _G.__ALL_PLAYERS = allPlayers
 
 local PlayersService = {
     LocalPlayer = LocalPlayer,
+    MaxPlayers = 24,
     PlayerAdded = createSignal(),
     PlayerRemoving = createSignal(),
     GetPlayers = function()
@@ -810,10 +837,14 @@ local TeamsService = {
 }
 
 local UserInputService = {
+    TouchEnabled = true,
+    KeyboardEnabled = true,
     InputBegan = createSignal(),
     InputChanged = createSignal(),
     InputEnded = createSignal(),
     JumpRequest = createSignal(),
+    WindowFocusReleased = createSignal(),
+    WindowFocused = createSignal(),
 }
 
 local TweenService = {
@@ -1445,6 +1476,11 @@ for _, pageName in ipairs({ "Combat_Page", "Visuals_Page", "Movement_Page" }) do
                         and lText ~= "Wall Check"
                         and lText ~= "Crosshair Center Dot"
                         and lText ~= "Weather Sound Effects"
+                        and lText ~= "Bone Outline"
+                        and lText ~= "Head Circle"
+                        and lText ~= "Text Outline"
+                        and lText ~= "Bar Outline"
+                        and lText ~= "Low Health Flash"
                         and lText ~= "Stealth Anti-Kick Bypass (99% Undetected)" then
                         ctrl.MouseButton1Click:Fire()
                     end
@@ -1663,6 +1699,7 @@ searchSkyBtn.MouseButton1Click:Fire()
 assert(string.find(tostring(customSky.SkyboxBk), "rbxassetid://") ~= nil, "Clicking Skybox Search must populate results and apply valid rbxassetid:// skybox faces")
 end
 
+do
 -- Test Community Music System, Track Auto-Downloader, Connected Wavy Ocean Player UI & Mute Game Audio
 local musicTabBtn, musicPage
 for _, desc in ipairs(mainWindow:GetDescendants()) do
@@ -1757,6 +1794,7 @@ assert(gameBgSound.Volume == 0, "Enabling Mute Game Audio must silence in-game S
 assert(musicSound.Volume > 0, "Mute Game Audio must NOT mute CoreXyz_MusicPlayerSound")
 muteGameAudioBtn.MouseButton1Click:Fire()
 assert(gameBgSound.Volume == 0.8, "Disabling Mute Game Audio must restore original in-game Sound volumes")
+end
 
 res1280x1024Btn.MouseButton1Click:Fire()
 game:GetService("RunService").RenderStepped:Fire(0.016)
@@ -1869,6 +1907,7 @@ end
 local instanceCountAfterLoop = #_G.__ALL_INSTANCES
 assert(instanceCountAfterLoop == instanceCountBeforeLoop, "RenderStepped loop must allocate ZERO new instances across 20 frames (100% Object Pooled)")
 
+do
 -- 6B. Test ESP & Hitbox Auto-Refresh on Player Death, Multi-Frame Streaming Respawn, and New Player Joining Mid-Game!
 local enemy3Player = _G.__ALL_PLAYERS[4] -- Enemy_3
 local enemy3Hum = enemy3Player.Character:FindFirstChildOfClass("Humanoid")
@@ -1967,6 +2006,7 @@ RunService.RenderStepped:Fire(0.016)
 local njTag, njOverlay = findScreenTagForPlayer("Enemy_NewJoin_36")
 assert(njTag ~= nil and njTag.Visible == true and njOverlay.Visible == true, "Newly joined player Enemy_NewJoin_36 must automatically get live ESP without toggling ESP off/on")
 assert(njHRP.Size.X == 10, "Newly joined player Enemy_NewJoin_36 must automatically get expanded hitbox")
+end
 
 -- Verify Zero Restricted Engine Telemetry Calls (No VirtualUser or Set3dRenderingEnabled)
 game:GetService("Players").LocalPlayer.Idled:Fire()
@@ -1997,6 +2037,218 @@ saveCfgBtn.MouseButton1Click:Fire()
 assert(_G.__FILES["CoreXYZ_Data/Config_MyProConfig.json"] ~= nil, "Saving config with valid name must write file")
 loadCfgBtn.MouseButton1Click:Fire()
 RunService.RenderStepped:Fire(0.05)
+
+-- 8. Test Interactive Floating Color Picker Popup Panel (CoreColorPickerPopup)
+do
+    local colorPickerPopup = screenGui:FindFirstChild("CoreColorPickerPopup")
+    assert(colorPickerPopup ~= nil, "CoreColorPickerPopup floating panel must exist in ScreenGui")
+    local svSquare = colorPickerPopup:FindFirstChild("SVSquare")
+    local svHitbox = svSquare and svSquare:FindFirstChild("ColorPickerSVHitbox")
+    local hueBar = colorPickerPopup:FindFirstChild("HueBar")
+    local hueHitbox = hueBar and hueBar:FindFirstChild("ColorPickerHueHitbox")
+    local alphaBar = colorPickerPopup:FindFirstChild("AlphaBar")
+    local alphaHitbox = alphaBar and alphaBar:FindFirstChild("ColorPickerAlphaHitbox")
+    local rgbaBox = colorPickerPopup:FindFirstChild("ColorPickerRGBABox")
+    local previewSwatch = colorPickerPopup:FindFirstChild("ColorPickerPreviewSwatch")
+    assert(svHitbox ~= nil and hueHitbox ~= nil and alphaHitbox ~= nil and rgbaBox ~= nil and previewSwatch ~= nil, "CoreColorPickerPopup must contain SVSquare, HueBar, AlphaBar, ColorPickerRGBABox, and ColorPickerPreviewSwatch")
+
+    -- Click a color swatch to open CoreColorPickerPopup
+    local selfChamsSec = visualsPage:FindFirstChild("SectionBox_Self Chams")
+    local selfChamsSw1
+    for _, desc in ipairs(selfChamsSec:GetDescendants()) do
+        if desc.Name == "ColorSwatch_Self Chams" then selfChamsSw1 = desc end
+    end
+    if not colorPickerPopup.Visible then
+        selfChamsSw1.MouseButton1Click:Fire()
+    end
+    assert(colorPickerPopup.Visible == true, "Clicking a color swatch must open CoreColorPickerPopup")
+
+    -- Navigate Hue, SV, Alpha, and custom RGBA input
+    hueHitbox.MouseButton1Click:Fire()
+    svHitbox.MouseButton1Click:Fire()
+    alphaHitbox.MouseButton1Click:Fire()
+    rgbaBox.Text = "64, 224, 208, 0.85"
+    rgbaBox.FocusLost:Fire(true)
+    assert(string.find(rgbaBox.Text, "64, 224, 208") ~= nil, "Entering custom RGBA in ColorPickerRGBABox must update color & formatted RGBA text")
+    previewSwatch.MouseButton1Click:Fire()
+    assert(colorPickerPopup.Visible == false, "Clicking ColorPickerPreviewSwatch must close CoreColorPickerPopup")
+end
+
+-- 9. Test Interactive PC Keybind Badges ([...]) -> Click [...] -> Press Key -> Toggle Feature by Key
+do
+    local aimbotKeybindBadge
+    for _, desc in ipairs(mainWindow:GetDescendants()) do
+        if desc.Name == "KeybindBadge_Aimbot" then
+            aimbotKeybindBadge = desc
+            break
+        end
+    end
+    assert(aimbotKeybindBadge ~= nil and aimbotKeybindBadge.ClassName == "TextButton", "KeybindBadge_Aimbot must be an interactive TextButton")
+    assert(aimbotKeybindBadge.Text == "[...]", "KeybindBadge_Aimbot must start as '[...]'")
+
+    -- Click [...] to start listening for PC keybind
+    aimbotKeybindBadge.MouseButton1Click:Fire()
+    -- Press Q key on keyboard to bind [Q] to Aimbot
+    game:GetService("UserInputService").InputBegan:Fire({
+        KeyCode = Enum.KeyCode.Q,
+        UserInputType = Enum.UserInputType.Keyboard,
+    }, false)
+    assert(aimbotKeybindBadge.Text == "[Q]", "Pressing Q while KeybindBadge_Aimbot is listening must bind '[Q]'")
+
+    -- Press Q again -> must toggle Aimbot via the bound PC keybind!
+    game:GetService("UserInputService").InputBegan:Fire({
+        KeyCode = Enum.KeyCode.Q,
+        UserInputType = Enum.UserInputType.Keyboard,
+    }, false)
+    -- Press Q once more to restore Aimbot state
+    game:GetService("UserInputService").InputBegan:Fire({
+        KeyCode = Enum.KeyCode.Q,
+        UserInputType = Enum.UserInputType.Keyboard,
+    }, false)
+end
+
+-- 10. Test 4 New ESP Sub-Cards (SectionBox_Skeleton, SectionBox_Text, SectionBox_Health Bar, SectionBox_Box Effects)
+do
+    local skelSec = visualsPage:FindFirstChild("SectionBox_Skeleton")
+    local textSec = visualsPage:FindFirstChild("SectionBox_Text")
+    local hbSec = visualsPage:FindFirstChild("SectionBox_Health Bar")
+    local boxFxSec = visualsPage:FindFirstChild("SectionBox_Box Effects")
+    assert(skelSec ~= nil and textSec ~= nil and hbSec ~= nil and boxFxSec ~= nil, "All 4 ESP Sub-Cards (SectionBox_Skeleton, SectionBox_Text, SectionBox_Health Bar, SectionBox_Box Effects) must exist in Visuals_Page")
+
+    RunService.RenderStepped:Fire(0.05)
+    local foundHeadCircle = false
+    local foundJointDot = false
+    local foundHealthNum = false
+    local foundBoxFill = false
+    for _, child in ipairs(overlays:GetChildren()) do
+        if child.Name == "Box3DOverlay" and child.Visible then
+            local hc = child:FindFirstChild("HeadCircleFrame")
+            local jd = child:FindFirstChild("JointDot_1")
+            local hn = child:FindFirstChild("HealthNumberLabel")
+            local bf = child:FindFirstChild("Box2DFill")
+            if hc and hc.Visible then foundHeadCircle = true end
+            if jd and jd.Visible then foundJointDot = true end
+            if hn and hn.Visible then foundHealthNum = true end
+            if bf and bf.Visible then foundBoxFill = true end
+        end
+    end
+    assert(foundHeadCircle == true and foundJointDot == true and foundHealthNum == true and foundBoxFill == true, "HeadCircleFrame, JointDot_1, HealthNumberLabel, and Box2DFill must render on active ESP overlays")
+end
+
+-- 11. Test Skybox Suppression of Pre-Existing Lighting Sky Instances
+do
+    local lighting = game:GetService("Lighting")
+    local mapSky = _G.__createInstance("Sky")
+    mapSky.Name = "DefaultMapSky"
+    mapSky.Parent = lighting
+
+    -- Trigger Skybox preset change while Skybox is enabled -> DefaultMapSky must be suppressed (Parent == nil)
+    local skyboxSec = visualsPage:FindFirstChild("SectionBox_Skybox")
+    local auroraBtn
+    for _, desc in ipairs(skyboxSec:GetDescendants()) do
+        if desc.ClassName == "TextButton" and desc.Text == "Aurora Borealis" then
+            auroraBtn = desc
+        end
+    end
+    assert(auroraBtn ~= nil, "Aurora Borealis preset option must exist in SectionBox_Skybox")
+    auroraBtn.MouseButton1Click:Fire()
+    assert(mapSky.Parent == nil, "Enabling custom Skybox must suppress conflicting map Sky instances from Lighting")
+end
+
+-- 12. Test Settings Tab: Performance Settings, Client Telemetry, Server Management, Background, and Themes
+do
+    local perfSec = settingsPage:FindFirstChild("SectionBox_Performance Settings")
+    local clientSec = settingsPage:FindFirstChild("SectionBox_Client")
+    local serverSec = settingsPage:FindFirstChild("SectionBox_Server")
+    local bgSec = settingsPage:FindFirstChild("SectionBox_Background")
+    local themesSec = settingsPage:FindFirstChild("SectionBox_Themes")
+    assert(perfSec ~= nil and clientSec ~= nil and serverSec ~= nil and bgSec ~= nil and themesSec ~= nil, "SectionBox_Performance Settings, SectionBox_Client, SectionBox_Server, SectionBox_Background, and SectionBox_Themes must exist in Settings_Page")
+
+    -- Test Performance Settings: Auto rule + Tabbed Out FPS Cap
+    local perfAutoBtn, perfQualBtn, pauseRenderToggle
+    for _, desc in ipairs(perfSec:GetDescendants()) do
+        if desc.ClassName == "TextButton" and desc.Text == "Quality" then perfQualBtn = desc end
+        if desc.ClassName == "TextButton" and desc.Text == "Auto" then perfAutoBtn = desc end
+        if desc.ClassName == "TextButton" and desc.Text == "" then
+            local lbl = desc:FindFirstChildOfClass("TextLabel")
+            if lbl and lbl.Text == "Pause Rendering When Tabbed Out" then pauseRenderToggle = desc end
+        end
+    end
+    assert(perfAutoBtn ~= nil and perfQualBtn ~= nil and pauseRenderToggle ~= nil, "Performance Profile options and Pause Rendering When Tabbed Out toggle must exist")
+    perfQualBtn.MouseButton1Click:Fire()
+    assert(_G.__FPS_CAP == 240, "Selecting Quality Performance Profile must set FPS cap to 240")
+    -- Test Auto On PC (KeyboardEnabled = true -> Balanced = 120 FPS)
+    game:GetService("UserInputService").KeyboardEnabled = true
+    perfAutoBtn.MouseButton1Click:Fire()
+    assert(_G.__FPS_CAP == 120, "Selecting Auto Performance Profile on PC (KeyboardEnabled=true) must apply Balanced profile (120 FPS cap)")
+    -- Test Auto On Mobile (TouchEnabled = true, KeyboardEnabled = false -> Performance = 60 FPS)
+    game:GetService("UserInputService").KeyboardEnabled = false
+    perfAutoBtn.MouseButton1Click:Fire()
+    assert(_G.__FPS_CAP == 60, "Selecting Auto Performance Profile on Mobile (TouchEnabled=true, KeyboardEnabled=false) must apply Performance profile (60 FPS cap)")
+
+    pauseRenderToggle.MouseButton1Click:Fire()
+    game:GetService("UserInputService").WindowFocusReleased:Fire()
+    assert(_G.__FPS_CAP == 15, "WindowFocusReleased must throttle FPS to TabbedOutFPS (15)")
+    game:GetService("UserInputService").WindowFocused:Fire()
+    assert(_G.__FPS_CAP == 60, "WindowFocused must restore active profile FPS cap")
+
+    -- Test Client Telemetry & Info (Executor, Device, Kills This Session)
+    local execLbl = clientSec:FindFirstChild("SectionContent"):FindFirstChild("ClientExecutorLabel")
+    local devLbl = clientSec:FindFirstChild("SectionContent"):FindFirstChild("ClientDeviceLabel")
+    local killsLbl = clientSec:FindFirstChild("SectionContent"):FindFirstChild("ClientKillsLabel")
+    assert(execLbl ~= nil and devLbl ~= nil and killsLbl ~= nil, "ClientExecutorLabel, ClientDeviceLabel, and ClientKillsLabel must exist in SectionBox_Client")
+    assert(string.find(execLbl.Text, "Executor:") ~= nil and string.find(devLbl.Text, "Device:") ~= nil and string.find(killsLbl.Text, "Kills This Session:") ~= nil, "Client Telemetry labels must format Executor, Device, and Kills This Session")
+
+    -- Test Server Management & Utilities (Game, Players, Time in server, Ping, Region, Job ID + 5 Server Buttons)
+    local srvContent = serverSec:FindFirstChild("SectionContent")
+    local srvGameLbl = srvContent:FindFirstChild("ServerGameLabel")
+    local srvPlayersLbl = srvContent:FindFirstChild("ServerPlayersLabel")
+    local srvDurLbl = srvContent:FindFirstChild("ServerDurationLabel")
+    local srvPingLbl = srvContent:FindFirstChild("ServerPingLabel")
+    local srvRegionLbl = srvContent:FindFirstChild("ServerRegionLabel")
+    local srvJobLbl = srvContent:FindFirstChild("ServerJobIdLabel")
+    assert(srvGameLbl ~= nil and srvPlayersLbl ~= nil and srvDurLbl ~= nil and srvPingLbl ~= nil and srvRegionLbl ~= nil and srvJobLbl ~= nil, "All 6 Server telemetry labels must exist in SectionBox_Server")
+
+    local copyJobBtn, copyJoinScriptBtn, rejoinBtn, srvHopBtn, srvHopLowBtn
+    for _, desc in ipairs(serverSec:GetDescendants()) do
+        if desc.ClassName == "TextButton" then
+            if desc.Text == "Copy Job ID" then copyJobBtn = desc end
+            if desc.Text == "Copy Join Script" then copyJoinScriptBtn = desc end
+            if desc.Text == "Rejoin" then rejoinBtn = desc end
+            if desc.Text == "Server Hop" then srvHopBtn = desc end
+            if desc.Text == "Server Hop Lowest" then srvHopLowBtn = desc end
+        end
+    end
+    assert(copyJobBtn ~= nil and copyJoinScriptBtn ~= nil and rejoinBtn ~= nil and srvHopBtn ~= nil and srvHopLowBtn ~= nil, "All 5 Server Tools buttons (Copy Job ID, Copy Join Script, Rejoin, Server Hop, Server Hop Lowest) must exist in SectionBox_Server")
+
+    _G.__CLIPBOARD = ""
+    copyJobBtn.MouseButton1Click:Fire()
+    assert(_G.__CLIPBOARD == "job_current_1", "Copy Job ID must copy game.JobId to clipboard")
+
+    _G.__CLIPBOARD = ""
+    copyJoinScriptBtn.MouseButton1Click:Fire()
+    assert(string.find(_G.__CLIPBOARD, 'TeleportToPlaceInstance(55555, "job_current_1"', 1, true) ~= nil, "Copy Join Script must copy valid TeleportToPlaceInstance snippet to clipboard")
+
+    rejoinBtn.MouseButton1Click:Fire()
+    assert(game:GetService("TeleportService").__lastTeleportJob == "job_current_1", "Rejoin button must invoke TeleportToPlaceInstance with current JobId")
+
+    srvHopLowBtn.MouseButton1Click:Fire()
+    assert(game:GetService("TeleportService").__lastTeleportJob == "srv_low_ping", "Server Hop Lowest button must hop to lowest-player/lowest-ping server srv_low_ping")
+
+    -- Test Background & Themes Section Boxes
+    local contrastLbl = themesSec:FindFirstChild("SectionContent"):FindFirstChild("ContrastCheckLabel")
+    assert(contrastLbl ~= nil and string.find(contrastLbl.Text, "Contrast check:") ~= nil, "ContrastCheckLabel must exist in SectionBox_Themes and show live WCAG contrast ratio")
+
+    local cyberThemeBtn, saveThemeBtn
+    for _, desc in ipairs(themesSec:GetDescendants()) do
+        if desc.ClassName == "TextButton" and desc.Text == "Cyber Cyan" then cyberThemeBtn = desc end
+        if desc.ClassName == "TextButton" and desc.Text == "Save Custom Theme" then saveThemeBtn = desc end
+    end
+    assert(cyberThemeBtn ~= nil and saveThemeBtn ~= nil, "Theme List presets and Save Custom Theme button must exist in SectionBox_Themes")
+    cyberThemeBtn.MouseButton1Click:Fire()
+    saveThemeBtn.MouseButton1Click:Fire()
+    assert(_G.__FILES["CoreXYZ_Data/CustomThemes.json"] ~= nil, "Clicking Save Custom Theme must persist CustomThemes.json")
+end
 
 _G.__TEST_PASSED = true
 `;

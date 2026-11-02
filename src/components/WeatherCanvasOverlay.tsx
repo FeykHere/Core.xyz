@@ -14,6 +14,7 @@ interface WeatherCanvasOverlayProps {
   soundEnabled: boolean;
   volume: number; // 0..100
   muteGameAudio?: boolean;
+  underRoof?: boolean;
 }
 
 export const WeatherCanvasOverlay: React.FC<WeatherCanvasOverlayProps> = ({
@@ -21,10 +22,12 @@ export const WeatherCanvasOverlay: React.FC<WeatherCanvasOverlayProps> = ({
   soundEnabled,
   volume,
   muteGameAudio = false,
+  underRoof = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const soundEnabledRef = useRef(soundEnabled && !muteGameAudio);
   const volumeRef = useRef(volume);
+  const underRoofRef = useRef(underRoof);
   const triggerThunderSoundRef = useRef<((pan: number, distanceMeters: number) => void) | null>(
     null
   );
@@ -32,7 +35,8 @@ export const WeatherCanvasOverlay: React.FC<WeatherCanvasOverlayProps> = ({
   useEffect(() => {
     soundEnabledRef.current = soundEnabled && !muteGameAudio;
     volumeRef.current = volume;
-  }, [soundEnabled, volume, muteGameAudio]);
+    underRoofRef.current = underRoof;
+  }, [soundEnabled, volume, muteGameAudio, underRoof]);
 
   // Ambient Audio Loop & Synchronized 3D Spatial Thunder Synthesizer
   useEffect(() => {
@@ -53,7 +57,7 @@ export const WeatherCanvasOverlay: React.FC<WeatherCanvasOverlayProps> = ({
       ctx = new AudioCtx();
       const normVol = Math.max(0, Math.min(1, volume / 100));
       const masterGain = ctx.createGain();
-      masterGain.gain.value = normVol * 0.22;
+      masterGain.gain.value = normVol * (underRoof ? 0.11 : 0.22);
       masterGain.connect(ctx.destination);
 
       if (preset === 'Rain' || preset === 'Thunderstorm' || preset === 'Snow') {
@@ -80,16 +84,21 @@ export const WeatherCanvasOverlay: React.FC<WeatherCanvasOverlayProps> = ({
 
         const bedFilter = ctx.createBiquadFilter();
         bedFilter.type = preset === 'Snow' ? 'bandpass' : 'lowpass';
-        bedFilter.frequency.value =
-          preset === 'Thunderstorm' ? 1350 : preset === 'Rain' ? 1150 : 460;
+        bedFilter.frequency.value = underRoof
+          ? 380
+          : preset === 'Thunderstorm'
+          ? 1350
+          : preset === 'Rain'
+          ? 1150
+          : 460;
         bedFilter.Q.value = preset === 'Snow' ? 1.8 : 0.7;
 
         bedSource.connect(bedFilter);
         bedFilter.connect(masterGain);
         bedSource.start(0);
 
-        // 2. High-Frequency Droplet Patter Layer for Rain & Thunderstorm
-        if (preset === 'Rain' || preset === 'Thunderstorm') {
+        // 2. High-Frequency Droplet Patter Layer for Rain & Thunderstorm (Muffled when under roof)
+        if ((preset === 'Rain' || preset === 'Thunderstorm') && !underRoof) {
           const patterBuffer = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
           const pData = patterBuffer.getChannelData(0);
           for (let i = 0; i < pData.length; i++) {
@@ -308,38 +317,42 @@ export const WeatherCanvasOverlay: React.FC<WeatherCanvasOverlayProps> = ({
       // 2. Step Particle Physics
       stepWeatherParticles(particles, splashes, preset, dt, elapsedSec);
 
-      // 3. Render Rain / Thunderstorm Droplets & Ground Splashes
-      if (preset === 'Rain' || preset === 'Thunderstorm') {
+      // 3. Render Soft Motion-Blurred Rain / Thunderstorm Droplets & Ground Splashes (Occluded under roof)
+      if ((preset === 'Rain' || preset === 'Thunderstorm') && !underRoofRef.current) {
         ctx.lineCap = 'round';
         for (let i = 0; i < particles.length; i++) {
           const p = particles[i];
           const px = p.x * width;
           const py = p.y * height;
-          const dx = (preset === 'Thunderstorm' ? -0.22 : -0.06) * p.length;
-          const dy = p.length;
+          const softLen = p.length * 0.68;
+          const dx = (preset === 'Thunderstorm' ? -0.16 : -0.05) * softLen;
+          const dy = softLen;
 
-          ctx.strokeStyle =
-            preset === 'Thunderstorm'
-              ? `rgba(195, 226, 255, ${p.opacity.toFixed(2)})`
-              : `rgba(175, 215, 255, ${p.opacity.toFixed(2)})`;
-          ctx.lineWidth = p.radius;
+          const dropGrad = ctx.createLinearGradient(px, py, px + dx, py + dy);
+          const baseRgb = preset === 'Thunderstorm' ? '200, 228, 255' : '182, 218, 255';
+          dropGrad.addColorStop(0, `rgba(${baseRgb}, 0)`);
+          dropGrad.addColorStop(0.55, `rgba(${baseRgb}, ${(p.opacity * 0.65).toFixed(2)})`);
+          dropGrad.addColorStop(1, `rgba(${baseRgb}, ${Math.min(0.85, p.opacity * 0.92).toFixed(2)})`);
+
+          ctx.strokeStyle = dropGrad;
+          ctx.lineWidth = Math.max(0.8, p.radius * 0.85);
           ctx.beginPath();
           ctx.moveTo(px, py);
           ctx.lineTo(px + dx, py + dy);
           ctx.stroke();
         }
 
-        // Ground Splash Ripples
+        // Expanding Horizontal Ground Splash Ripples
         for (let s = 0; s < splashes.length; s++) {
           const sp = splashes[s];
-          ctx.strokeStyle = `rgba(200, 230, 255, ${Math.max(0, sp.opacity).toFixed(2)})`;
-          ctx.lineWidth = 1;
+          ctx.strokeStyle = `rgba(205, 232, 255, ${Math.max(0, sp.opacity * 0.82).toFixed(2)})`;
+          ctx.lineWidth = 0.9;
           ctx.beginPath();
           ctx.ellipse(
             sp.x * width,
             sp.y * height,
-            sp.radius,
-            sp.radius * 0.35,
+            sp.radius * 1.15,
+            sp.radius * 0.28,
             0,
             0,
             Math.PI * 2

@@ -1,207 +1,319 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
+  Crosshair,
+  Eye,
+  Zap,
+  Shield,
   Copy,
   Check,
   Download,
-  RotateCcw,
+  RefreshCw,
   Lock,
+  Terminal,
+  Github,
+  Sliders,
+  Code2,
+  ExternalLink,
+  KeyRound,
   Home,
-  Crosshair,
-  Eye,
-  Gauge,
+  CloudRain,
   Music,
-  Play,
-  Pause,
-  SkipBack,
-  SkipForward,
   Volume2,
   VolumeX,
-  Settings,
-  Code2,
-  RefreshCw,
+  Play,
+  Pause,
+  Repeat,
+  Radio,
+  Sparkles,
+  Sun,
+  Palette,
+  Compass,
 } from 'lucide-react';
 import {
-  CLOUDFLARE_WORKER_DEFAULT_URL,
-  COMMUNITY_MUSIC_NOTE,
-  COMMUNITY_MUSIC_TRACKS,
   CoreConfigState,
   DEFAULT_CORE_CONFIG,
-  DEFAULT_GITHUB_CONFIG,
-  DISCORD_API_INVITE_URL,
-  DISCORD_INVITE_CODE,
-  DISCORD_INVITE_URL,
-  DISCORD_SERVER_ICON_URL,
-  DISCORD_SERVER_NAME,
-  DiscordServerStats,
   GithubRepoConfig,
-  LIVE_LOADSTRING_SNIPPET,
-  LIVE_RAW_SCRIPT_URL,
-  PLATOBOOST_DEFAULT_KEY_TTL_MS,
+  DEFAULT_GITHUB_CONFIG,
   PLATOBOOST_SERVICE_ID,
+  PLATOBOOST_GATEWAY_URL,
+  DISCORD_INVITE_URL,
+  DISCORD_INVITE_CODE,
+  DISCORD_API_INVITE_URL,
+  DISCORD_SERVER_NAME,
+  DISCORD_SERVER_ICON_URL,
+  DiscordServerStats,
+  parseDiscordInviteCounts,
   WEATHER_PRESETS,
   WeatherPresetType,
-  buildCloudflareLoadstringSnippet,
+  COMMUNITY_MUSIC_NOTE,
+  COMMUNITY_MUSIC_TRACKS,
+  formatTrackTimestamp,
+  computeOceanWaveCrestMetrics,
+  buildOceanWaveSvgPath,
+  formatRemainingKeyTime,
   buildGithubRawUrl,
   buildLoadstringSnippet,
-  buildOceanWaveSvgPath,
-  computeOceanWaveCrestMetrics,
-  computeOceanWaveDisplacement,
-  formatRemainingKeyTime,
-  formatTrackTimestamp,
+  buildCloudflareLoadstringSnippet,
+  CLOUDFLARE_WORKER_DEFAULT_URL,
+  GITHUB_CACHE_BUST_LOADSTRING,
   generateCoreLuaScript,
-  parseDiscordInviteCounts,
 } from '../utils/coreAuth';
 import { WeatherCanvasOverlay } from './WeatherCanvasOverlay';
 
 interface CoreWorkspaceProps {
-  keyExpiresAtMs?: number;
+  keyExpiresAtMs: number;
   onReplayIntro: () => void;
   onLockSession: () => void;
 }
 
-type ActiveSection = 'simulator' | 'github' | 'improvements';
-type RobloxTab = 'Home' | 'Combat' | 'Visuals' | 'Movement' | 'Music' | 'Misc';
+type ActiveTab = 'home' | 'combat' | 'visuals' | 'movement' | 'music' | 'misc';
 
-const OCEAN_SEGMENT_INDICES = Array.from({ length: 28 }, (_, i) => i);
+const CHAMS_MATERIALS = [
+  'None',
+  'Aura',
+  'Neon',
+  'Flat',
+  'Chrome',
+  'Liquid Metal',
+  'Gold',
+  'Diamond',
+  'Glass',
+  'Ice',
+  'Obsidian',
+  'Lava',
+  'Plasma',
+  'Toxic',
+  'Ropes',
+  'Rainbow',
+  'Holographic',
+  'Galaxy',
+  'Matrix',
+  'Pearl',
+  'Glossy',
+] as const;
 
-const ACCENT_HEX: Record<CoreConfigState['espAccent'], string> = {
-  White: '#FFFFFF',
-  Silver: '#B8B8B8',
-  Crimson: '#EF4444',
-  Cyan: '#38BDF8',
-};
+const TOOL_MATERIALS = ['SmoothPlastic', 'Neon', 'Glass', 'Foil', 'ForceField'] as const;
 
-const SIMULATED_PLAYERS = [
-  { id: 'p1', name: 'Vortex_R15', dist: 42, hp: 100, x: 22, y: 42, team: 'Alpha' },
-  { id: 'p2', name: 'Nyx_Shadow', dist: 18, hp: 76, x: 50, y: 52, team: 'Bravo' },
-  { id: 'p3', name: 'Kairo_R6', dist: 67, hp: 45, x: 78, y: 36, team: 'Bravo' },
-];
+const TOOL_SKINS = [
+  'None',
+  'Aurora',
+  'Blue Skies, White Guns',
+  'Blue Stars',
+  'Blue Void',
+  'Classic Blue White',
+  'Epic White',
+  'Green and Black',
+  'Matrix',
+  'Pink White',
+  'Water',
+  'White',
+] as const;
+
+const CHAMS_STYLES = ['Outline', 'Soft Fill', 'Solid'] as const;
+
+const SKYBOX_PRESETS = [
+  'Realistic Sky',
+  'Purple Nebula',
+  'Night Galaxy',
+  'Sunset Horizon',
+  'Cyberpunk Grid',
+  'Aurora Borealis',
+  'Blood Moon',
+  'Deep Space',
+  'Cloudy Overcast',
+  'Anime Pastels',
+  'Vaporwave Dusk',
+  'Arctic Twilight',
+  'Golden Hour',
+  'Stormy Void',
+  'Starlight Matrix',
+  'Crimson Eclipse',
+  'Oceanic Mirage',
+  'Neon Metropolis',
+  'Emerald Aurora',
+  'Solar Flare',
+  'Midnight Clear',
+] as const;
 
 export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
   keyExpiresAtMs,
   onReplayIntro,
   onLockSession,
 }) => {
-  const [activeSection, setActiveSection] = useState<ActiveSection>('simulator');
-  const [robloxTab, setRobloxTab] = useState<RobloxTab>('Home');
   const [config, setConfig] = useState<CoreConfigState>(DEFAULT_CORE_CONFIG);
   const [githubConfig, setGithubConfig] = useState<GithubRepoConfig>(DEFAULT_GITHUB_CONFIG);
-  const [loaderSourceMode, setLoaderSourceMode] = useState<'cloudflare' | 'live' | 'github'>('cloudflare');
-  const [cloudflareWorkerUrl, setCloudflareWorkerUrl] = useState<string>(CLOUDFLARE_WORKER_DEFAULT_URL);
-  const [copiedLoadstring, setCopiedLoadstring] = useState(false);
-  const [copiedLua, setCopiedLua] = useState(false);
-  const [copiedDiscord, setCopiedDiscord] = useState(false);
-  const [cameraResetMsg, setCameraResetMsg] = useState<string | null>(null);
-  const [discordStats, setDiscordStats] = useState<DiscordServerStats>(() =>
-    parseDiscordInviteCounts({})
+  const [activeTab, setActiveTab] = useState<ActiveTab>('home');
+  const [copiedType, setCopiedType] = useState<
+    'loadstring' | 'script' | 'plato' | 'discord' | 'cloudflare' | 'cachebust' | null
+  >(null);
+  const [cloudflareWorkerUrl, setCloudflareWorkerUrl] = useState<string>(
+    CLOUDFLARE_WORKER_DEFAULT_URL
   );
-  const [discordIconError, setDiscordIconError] = useState(false);
-  const [refreshingDiscord, setRefreshingDiscord] = useState(false);
-  const [fullLuaFile, setFullLuaFile] = useState<string | null>(null);
+  const [includeHandshakeSig, setIncludeHandshakeSig] = useState<boolean>(true);
+  const [targetPos, setTargetPos] = useState<{ x: number; y: number }>({ x: 52, y: 44 });
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
-  const [trackTimeSec, setTrackTimeSec] = useState<number>(38);
-  const [wavePhase, setWavePhase] = useState<number>(0);
-  const [isScrubbing, setIsScrubbing] = useState<boolean>(false);
-  const scrubberTrackRef = useRef<HTMLDivElement | null>(null);
+  const [simulatedExpiryOverride, setSimulatedExpiryOverride] = useState<number | null>(null);
+
+  // Under Roof (Indoor Rain & Sound Occlusion) simulation state
+  const [underRoof, setUnderRoof] = useState<boolean>(false);
+
+  // Suite 1: Self Chams
+  const [selfChamsEnabled, setSelfChamsEnabled] = useState<boolean>(true);
+  const [selfChamsMaterial, setSelfChamsMaterial] = useState<string>('Lava');
+  const [selfChamsFillTrans, setSelfChamsFillTrans] = useState<number>(0.55);
+  const [selfChamsOutlineTrans, setSelfChamsOutlineTrans] = useState<number>(0);
+  const [selfChamsRainbow, setSelfChamsRainbow] = useState<boolean>(false);
+  const [selfChamsPulse, setSelfChamsPulse] = useState<boolean>(false);
+  const [selfChamsGlowRim, setSelfChamsGlowRim] = useState<boolean>(true);
+
+  // Suite 2: Trail
+  const [legTrailEnabled, setLegTrailEnabled] = useState<boolean>(true);
+  const [legTrailSameColors, setLegTrailSameColors] = useState<boolean>(false);
+  const [legTrailWidth, setLegTrailWidth] = useState<number>(0.25);
+  const [legTrailLength, setLegTrailLength] = useState<number>(0.5);
+  const [legTrailRainbow, setLegTrailRainbow] = useState<boolean>(false);
+
+  // Suite 3: Tool Visuals
+  const [toolVisualsEnabled, setToolVisualsEnabled] = useState<boolean>(true);
+  const [toolMaterial, setToolMaterial] = useState<string>('SmoothPlastic');
+  const [toolTransparency, setToolTransparency] = useState<number>(0);
+  const [toolRainbow, setToolRainbow] = useState<boolean>(false);
+  const [toolSkinTexture, setToolSkinTexture] = useState<string>('None');
+  const [toolChamsEnabled, setToolChamsEnabled] = useState<boolean>(true);
+  const [toolChamsStyle, setToolChamsStyle] = useState<string>('Outline');
+  const [toolGlowEnabled, setToolGlowEnabled] = useState<boolean>(true);
+  const [toolGlowBrightness, setToolGlowBrightness] = useState<number>(3);
+
+  // Suite 4: Bloom & Sun Rays
+  const [bloomEnabled, setBloomEnabled] = useState<boolean>(true);
+  const [bloomIntensity, setBloomIntensity] = useState<number>(0.6);
+  const [bloomSize, setBloomSize] = useState<number>(26);
+  const [bloomThreshold, setBloomThreshold] = useState<number>(0.4);
+  const [sunRaysEnabled, setSunRaysEnabled] = useState<boolean>(true);
+  const [sunRaysIntensity, setSunRaysIntensity] = useState<number>(0.25);
+  const [sunRaysSpread, setSunRaysSpread] = useState<number>(1);
+
+  // Suite 5: Color Correction
+  const [colorCorrectionEnabled, setColorCorrectionEnabled] = useState<boolean>(false);
+  const [ccSaturation, setCcSaturation] = useState<number>(0.2);
+  const [ccContrast, setCcContrast] = useState<number>(0.15);
+  const [ccBrightness, setCcBrightness] = useState<number>(0.05);
+
+  // Suite 6: Skybox
+  const [skyboxEnabled, setSkyboxEnabled] = useState<boolean>(false);
+  const [skyboxPreset, setSkyboxPreset] = useState<string>('Realistic Sky');
+  const [clearAtmosphere, setClearAtmosphere] = useState<boolean>(false);
+  const [customSkyInput, setCustomSkyInput] = useState<string>('');
+  const [skyboxSearchQuery, setSkyboxSearchQuery] = useState<string>('');
+  const [skyboxSearchResults, setSkyboxSearchResults] = useState<string[]>([
+    'Purple Nebula',
+    'Night Galaxy',
+    'Anime Pastels',
+  ]);
+  const [selectedSearchResult, setSelectedSearchResult] = useState<string>('Purple Nebula');
+
+  // Suite 7: Lighting Controller
+  const [ambientEnabled, setAmbientEnabled] = useState<boolean>(false);
+  const [outdoorAmbientEnabled, setOutdoorAmbientEnabled] = useState<boolean>(false);
+  const [colorShiftBottomEnabled, setColorShiftBottomEnabled] = useState<boolean>(false);
+  const [colorShiftTopEnabled, setColorShiftTopEnabled] = useState<boolean>(false);
+  const [fogColorEnabled, setFogColorEnabled] = useState<boolean>(false);
+  const [fogEndEnabled, setFogEndEnabled] = useState<boolean>(false);
+  const [fogEndDistance, setFogEndDistance] = useState<number>(1500);
+  const [fogStartEnabled, setFogStartEnabled] = useState<boolean>(false);
+  const [fogStartDistance, setFogStartDistance] = useState<number>(50);
+  const [exposureEnabled, setExposureEnabled] = useState<boolean>(false);
+  const [exposureValue, setExposureValue] = useState<number>(0.5);
+  const [brightnessEnabled, setBrightnessEnabled] = useState<boolean>(false);
+  const [brightnessLevel, setBrightnessLevel] = useState<number>(3);
+  const [clockTimeEnabled, setClockTimeEnabled] = useState<boolean>(false);
+  const [clockTimeHour, setClockTimeHour] = useState<number>(14);
+  const [noShadowsEnabled, setNoShadowsEnabled] = useState<boolean>(false);
+
+  // Suite 8: Atmosphere Controller
+  const [atmosphereEnabled, setAtmosphereEnabled] = useState<boolean>(false);
+  const [atmosphereDensity, setAtmosphereDensity] = useState<number>(0.35);
+  const [atmosphereOffset, setAtmosphereOffset] = useState<number>(0.25);
+  const [atmosphereHaze, setAtmosphereHaze] = useState<number>(1.5);
+  const [atmosphereGlare, setAtmosphereGlare] = useState<number>(0.5);
+
+  const [discordStats, setDiscordStats] = useState<DiscordServerStats>({
+    serverName: DISCORD_SERVER_NAME,
+    onlineCount: 1,
+    memberCount: 2,
+    iconUrl: DISCORD_SERVER_ICON_URL,
+    inviteUrl: DISCORD_INVITE_URL,
+    inviteCode: DISCORD_INVITE_CODE,
+  });
+  const [discordIconFailed, setDiscordIconFailed] = useState(false);
+  const [isRefreshingDiscord, setIsRefreshingDiscord] = useState(false);
+
+  // Audio player state for Sia - Snowman (Slowed + Reverb)
   const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  const activeTrack = useMemo(
-    () =>
-      COMMUNITY_MUSIC_TRACKS.find((t) => t.label === config.selectedTrack) ??
-      COMMUNITY_MUSIC_TRACKS[0],
-    [config.selectedTrack]
+  const [trackUrlIndex, setTrackUrlIndex] = useState(0);
+  const [trackProgressSec, setTrackProgressSec] = useState(0);
+  const [trackDurationSec, setTrackDurationSec] = useState(
+    COMMUNITY_MUSIC_TRACKS[0].durationSec
   );
+  const [wavePhase, setWavePhase] = useState(0);
 
-  // Sync HTML5 Audio element with playback state, volume, and loop
+  const activeTrack = useMemo(() => {
+    return (
+      COMMUNITY_MUSIC_TRACKS.find((t) => t.label === config.selectedTrack) ||
+      COMMUNITY_MUSIC_TRACKS[0]
+    );
+  }, [config.selectedTrack]);
+
+  // Animate wavy ocean timeline phase smoothly
+  useEffect(() => {
+    if (!config.musicPlayerVisible && activeTab !== 'music') return;
+    const interval = window.setInterval(() => {
+      setWavePhase((prev) => prev + (config.musicPlaying ? 0.24 : 0.06));
+    }, 50);
+    return () => window.clearInterval(interval);
+  }, [config.musicPlayerVisible, config.musicPlaying, activeTab]);
+
+  // Sync HTMLAudioElement playback & fallback progreso
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
     audio.volume = Math.max(0, Math.min(1, config.musicVolume / 100));
     audio.loop = config.musicLooped;
-  }, [config.musicVolume, config.musicLooped]);
-
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
     if (config.musicPlaying) {
-      if (Math.abs(audio.currentTime - trackTimeSec) > 1.5) {
-        try {
-          audio.currentTime = trackTimeSec;
-        } catch {
-          // ignore on unbuffered stream
-        }
-      }
       audio.play().catch(() => {
-        // Fallback to simulated timeline progression when external audio stream is blocked
+        // Fallback simulated timeline advance when browser blocks autoplay or remote MP3 isn't reachable
       });
     } else {
       audio.pause();
     }
-  }, [config.musicPlaying, activeTrack]);
+  }, [config.musicPlaying, config.musicVolume, config.musicLooped, trackUrlIndex]);
 
-  // Continuous 20 FPS Wavy Ocean Phase & Playback Time Ticker
+  // Simulated fallback progress timer if audio element isn't actively advancing
   useEffect(() => {
-    const id = window.setInterval(() => {
-      setWavePhase((prev) => prev + (config.musicPlaying ? 0.16 : 0.055));
-      if (config.musicPlaying && !isScrubbing) {
-        const audio = audioRef.current;
-        if (audio && !audio.paused && audio.currentTime > 0) {
-          setTrackTimeSec(audio.currentTime);
-        } else {
-          setTrackTimeSec((prev) => {
-            const next = prev + 0.05;
-            if (next >= activeTrack.durationSec) {
-              return config.musicLooped ? 0 : activeTrack.durationSec;
-            }
-            return next;
-          });
-        }
-      }
-    }, 50);
-    return () => window.clearInterval(id);
-  }, [config.musicPlaying, config.musicLooped, isScrubbing, activeTrack.durationSec]);
-
-  const seekToRatio = (ratio: number) => {
-    const clamped = Math.max(0, Math.min(1, ratio));
-    const targetSec = clamped * activeTrack.durationSec;
-    setTrackTimeSec(targetSec);
-    if (audioRef.current) {
-      try {
-        audioRef.current.currentTime = targetSec;
-      } catch {
-        // ignore seek error on unloaded stream
-      }
-    }
-  };
-
-  const handleScrubberPointer = (clientX: number) => {
-    const el = scrubberTrackRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    if (rect.width <= 0) return;
-    seekToRatio((clientX - rect.left) / rect.width);
-  };
-
-  const effectiveExpiresAt = useMemo(
-    () => keyExpiresAtMs ?? Date.now() + PLATOBOOST_DEFAULT_KEY_TTL_MS,
-    [keyExpiresAtMs]
-  );
-
-  React.useEffect(() => {
+    if (!config.musicPlaying) return;
     const timer = window.setInterval(() => {
-      setNowMs(Date.now());
-    }, 1000);
+      const audio = audioRef.current;
+      if (audio && !audio.paused && audio.currentTime > 0) {
+        setTrackProgressSec(audio.currentTime);
+        if (Number.isFinite(audio.duration) && audio.duration > 0) {
+          setTrackDurationSec(audio.duration);
+        }
+      } else {
+        setTrackProgressSec((prev) => {
+          const next = prev + 0.25;
+          if (next >= trackDurationSec) {
+            return config.musicLooped ? 0 : trackDurationSec;
+          }
+          return next;
+        });
+      }
+    }, 250);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [config.musicPlaying, config.musicLooped, trackDurationSec]);
 
-  const liveKeyTimeLeft = useMemo(
-    () => formatRemainingKeyTime(effectiveExpiresAt, nowMs),
-    [effectiveExpiresAt, nowMs]
-  );
-
-  const fetchLiveDiscordStats = React.useCallback(async () => {
-    setRefreshingDiscord(true);
+  const fetchDiscordCounts = async () => {
+    setIsRefreshingDiscord(true);
     try {
       const res = await fetch(DISCORD_API_INVITE_URL);
       if (res.ok) {
@@ -209,71 +321,74 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
         setDiscordStats(parseDiscordInviteCounts(json));
       }
     } catch {
-      // Keep current stats on network error
+      // Keep fallback stats if offline or blocked by CORS
     } finally {
-      setRefreshingDiscord(false);
+      setIsRefreshingDiscord(false);
     }
+  };
+
+  useEffect(() => {
+    fetchDiscordCounts();
+    const poll = window.setInterval(fetchDiscordCounts, 60000);
+    return () => window.clearInterval(poll);
   }, []);
 
-  React.useEffect(() => {
-    fetchLiveDiscordStats();
-  }, [fetchLiveDiscordStats]);
-
-  React.useEffect(() => {
-    fetch('/loader.lua')
-      .then((r) => (r.ok ? r.text() : null))
-      .then((txt) => {
-        if (txt) setFullLuaFile(txt);
-      })
-      .catch(() => {});
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => window.clearInterval(timer);
   }, []);
 
-  const rawUrl = useMemo(() => {
-    if (loaderSourceMode === 'cloudflare') {
-      return cloudflareWorkerUrl.trim() || CLOUDFLARE_WORKER_DEFAULT_URL;
-    }
-    if (loaderSourceMode === 'live') {
-      return LIVE_RAW_SCRIPT_URL;
-    }
-    return buildGithubRawUrl(githubConfig);
-  }, [loaderSourceMode, cloudflareWorkerUrl, githubConfig]);
-
-  const loadstringSnippet = useMemo(() => {
-    if (loaderSourceMode === 'cloudflare') {
-      return buildCloudflareLoadstringSnippet(cloudflareWorkerUrl, false);
-    }
-    if (loaderSourceMode === 'live') {
-      return LIVE_LOADSTRING_SNIPPET;
-    }
-    return buildLoadstringSnippet(githubConfig, false);
-  }, [loaderSourceMode, cloudflareWorkerUrl, githubConfig]);
-  const generatedLua = useMemo(
-    () => fullLuaFile || generateCoreLuaScript(config),
-    [fullLuaFile, config]
+  const effectiveKeyExpiry = simulatedExpiryOverride ?? keyExpiresAtMs;
+  const remainingKeyTimeLabel = useMemo(
+    () => formatRemainingKeyTime(effectiveKeyExpiry, nowMs),
+    [effectiveKeyExpiry, nowMs]
   );
 
-  const handleCopyLoadstring = async () => {
+  // Subtle autonomous target drift in preview canvas
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      const t = Date.now() / 1200;
+      setTargetPos({
+        x: 50 + Math.sin(t) * 18,
+        y: 46 + Math.cos(t * 1.3) * 12,
+      });
+    }, 40);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const rawUrl = useMemo(() => buildGithubRawUrl(githubConfig), [githubConfig]);
+  const loadstringSnippet = useMemo(
+    () => buildLoadstringSnippet(githubConfig, false),
+    [githubConfig]
+  );
+  const cloudflareLoadstringSnippet = useMemo(
+    () => buildCloudflareLoadstringSnippet(cloudflareWorkerUrl, includeHandshakeSig),
+    [cloudflareWorkerUrl, includeHandshakeSig]
+  );
+  const luaScript = useMemo(() => generateCoreLuaScript(config), [config]);
+
+  const copyText = async (
+    text: string,
+    type: 'loadstring' | 'script' | 'plato' | 'discord' | 'cloudflare' | 'cachebust'
+  ) => {
     try {
-      await navigator.clipboard.writeText(loadstringSnippet);
+      await navigator.clipboard.writeText(text);
     } catch {
-      // Fallback
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
     }
-    setCopiedLoadstring(true);
-    window.setTimeout(() => setCopiedLoadstring(false), 2000);
+    setCopiedType(type);
+    window.setTimeout(() => setCopiedType(null), 2000);
   };
 
-  const handleCopyFullLua = async () => {
-    try {
-      await navigator.clipboard.writeText(generatedLua);
-    } catch {
-      // Fallback
-    }
-    setCopiedLua(true);
-    window.setTimeout(() => setCopiedLua(false), 2000);
-  };
-
-  const handleDownloadLuaFile = () => {
-    const blob = new Blob([generatedLua], { type: 'text/plain;charset=utf-8' });
+  const downloadLuaFile = () => {
+    const blob = new Blob([luaScript], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -284,97 +399,98 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  const updateConfig = <K extends keyof CoreConfigState>(
-    key: K,
-    value: CoreConfigState[K]
-  ) => {
-    setConfig((prev) => ({ ...prev, [key]: value }));
+  const handleSkyboxSearch = () => {
+    const q = skyboxSearchQuery.trim().toLowerCase();
+    if (!q) {
+      setSkyboxSearchResults([...SKYBOX_PRESETS.slice(0, 6)]);
+      setSelectedSearchResult(SKYBOX_PRESETS[0]);
+      return;
+    }
+    const matched = SKYBOX_PRESETS.filter((p) => p.toLowerCase().includes(q));
+    const finalResults = matched.length > 0 ? matched : [`Custom Sky: ${skyboxSearchQuery.trim()}`, 'Purple Nebula', 'Night Galaxy'];
+    setSkyboxSearchResults(finalResults);
+    setSelectedSearchResult(finalResults[0]);
+    setSkyboxPreset(finalResults[0]);
+    setSkyboxEnabled(true);
   };
 
-  const espColorHex = ACCENT_HEX[config.espAccent];
+  const accentHex =
+    config.espAccent === 'Crimson'
+      ? '#EF4444'
+      : config.espAccent === 'Cyan'
+      ? '#22D3EE'
+      : config.espAccent === 'Silver'
+      ? '#A3A3A3'
+      : '#FFFFFF';
 
   return (
-    <div
-      className="min-h-screen bg-[#050505] text-white flex flex-col"
-      data-testid="core-workspace"
-    >
-      {/* Strict 3-Zone Top Bar Contract */}
-      <header className="border-b border-white/10 bg-[#080808]">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between gap-8">
-          {/* Zone 1: Single text element wordmark */}
-          <a
-            href="#top"
-            onClick={(e) => {
-              e.preventDefault();
-              setActiveSection('simulator');
-            }}
-            className="text-lg font-extrabold tracking-tight text-white whitespace-nowrap shrink-0"
-          >
-            Core.xyz
-          </a>
+    <div className="min-h-screen bg-[#050505] text-white flex flex-col selection:bg-white selection:text-black">
+      {/* Top Bar */}
+      <header className="sticky top-0 z-30 border-b border-white/10 bg-[#050505]/90 backdrop-blur-xl">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-white text-black flex items-center justify-center font-black text-base tracking-tighter shadow-[0_0_20px_rgba(255,255,255,0.3)]">
+              C
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold tracking-tight text-white text-base">Core.xyz</span>
+                <span className="text-[10px] font-mono uppercase tracking-widest px-2 py-0.5 rounded bg-white/10 text-neutral-200 border border-white/15">
+                  v4.5 Visual Suite
+                </span>
+              </div>
+              <p className="text-xs text-neutral-400 hidden sm:block">
+                Universal Roblox Script Hub &bull; Realistic Weather + 8 Visual Feature Suites
+              </p>
+            </div>
+          </div>
 
-          {/* Zone 2: 4–5 clean single-line text navigation links */}
-          <nav className="flex items-center gap-6 text-sm font-medium text-neutral-400 overflow-x-auto">
-            <button
-              type="button"
-              onClick={() => setActiveSection('simulator')}
-              className={`hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                activeSection === 'simulator'
-                  ? 'text-white underline underline-offset-8 decoration-white'
-                  : ''
-              }`}
-            >
-              Interactive UI
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveSection('github')}
-              className={`hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                activeSection === 'github'
-                  ? 'text-white underline underline-offset-8 decoration-white'
-                  : ''
-              }`}
-            >
-              GitHub & Raw Loader
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveSection('improvements')}
-              className={`hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                activeSection === 'improvements'
-                  ? 'text-white underline underline-offset-8 decoration-white'
-                  : ''
-              }`}
-            >
-              Engine Upgrades
-            </button>
-            <button
-              type="button"
-              onClick={onReplayIntro}
-              className="hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              Replay Intro
-            </button>
-            <button
-              type="button"
-              onClick={onLockSession}
-              className="hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              Key Gate
-            </button>
+          {/* Navigation Tabs */}
+          <nav
+            aria-label="Script Hub Categories"
+            className="flex items-center gap-1 p-1 rounded-xl bg-[#0D0D10] border border-white/10 overflow-x-auto"
+          >
+            {(
+              [
+                { id: 'home', label: 'Home', icon: Home },
+                { id: 'combat', label: 'Combat', icon: Crosshair },
+                { id: 'visuals', label: 'Visuals', icon: Eye },
+                { id: 'movement', label: 'Movement', icon: Zap },
+                { id: 'music', label: 'Music', icon: Music },
+                { id: 'misc', label: 'Misc', icon: Shield },
+              ] as const
+            ).map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    isActive
+                      ? 'bg-white text-black shadow-[0_2px_10px_rgba(255,255,255,0.25)]'
+                      : 'text-neutral-400 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
           </nav>
 
-          {/* Zone 3: 1 primary action */}
-          <div className="shrink-0">
+          {/* Header Actions */}
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={handleCopyLoadstring}
-              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold bg-white text-black rounded-lg hover:bg-neutral-200 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              onClick={() => copyText(loadstringSnippet, 'loadstring')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white text-black hover:bg-neutral-200 text-xs font-bold transition-colors cursor-pointer"
             >
-              {copiedLoadstring ? (
+              {copiedType === 'loadstring' ? (
                 <>
                   <Check className="w-3.5 h-3.5" />
-                  <span>Copied Working Loadstring</span>
+                  <span>Copied Loadstring</span>
                 </>
               ) : (
                 <>
@@ -387,1302 +503,1696 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8 space-y-10">
-        {/* Top Working 1-Line Loadstring Quick Bar */}
-        <section className="rounded-xl bg-[#0C0C0C] border border-white/15 p-6">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-2 text-xs text-neutral-400">
-                <span>Delta Executor Compatible</span>
-                <span aria-hidden="true">·</span>
-                <span>Platoboost Service #{PLATOBOOST_SERVICE_ID}</span>
-                <span aria-hidden="true">·</span>
-                <span className="font-mono text-white" data-testid="live-key-time-left">
-                  Key Time Left: {liveKeyTimeLeft}
-                </span>
-              </div>
-              <h2 className="text-xl font-bold text-white">
-                Protected 1-Line Loadstring (Cloudflare Private Gateway + 3-Layer Anti-Crack)
+      {/* Main Content */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
+        {/* Loadstring Quick Bar */}
+        <section
+          aria-label="One-Line Roblox Executor Loadstring"
+          className="rounded-2xl bg-[#0A0A0C] border border-white/15 p-4 sm:p-5 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 shadow-[0_16px_50px_rgba(0,0,0,0.65)]"
+        >
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <Terminal className="w-4 h-4 text-white" />
+              <h2 className="text-sm font-bold uppercase tracking-wider text-white">
+                Instant Roblox Executor Loadstring
               </h2>
-              <p className="text-sm text-neutral-400 max-w-2xl">
-                Serves <code className="text-white">Core.xyz.lua</code> from your private GitHub repository via your{' '}
-                <code className="text-white">core-xyz-gateway</code> Cloudflare Worker while blocking browser &amp; scraper inspection (403 Access Denied).
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
-              <div className="flex items-center gap-1 p-1 bg-[#141414] border border-white/10 rounded-lg">
-                <button
-                  type="button"
-                  onClick={() => setLoaderSourceMode('cloudflare')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                    loaderSourceMode === 'cloudflare'
-                      ? 'bg-white text-black'
-                      : 'text-neutral-400 hover:text-white'
-                  }`}
-                >
-                  Cloudflare Gateway (Private Repo)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setLoaderSourceMode('live')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                    loaderSourceMode === 'live'
-                      ? 'bg-white text-black'
-                      : 'text-neutral-400 hover:text-white'
-                  }`}
-                >
-                  Instant Live URL (No 404)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setLoaderSourceMode('github')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                    loaderSourceMode === 'github'
-                      ? 'bg-white text-black'
-                      : 'text-neutral-400 hover:text-white'
-                  }`}
-                >
-                  Custom GitHub URL
-                </button>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleDownloadLuaFile}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-semibold bg-[#161616] text-white hover:bg-[#222222] border border-white/15 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-2 py-0.5 rounded">
+                Platoboost #{PLATOBOOST_SERVICE_ID} Ready
+              </span>
+              <span
+                data-testid="live-key-time-left"
+                className="text-[11px] font-mono text-white bg-white/10 border border-white/20 px-2.5 py-0.5 rounded"
               >
-                <Download className="w-4 h-4" />
-                <span>Download Core.xyz.lua</span>
-              </button>
-            </div>
-          </div>
-
-          {loaderSourceMode === 'cloudflare' && (
-            <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-3 bg-[#09090C] border border-white/10 rounded-lg px-3.5 py-2.5">
-              <label
-                htmlFor="cf-worker-url"
-                className="text-xs font-semibold text-neutral-300 whitespace-nowrap"
-              >
-                Your Cloudflare Worker URL:
-              </label>
-              <input
-                id="cf-worker-url"
-                type="url"
-                value={cloudflareWorkerUrl}
-                onChange={(e) => setCloudflareWorkerUrl(e.target.value)}
-                placeholder="https://core-xyz-gateway.<your-subdomain>.workers.dev"
-                className="flex-1 bg-[#121216] border border-white/15 rounded-md px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-white"
-              />
-              <span className="text-[11px] font-mono text-emerald-400 whitespace-nowrap">
-                ● 403 Browser Shield Active
+                KEY TIME LEFT: {remainingKeyTimeLabel}
               </span>
             </div>
-          )}
+            <p className="text-xs text-neutral-400">
+              Paste this 1-line snippet into your Roblox executor (Wave, Solara, Synapse, Delta, Fluxus) to run{' '}
+              <span className="text-white font-mono">Core.xyz</span> directly from your GitHub repository.
+            </p>
+          </div>
 
-          <div className="mt-3 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 bg-[#060606] border border-white/10 rounded-lg p-3">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 lg:w-auto">
             <code
-              className="flex-1 text-xs sm:text-sm font-mono text-white overflow-x-auto whitespace-nowrap py-1 px-2"
               data-testid="loadstring-code"
+              className="px-3.5 py-2.5 rounded-xl bg-black border border-white/15 font-mono text-xs text-neutral-200 select-all overflow-x-auto max-w-full sm:max-w-md lg:max-w-lg whitespace-nowrap"
             >
               {loadstringSnippet}
             </code>
-            <button
-              type="button"
-              onClick={handleCopyLoadstring}
-              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-md text-xs font-semibold bg-white/10 text-white hover:bg-white hover:text-black transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              {copiedLoadstring ? 'Copied!' : 'Copy Line'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => copyText(loadstringSnippet, 'loadstring')}
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-white text-black hover:bg-neutral-200 font-bold text-xs transition-all cursor-pointer shrink-0"
+              >
+                {copiedType === 'loadstring' ? (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" />
+                    <span>Copy Snippet</span>
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={downloadLuaFile}
+                className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-[#141418] hover:bg-[#1E1E24] text-white border border-white/15 font-semibold text-xs transition-all cursor-pointer shrink-0"
+              >
+                <Download className="w-4 h-4" />
+                <span>Download .lua</span>
+              </button>
+            </div>
           </div>
         </section>
 
-        {/* SECTION 1: INTERACTIVE CORE.XYZ ROBLOX UI & LIVE VIEWPORT */}
-        {activeSection === 'simulator' && (
-          <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
-            {/* Left Column: Simulated Core.xyz Monochrome In-Game Window + Docked Music Player Bar */}
-            <div className="lg:col-span-7 flex flex-col gap-2.5">
-              <audio
-                ref={audioRef}
-                src={activeTrack.rawUrls[0]}
-                preload="none"
-                onEnded={() => {
-                  if (config.musicLooped) {
-                    setTrackTimeSec(0);
-                    audioRef.current?.play().catch(() => {});
-                  } else {
-                    updateConfig('musicPlaying', false);
-                  }
-                }}
-              />
-              <div className="rounded-xl bg-[#09090B] border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.75)] overflow-hidden flex flex-col">
-                {/* Simulated Roblox Window Title Bar */}
-                <div className="relative px-5 py-3.5 bg-gradient-to-r from-[#111114] via-[#151519] to-[#111114] border-b border-white/10 flex items-center justify-between">
-                  <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/35 to-transparent" />
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-2 h-2 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.9)]" />
-                    <span className="font-mono text-sm font-extrabold tracking-tight text-white">
-                      CORE.XYZ
-                    </span>
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/[0.07] border border-white/10 text-neutral-300">
-                      v4.4 PRO
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-neutral-400 font-mono tabular-nums">
-                    <span>Key Time Left: {liveKeyTimeLeft}</span>
-                    <span>·</span>
-                    <span className="px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/10 text-[11px] text-neutral-300">
-                      [R-SHIFT]
-                    </span>
-                  </div>
-                </div>
-
-                {/* Window Body: Sidebar + Active Tab Controls */}
-                <div className="flex-1 grid grid-cols-1 sm:grid-cols-12 min-h-[420px]">
-                  {/* Sidebar Tabs */}
-                  <div className="sm:col-span-4 bg-[#0C0C0E] border-b sm:border-b-0 sm:border-r border-white/10 p-3 flex sm:flex-col gap-1.5 overflow-x-auto">
-                    {(
-                      [
-                        { id: 'Home', icon: Home },
-                        { id: 'Combat', icon: Crosshair },
-                        { id: 'Visuals', icon: Eye },
-                        { id: 'Movement', icon: Gauge },
-                        { id: 'Music', icon: Music },
-                        { id: 'Misc', icon: Settings },
-                      ] as const
-                    ).map(({ id, icon: Icon }) => {
-                    const isActive = robloxTab === id;
-                    return (
-                      <button
-                        key={id}
-                        type="button"
-                        onClick={() => setRobloxTab(id)}
-                        className={`relative flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer overflow-hidden ${
-                          isActive
-                            ? 'text-black'
-                            : 'text-neutral-400 hover:text-white hover:bg-white/[0.05]'
-                        }`}
-                      >
-                        {isActive && (
-                          <motion.div
-                            layoutId="core-sidebar-active-pill"
-                            transition={{ type: 'spring', stiffness: 460, damping: 34 }}
-                            className="absolute inset-0 bg-white rounded-lg shadow-[0_0_20px_rgba(255,255,255,0.28)]"
-                          />
-                        )}
-                        <Icon className="relative z-10 w-4 h-4 shrink-0" />
-                        <span className="relative z-10">{id}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Controls Pane */}
-                <div className="sm:col-span-8 p-5 space-y-3.5 overflow-y-auto bg-[#09090B]">
-                  <AnimatePresence mode="wait">
-                    <motion.div
-                      key={robloxTab}
-                      initial={{ opacity: 0, y: 8, filter: 'blur(2px)' }}
-                      animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                      exit={{ opacity: 0, y: -6, filter: 'blur(2px)' }}
-                      transition={{ type: 'spring', stiffness: 420, damping: 32 }}
-                      className="space-y-3"
-                    >
-                      {robloxTab === 'Home' && (
-                        <>
-                          <div className="text-xs font-semibold text-neutral-400 pb-1 border-b border-white/10">
-                            Operator Showcase &amp; License Status
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2.5">
-                            <div className="rounded-lg bg-[#141414] border border-white/10 px-3 py-2">
-                              <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
-                                Executor
-                              </div>
-                              <div className="text-xs font-mono text-white mt-0.5">
-                                Delta / Universal
-                              </div>
-                            </div>
-                            <div className="rounded-lg bg-[#141414] border border-white/10 px-3 py-2">
-                              <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
-                                Key Time Left
-                              </div>
-                              <div className="text-xs font-mono text-white mt-0.5 tabular-nums">
-                                {liveKeyTimeLeft}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="text-xs font-semibold text-neutral-400 pt-1 pb-1 border-b border-white/10">
-                            Official Discord Community
-                          </div>
-
-                          {/* Discord-Themed Community Section ("Core | Beta") */}
-                          <div
-                            className="rounded-xl bg-[#1E1F22] border border-[#5865F2]/50 overflow-hidden shadow-lg"
-                            data-testid="home-discord-card"
-                          >
-                            {/* Top Discord Light-Blue / Blurple Animated Slow Wave Banner */}
-                            <div
-                              className="relative h-10 bg-gradient-to-r from-[#4752C4] via-[#5865F2] to-[#78AFFF] px-3.5 flex items-center justify-between overflow-hidden"
-                              data-testid="discord-wave-banner"
-                            >
-                              {/* Slow Wave Crest Layer 1 */}
-                              <motion.div
-                                aria-hidden="true"
-                                animate={{
-                                  x: ['-12%', '12%', '-12%'],
-                                  y: [0, 2, 0],
-                                  rotate: [-2, 2, -2],
-                                }}
-                                transition={{
-                                  duration: 7.5,
-                                  repeat: Infinity,
-                                  ease: 'easeInOut',
-                                }}
-                                className="pointer-events-none absolute -bottom-3 -left-1/4 w-[150%] h-7 rounded-[100%] bg-[#78AFFF]/35 blur-[1px]"
-                              />
-                              {/* Slow Wave Crest Layer 2 */}
-                              <motion.div
-                                aria-hidden="true"
-                                animate={{
-                                  x: ['10%', '-14%', '10%'],
-                                  y: [1, -2, 1],
-                                  rotate: [1.5, -2, 1.5],
-                                }}
-                                transition={{
-                                  duration: 9.2,
-                                  repeat: Infinity,
-                                  ease: 'easeInOut',
-                                }}
-                                className="pointer-events-none absolute -bottom-4 -left-1/4 w-[155%] h-7 rounded-[100%] bg-[#A5D4FF]/30"
-                              />
-
-                              <span className="relative z-10 text-[10px] font-bold tracking-wider uppercase text-[#E8F0FF] pl-16 drop-shadow-xs">
-                                Discord Server · Live Status
-                              </span>
-                              <span className="relative z-10 px-2 py-0.5 rounded bg-[#111214]/65 text-[10px] font-mono text-white">
-                                gg/{DISCORD_INVITE_CODE}
-                              </span>
-                            </div>
-
-                            {/* Card Body */}
-                            <div className="px-3.5 pb-3.5 pt-2 relative">
-                              {/* Overlapping Server Logo Squircle */}
-                              <div className="relative -mt-6 mb-2 flex items-end justify-between">
-                                <div className="relative w-14 h-14 rounded-2xl bg-[#111214] p-0.5 ring-3 ring-[#1E1F22] shrink-0">
-                                  {!discordIconError ? (
-                                    <img
-                                      src={discordStats.iconUrl || DISCORD_SERVER_ICON_URL}
-                                      alt={`${DISCORD_SERVER_NAME} Server Logo`}
-                                      onError={() => setDiscordIconError(true)}
-                                      className="w-full h-full rounded-[14px] object-cover"
-                                    />
-                                  ) : (
-                                    <div className="w-full h-full rounded-[14px] bg-[#5865F2] flex flex-col items-center justify-center leading-none">
-                                      <span className="text-[11px] font-black text-white">
-                                        CORE
-                                      </span>
-                                      <span className="text-[8px] font-mono text-[#E0E3FF] mt-0.5">
-                                        BETA
-                                      </span>
-                                    </div>
-                                  )}
-                                  <span
-                                    className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-[#23A55A] ring-2 ring-[#1E1F22]"
-                                    aria-hidden="true"
-                                  />
-                                </div>
-
-                                <span className="px-2 py-0.5 rounded bg-[#2B2D31] border border-[#5865F2]/40 text-[10px] font-bold tracking-wide text-[#949CF7]">
-                                  COMMUNITY
-                                </span>
-                              </div>
-
-                              {/* Server Name & Description */}
-                              <div className="space-y-0.5">
-                                <div className="flex items-center gap-2">
-                                  <h4
-                                    className="text-base font-extrabold text-[#F2F3F5] tracking-tight"
-                                    data-testid="discord-server-name"
-                                  >
-                                    {DISCORD_SERVER_NAME}
-                                  </h4>
-                                </div>
-                                <p className="text-xs text-[#B5BAC1]">
-                                  Official Core.xyz Community · Script Updates, Configs &amp; Support
-                                </p>
-                              </div>
-
-                              {/* Live Member & Active Counters */}
-                              <div className="mt-3 flex flex-wrap items-center gap-2">
-                                <div
-                                  className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-[#2B2D31] border border-[#23A55A]/40 text-xs font-mono text-[#F2F3F5]"
-                                  data-testid="discord-online-pill"
-                                >
-                                  <span className="w-2 h-2 rounded-full bg-[#23A55A]" />
-                                  <span>{discordStats.onlineCount} Active</span>
-                                </div>
-
-                                <div
-                                  className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-[#2B2D31] border border-[#5865F2]/35 text-xs font-mono text-[#F2F3F5]"
-                                  data-testid="discord-members-pill"
-                                >
-                                  <span className="w-2 h-2 rounded-full bg-[#B5BAC1]" />
-                                  <span>{discordStats.memberCount} Members</span>
-                                </div>
-                              </div>
-
-                              {/* Join / Copy Invite & Refresh Buttons */}
-                              <div className="mt-3.5 flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    try {
-                                      await navigator.clipboard.writeText(DISCORD_INVITE_URL);
-                                    } catch {
-                                      // fallback
-                                    }
-                                    setCopiedDiscord(true);
-                                    window.setTimeout(() => setCopiedDiscord(false), 2200);
-                                  }}
-                                  className="flex-1 inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold bg-[#5865F2] hover:bg-[#4752C4] text-white transition-colors cursor-pointer"
-                                >
-                                  {copiedDiscord ? (
-                                    <>
-                                      <Check className="w-3.5 h-3.5" />
-                                      <span>Copied! (discord.gg/{DISCORD_INVITE_CODE})</span>
-                                    </>
-                                  ) : (
-                                    <span>Join Core | Beta (Copy Invite)</span>
-                                  )}
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={fetchLiveDiscordStats}
-                                  aria-label="Refresh Discord Server Stats"
-                                  className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-[#2B2D31] hover:bg-[#35373C] text-[#F2F3F5] border border-[#5865F2]/40 transition-colors cursor-pointer"
-                                >
-                                  <RefreshCw
-                                    className={`w-3.5 h-3.5 ${
-                                      refreshingDiscord ? 'animate-spin' : ''
-                                    }`}
-                                  />
-                                  <span>Refresh</span>
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        </>
-                      )}
-
-                      {robloxTab === 'Combat' && (
-                        <>
-                          <div className="text-xs font-semibold text-neutral-400 pb-1 border-b border-white/10">
-                            Combat & DeltaTime Camera Lock
-                          </div>
-
-                          <ToggleRow
-                            label="Enable Aimbot"
-                            checked={config.aimbotEnabled}
-                            onChange={(v) => updateConfig('aimbotEnabled', v)}
-                          />
-                          <ToggleRow
-                            label="Show FOV Circle"
-                            checked={config.showFOV}
-                            onChange={(v) => updateConfig('showFOV', v)}
-                          />
-                          <SliderRow
-                            label="FOV Radius"
-                            value={config.fovRadius}
-                            min={30}
-                            max={200}
-                            unit=" px"
-                            onChange={(v) => updateConfig('fovRadius', v)}
-                          />
-                          <SliderRow
-                            label="DeltaTime Smoothness"
-                            value={config.smoothness}
-                            min={0.05}
-                            max={1}
-                            step={0.05}
-                            unit=""
-                            onChange={(v) => updateConfig('smoothness', v)}
-                          />
-                          <ToggleRow
-                            label="Team Check"
-                            checked={config.teamCheck}
-                            onChange={(v) => updateConfig('teamCheck', v)}
-                          />
-
-                          <div className="pt-1">
-                            <label
-                              htmlFor="target-bone-select"
-                              className="block text-xs font-medium text-neutral-300 mb-1.5"
-                            >
-                              Target Bone (R6 / R15 Auto-Fallback)
-                            </label>
-                            <select
-                              id="target-bone-select"
-                              value={config.targetPart}
-                              onChange={(e) =>
-                                updateConfig(
-                                  'targetPart',
-                                  e.target.value as CoreConfigState['targetPart']
-                                )
-                              }
-                              className="w-full rounded-lg bg-[#141414] border border-white/15 px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white"
-                            >
-                              <option value="Head">Head</option>
-                              <option value="HumanoidRootPart">HumanoidRootPart</option>
-                              <option value="UpperTorso">UpperTorso (R6 Torso Fallback)</option>
-                              <option value="LowerTorso">LowerTorso (R6 Torso Fallback)</option>
-                            </select>
-                          </div>
-                        </>
-                      )}
-
-                      {robloxTab === 'Visuals' && (
-                        <>
-                          <div className="text-xs font-semibold text-neutral-400 pb-1 border-b border-white/10">
-                            ESP, Highlights & Custom Crosshair
-                          </div>
-
-                          <ToggleRow
-                            label="Player ESP (31-Highlight Cap Safe)"
-                            checked={config.espEnabled}
-                            onChange={(v) => updateConfig('espEnabled', v)}
-                          />
-                          <ToggleRow
-                            label="Snapline Tracers"
-                            checked={config.tracersEnabled}
-                            onChange={(v) => updateConfig('tracersEnabled', v)}
-                          />
-
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <label
-                                htmlFor="tracer-origin-select"
-                                className="block text-xs font-medium text-neutral-300 mb-1.5"
-                              >
-                                Tracer Origin
-                              </label>
-                              <select
-                                id="tracer-origin-select"
-                                value={config.tracerOrigin}
-                                onChange={(e) =>
-                                  updateConfig(
-                                    'tracerOrigin',
-                                    e.target.value as CoreConfigState['tracerOrigin']
-                                  )
-                                }
-                                className="w-full rounded-lg bg-[#141414] border border-white/15 px-3 py-2 text-xs font-mono text-white"
-                              >
-                                <option value="Bottom">Bottom</option>
-                                <option value="Center">Center</option>
-                                <option value="Top">Top</option>
-                              </select>
-                            </div>
-
-                            <div>
-                              <label
-                                htmlFor="esp-accent-select"
-                                className="block text-xs font-medium text-neutral-300 mb-1.5"
-                              >
-                                ESP Color
-                              </label>
-                              <select
-                                id="esp-accent-select"
-                                value={config.espAccent}
-                                onChange={(e) =>
-                                  updateConfig(
-                                    'espAccent',
-                                    e.target.value as CoreConfigState['espAccent']
-                                  )
-                                }
-                                className="w-full rounded-lg bg-[#141414] border border-white/15 px-3 py-2 text-xs font-mono text-white"
-                              >
-                                <option value="White">White (#FFFFFF)</option>
-                                <option value="Silver">Silver (#B8B8B8)</option>
-                                <option value="Crimson">Crimson (#EF4444)</option>
-                                <option value="Cyan">Cyan (#38BDF8)</option>
-                              </select>
-                            </div>
-                          </div>
-
-                          <ToggleRow
-                            label="Custom Crosshair"
-                            checked={config.crosshairEnabled}
-                            onChange={(v) => updateConfig('crosshairEnabled', v)}
-                          />
-                          <SliderRow
-                            label="Crosshair Size"
-                            value={config.crosshairSize}
-                            min={4}
-                            max={32}
-                            unit=" px"
-                            onChange={(v) => updateConfig('crosshairSize', v)}
-                          />
-
-                          {/* Weather Preset & Sound Effects Section */}
-                          <div className="pt-2 border-t border-white/10 space-y-3">
-                            <div className="text-xs font-semibold text-neutral-400">
-                              Weather &amp; World Atmosphere (With Sound Effects)
-                            </div>
-
-                            <div>
-                              <label
-                                htmlFor="weather-preset-select"
-                                className="block text-xs font-medium text-neutral-300 mb-1.5"
-                              >
-                                Weather Preset
-                              </label>
-                              <select
-                                id="weather-preset-select"
-                                data-testid="weather-preset-select"
-                                value={config.weatherPreset}
-                                onChange={(e) =>
-                                  updateConfig(
-                                    'weatherPreset',
-                                    e.target.value as WeatherPresetType
-                                  )
-                                }
-                                className="w-full rounded-lg bg-[#141414] border border-white/15 px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white"
-                              >
-                                {WEATHER_PRESETS.map((preset) => (
-                                  <option key={preset} value={preset}>
-                                    {preset === 'Sunny'
-                                      ? 'Sunny (Sun Rays & Golden Sky)'
-                                      : preset === 'Thunderstorm'
-                                      ? 'Thunderstorm (Heavy Rain + Lightning & Thunder)'
-                                      : preset}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-
-                            <ToggleRow
-                              label="Weather Sound Effects"
-                              checked={config.weatherSoundEnabled}
-                              onChange={(v) => updateConfig('weatherSoundEnabled', v)}
-                            />
-                            <SliderRow
-                              label="Weather Sound Volume"
-                              value={config.weatherVolume}
-                              min={0}
-                              max={100}
-                              step={5}
-                              unit="%"
-                              onChange={(v) => updateConfig('weatherVolume', v)}
-                            />
-                          </div>
-
-                          <div className="pt-2 border-t border-white/10 space-y-2">
-                            <div className="text-xs font-semibold text-neutral-400">
-                              Freecam &amp; Camera Enhancements
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCameraResetMsg('Camera subject reset to your character.');
-                                window.setTimeout(() => setCameraResetMsg(null), 2500);
-                              }}
-                              className="w-full inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold bg-[#161616] text-white hover:bg-[#222222] border border-white/15 transition-colors cursor-pointer"
-                            >
-                              <RotateCcw className="w-3.5 h-3.5" />
-                              <span>Reset Character Camera</span>
-                            </button>
-                            {cameraResetMsg && (
-                              <p className="text-[11px] font-mono text-emerald-400">
-                                {cameraResetMsg}
-                              </p>
-                            )}
-                          </div>
-                        </>
-                      )}
-
-                      {robloxTab === 'Movement' && (
-                        <>
-                          <div className="text-xs font-semibold text-neutral-400 pb-1 border-b border-white/10">
-                            Movement & Stepped Collision Physics
-                          </div>
-
-                          <ToggleRow
-                            label="Custom WalkSpeed"
-                            checked={config.walkSpeedEnabled}
-                            onChange={(v) => updateConfig('walkSpeedEnabled', v)}
-                          />
-                          <SliderRow
-                            label="WalkSpeed Value"
-                            value={config.walkSpeed}
-                            min={16}
-                            max={120}
-                            unit=" studs/s"
-                            onChange={(v) => updateConfig('walkSpeed', v)}
-                          />
-
-                          <ToggleRow
-                            label="Custom JumpPower (UseJumpPower = true)"
-                            checked={config.jumpPowerEnabled}
-                            onChange={(v) => updateConfig('jumpPowerEnabled', v)}
-                          />
-                          <SliderRow
-                            label="JumpPower Value"
-                            value={config.jumpPower}
-                            min={50}
-                            max={200}
-                            unit=" power"
-                            onChange={(v) => updateConfig('jumpPower', v)}
-                          />
-
-                          <ToggleRow
-                            label="Infinite Jump"
-                            checked={config.infJumpEnabled}
-                            onChange={(v) => updateConfig('infJumpEnabled', v)}
-                          />
-                          <ToggleRow
-                            label="NoClip (RunService.Stepped + Restore)"
-                            checked={config.noClipEnabled}
-                            onChange={(v) => updateConfig('noClipEnabled', v)}
-                          />
-                        </>
-                      )}
-
-                       {robloxTab === 'Music' && (
-                        <>
-                          <div className="text-xs font-semibold text-neutral-400 pb-1 border-b border-white/10">
-                            Community Music Player &amp; Audio Engine
-                          </div>
-
-                          {/* Community Music Note Card */}
-                          <div
-                            className="rounded-xl bg-[#141519] border border-[#5865F2]/45 p-3.5 space-y-2.5"
-                            data-testid="music-community-note-card"
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-[11px] font-bold tracking-wider uppercase text-[#949CF7]">
-                                COMMUNITY TRACK SUBMISSIONS
-                              </span>
-                              <span className="text-[10px] font-mono text-neutral-400">
-                                CoreXyz_Music/
-                              </span>
-                            </div>
-                            <p className="text-xs text-neutral-300 leading-relaxed">
-                              {COMMUNITY_MUSIC_NOTE}
-                            </p>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                try {
-                                  await navigator.clipboard.writeText(DISCORD_INVITE_URL);
-                                } catch {
-                                  // fallback
-                                }
-                                setCopiedDiscord(true);
-                                window.setTimeout(() => setCopiedDiscord(false), 2200);
-                              }}
-                              className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-bold bg-[#5865F2] hover:bg-[#4752C4] text-white transition-colors cursor-pointer"
-                            >
-                              {copiedDiscord ? (
-                                <>
-                                  <Check className="w-3.5 h-3.5" />
-                                  <span>Copied Discord Invite (discord.gg/{DISCORD_INVITE_CODE})</span>
-                                </>
-                              ) : (
-                                <span>Join Discord to Submit a Song (Copy Invite)</span>
-                              )}
-                            </button>
-                          </div>
-
-                          {/* Tracks Dropdown */}
-                          <div>
-                            <label
-                              htmlFor="music-track-select"
-                              className="block text-xs font-medium text-neutral-300 mb-1.5"
-                            >
-                              Select Track (Auto-Downloads &amp; Caches via getcustomasset)
-                            </label>
-                            <select
-                              id="music-track-select"
-                              data-testid="music-track-select"
-                              value={config.selectedTrack}
-                              onChange={(e) => {
-                                updateConfig('selectedTrack', e.target.value);
-                                setTrackTimeSec(0);
-                              }}
-                              className="w-full rounded-lg bg-[#141414] border border-white/15 px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-white"
-                            >
-                              {COMMUNITY_MUSIC_TRACKS.map((track) => (
-                                <option key={track.id} value={track.label}>
-                                  {track.label}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-
-                          <ToggleRow
-                            label="Toggle Player UI (Docked Below Hub)"
-                            checked={config.musicPlayerVisible}
-                            onChange={(v) => updateConfig('musicPlayerVisible', v)}
-                          />
-                          <ToggleRow
-                            label="Mute Game Audio (Silences Non-Core Sounds)"
-                            checked={config.muteGameAudio}
-                            onChange={(v) => updateConfig('muteGameAudio', v)}
-                          />
-                          <SliderRow
-                            label="Music Volume"
-                            value={config.musicVolume}
-                            min={0}
-                            max={100}
-                            step={5}
-                            unit="%"
-                            onChange={(v) => updateConfig('musicVolume', v)}
-                          />
-                          <ToggleRow
-                            label="Loop Track"
-                            checked={config.musicLooped}
-                            onChange={(v) => updateConfig('musicLooped', v)}
-                          />
-                        </>
-                      )}
-
-                      {robloxTab === 'Misc' && (
-                        <>
-                          <div className="text-xs font-semibold text-neutral-400 pb-1 border-b border-white/10">
-                            Session & Quick Actions
-                          </div>
-
-                          <ToggleRow
-                            label="Anti-AFK (Scoped Local Connection)"
-                            checked={config.antiAFKEnabled}
-                            onChange={(v) => updateConfig('antiAFKEnabled', v)}
-                          />
-
-                          <div className="pt-2 flex flex-wrap gap-3">
-                            <button
-                              type="button"
-                              onClick={onReplayIntro}
-                              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold bg-[#161616] text-white hover:bg-[#222222] border border-white/15 transition-colors cursor-pointer"
-                            >
-                              <RotateCcw className="w-3.5 h-3.5" />
-                              <span>Replay Loading Animation</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={onLockSession}
-                              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold bg-[#161616] text-white hover:bg-[#222222] border border-white/15 transition-colors cursor-pointer"
-                            >
-                              <Lock className="w-3.5 h-3.5" />
-                              <span>Open Key System</span>
-                            </button>
-                          </div>
-                        </>
-                      )}
-                    </motion.div>
-                  </AnimatePresence>
-                </div>
-              </div>
-              </div>
-
-              {/* CONNECTED MINI MUSIC PLAYER UI (Docked Directly Below CORE.XYZ Window — Off by Default) */}
-              <AnimatePresence>
-                {config.musicPlayerVisible && (
-                  <motion.div
-                    key="connected-music-player-dock"
-                    initial={{ opacity: 0, y: -12, scale: 0.985 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -10, scale: 0.985 }}
-                    transition={{ type: 'spring', stiffness: 420, damping: 30 }}
-                    className="relative rounded-xl bg-gradient-to-b from-[#101218] to-[#090A0E] border border-white/20 px-4 py-3.5 shadow-[0_18px_42px_rgba(0,0,0,0.8)] space-y-3 overflow-hidden"
-                    data-testid="connected-music-player"
-                  >
-                    {/* Top Specular Edge Highlight */}
-                    <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-[#78AFFF]/60 to-transparent" />
-
-                    {/* Top Row: Track Metadata + Transport Controls + Time Counter */}
-                    <div className="flex items-center justify-between gap-2.5">
-                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        <div className="relative w-9 h-9 rounded-lg bg-[#141720] border border-[#78AFFF]/35 flex items-center justify-center shrink-0 shadow-[0_0_16px_rgba(120,175,255,0.18)]">
-                          <Music className="w-4 h-4 text-white" />
-                          {config.musicPlaying && (
-                            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[#38BDF8] ring-2 ring-[#090A0E] animate-pulse" />
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <span
-                              className="text-xs font-bold text-white truncate"
-                              data-testid="player-track-title"
-                            >
-                              {activeTrack.title}
-                            </span>
-                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#78AFFF]/15 border border-[#78AFFF]/30 text-[#BAE0FF] shrink-0">
-                              {activeTrack.artist}
-                            </span>
-                          </div>
-                          <div className="text-[10px] font-mono text-neutral-400 truncate mt-0.5">
-                            {config.musicPlaying ? 'Playing' : 'Paused'} · CoreXyz_Music/
-                            {activeTrack.fileName}
-                            {config.muteGameAudio ? ' · Game Muted' : ''}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Transport Buttons + Live Time Counter */}
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <motion.button
-                          whileHover={{ scale: 1.06 }}
-                          whileTap={{ scale: 0.94 }}
-                          type="button"
-                          aria-label="Previous or Rewind Track"
-                          onClick={() => seekToRatio(0)}
-                          className="w-8 h-8 rounded-lg bg-[#151821] hover:bg-[#1E2230] border border-white/12 flex items-center justify-center text-white transition-colors cursor-pointer"
-                        >
-                          <SkipBack className="w-3.5 h-3.5" />
-                        </motion.button>
-                        <motion.button
-                          whileHover={{ scale: 1.06 }}
-                          whileTap={{ scale: 0.94 }}
-                          type="button"
-                          aria-label={config.musicPlaying ? 'Pause Track' : 'Play Track'}
-                          data-testid="player-play-pause-btn"
-                          onClick={() => updateConfig('musicPlaying', !config.musicPlaying)}
-                          className="w-9 h-8 rounded-lg bg-white hover:bg-neutral-100 text-black flex items-center justify-center shadow-[0_0_16px_rgba(255,255,255,0.35)] transition-colors cursor-pointer"
-                        >
-                          {config.musicPlaying ? (
-                            <Pause className="w-4 h-4 fill-current" />
-                          ) : (
-                            <Play className="w-4 h-4 fill-current" />
-                          )}
-                        </motion.button>
-                        <motion.button
-                          whileHover={{ scale: 1.06 }}
-                          whileTap={{ scale: 0.94 }}
-                          type="button"
-                          aria-label="Next Track"
-                          onClick={() => seekToRatio(0)}
-                          className="w-8 h-8 rounded-lg bg-[#151821] hover:bg-[#1E2230] border border-white/12 flex items-center justify-center text-white transition-colors cursor-pointer"
-                        >
-                          <SkipForward className="w-3.5 h-3.5" />
-                        </motion.button>
-                        <motion.button
-                          whileHover={{ scale: 1.03 }}
-                          whileTap={{ scale: 0.96 }}
-                          type="button"
-                          aria-label={
-                            config.muteGameAudio ? 'Unmute Game Audio' : 'Mute Game Audio'
-                          }
-                          onClick={() => updateConfig('muteGameAudio', !config.muteGameAudio)}
-                          className={`px-2 h-8 rounded-lg border text-[10px] font-mono inline-flex items-center gap-1 transition-colors cursor-pointer ${
-                            config.muteGameAudio
-                              ? 'bg-white text-black border-white font-bold shadow-[0_0_14px_rgba(255,255,255,0.28)]'
-                              : 'bg-[#151821] text-neutral-300 border-white/12 hover:text-white hover:bg-[#1E2230]'
-                          }`}
-                        >
-                          {config.muteGameAudio ? (
-                            <VolumeX className="w-3.5 h-3.5" />
-                          ) : (
-                            <Volume2 className="w-3.5 h-3.5" />
-                          )}
-                          <span className="hidden sm:inline">
-                            {config.muteGameAudio ? 'Muted' : 'Game'}
-                          </span>
-                        </motion.button>
-                        <div
-                          className="text-[11px] font-mono text-neutral-200 bg-[#141720] border border-white/10 px-2 py-1.5 rounded-lg tabular-nums shrink-0"
-                          data-testid="player-time-counter"
-                        >
-                          {formatTrackTimestamp(trackTimeSec)} /{' '}
-                          {formatTrackTimestamp(activeTrack.durationSec)}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Interactive Multi-Harmonic Wavy Ocean Timeline Slider / Scrubber */}
-                    <div className="space-y-1">
-                      {(() => {
-                        const progressRatio = Math.max(
-                          0,
-                          Math.min(1, trackTimeSec / activeTrack.durationSec)
-                        );
-                        const progressPercent = progressRatio * 100;
-                        const primaryWaveSvg = buildOceanWaveSvgPath(
-                          560,
-                          36,
-                          wavePhase,
-                          config.musicPlaying,
-                          0
-                        );
-                        const secondaryWaveSvg = buildOceanWaveSvgPath(
-                          560,
-                          36,
-                          wavePhase * 0.82,
-                          config.musicPlaying,
-                          1.35
-                        );
-                        const thumbWaveY = computeOceanWaveDisplacement(
-                          progressRatio,
-                          wavePhase,
-                          config.musicPlaying
-                        );
-
-                        return (
-                          <div
-                            ref={scrubberTrackRef}
-                            role="slider"
-                            tabIndex={0}
-                            aria-label="Wavy Ocean Music Timeline Scrubber"
-                            aria-valuemin={0}
-                            aria-valuemax={activeTrack.durationSec}
-                            aria-valuenow={Math.floor(trackTimeSec)}
-                            data-testid="wavy-ocean-scrubber"
-                            onPointerDown={(e) => {
-                              setIsScrubbing(true);
-                              handleScrubberPointer(e.clientX);
-                            }}
-                            onPointerMove={(e) => {
-                              if (isScrubbing) {
-                                handleScrubberPointer(e.clientX);
-                              }
-                            }}
-                            onPointerUp={() => setIsScrubbing(false)}
-                            onPointerLeave={() => setIsScrubbing(false)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'ArrowRight') {
-                                seekToRatio((trackTimeSec + 5) / activeTrack.durationSec);
-                              } else if (e.key === 'ArrowLeft') {
-                                seekToRatio((trackTimeSec - 5) / activeTrack.durationSec);
-                              }
-                            }}
-                            className="group relative h-9 rounded-lg bg-[#0B0E14] border border-[#78AFFF]/25 hover:border-[#78AFFF]/55 px-2 flex items-center cursor-pointer select-none overflow-hidden transition-colors"
-                          >
-                            {/* Continuous Dual-Layer SVG Ocean Swell Ribbon (Clipped to Active Progress) */}
-                            <div
-                              style={{
-                                width: `${Math.max(2, Math.min(100, progressPercent))}%`,
-                              }}
-                              className="pointer-events-none absolute inset-y-0 left-0 overflow-hidden transition-[width] duration-75"
-                            >
-                              <svg
-                                viewBox="0 0 560 36"
-                                preserveAspectRatio="none"
-                                className="w-[560px] h-full opacity-85"
-                              >
-                                <defs>
-                                  <linearGradient
-                                    id="coreOceanSwellGrad"
-                                    x1="0%"
-                                    y1="0%"
-                                    x2="100%"
-                                    y2="0%"
-                                  >
-                                    <stop offset="0%" stopColor="#3B82F6" stopOpacity="0.28" />
-                                    <stop offset="60%" stopColor="#38BDF8" stopOpacity="0.42" />
-                                    <stop offset="100%" stopColor="#E0F7FF" stopOpacity="0.58" />
-                                  </linearGradient>
-                                </defs>
-                                <path
-                                  d={secondaryWaveSvg.areaPath}
-                                  fill="rgba(88, 101, 242, 0.24)"
-                                />
-                                <path
-                                  d={primaryWaveSvg.areaPath}
-                                  fill="url(#coreOceanSwellGrad)"
-                                />
-                                <path
-                                  d={primaryWaveSvg.linePath}
-                                  fill="none"
-                                  stroke="#BAE6FD"
-                                  strokeWidth="1.5"
-                                  strokeOpacity="0.85"
-                                />
-                              </svg>
-                            </div>
-
-                            {/* 28 Pre-Allocated Tangential Wavy Ocean Harmonic Segments (Mirrors OceanWaveSegment_1..28 in Core.xyz.lua) */}
-                            <div className="relative z-10 w-full flex items-center justify-between gap-1 px-1">
-                              {OCEAN_SEGMENT_INDICES.map((idx) => {
-                                const normX = idx / (OCEAN_SEGMENT_INDICES.length - 1);
-                                const isPassed = normX <= progressRatio;
-                                const metrics = computeOceanWaveCrestMetrics(
-                                  normX,
-                                  wavePhase,
-                                  config.musicPlaying
-                                );
-                                const heightPx = isPassed
-                                  ? Math.max(
-                                      7,
-                                      Math.min(
-                                        23,
-                                        metrics.barHeightPx +
-                                          Math.round(Math.abs(metrics.displacementPx) * 1.25)
-                                      )
-                                    )
-                                  : Math.max(
-                                      5,
-                                      Math.min(
-                                        12,
-                                        5 + Math.round(Math.abs(metrics.displacementPx) * 0.65)
-                                      )
-                                    );
-                                const yOffset = isPassed
-                                  ? metrics.displacementPx * 0.82
-                                  : metrics.displacementPx * 0.48;
-                                const tiltDeg = isPassed ? metrics.tiltDeg : metrics.tiltDeg * 0.55;
-
-                                return (
-                                  <div
-                                    key={idx}
-                                    data-testid={`ocean-wave-segment-${idx + 1}`}
-                                    style={{
-                                      height: `${heightPx}px`,
-                                      transform: `translateY(${yOffset.toFixed(
-                                        2
-                                      )}px) rotate(${tiltDeg.toFixed(1)}deg)`,
-                                    }}
-                                    className={`flex-1 rounded-full transition-colors duration-75 ${
-                                      isPassed
-                                        ? 'bg-gradient-to-t from-[#38BDF8] via-[#93C5FD] to-white shadow-[0_0_10px_rgba(165,230,255,0.75)]'
-                                        : 'bg-[#78AFFF]/25 group-hover:bg-[#78AFFF]/40'
-                                    }`}
-                                  />
-                                );
-                              })}
-                            </div>
-
-                            {/* Bioluminescent Wave-Rider Playhead Thumb & Halo */}
-                            <div
-                              data-testid="ocean-scrubber-thumb"
-                              style={{
-                                left: `calc(${progressPercent.toFixed(2)}% - 8px)`,
-                                transform: `translateY(${(thumbWaveY * 0.58).toFixed(2)}px)`,
-                              }}
-                              className="pointer-events-none absolute z-20 w-4 h-4 rounded-full bg-white ring-2 ring-[#78AFFF] shadow-[0_0_16px_rgba(165,230,255,0.95)] flex items-center justify-center"
-                            >
-                              <span
-                                className={`absolute -inset-1.5 rounded-full bg-[#78AFFF]/35 blur-[2px] ${
-                                  config.musicPlaying ? 'animate-ping' : ''
-                                }`}
-                              />
-                              <span className="w-1.5 h-1.5 rounded-full bg-[#090A0E]" />
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
-            {/* Right Column: Live Interactive Viewport Preview */}
-            <div className="lg:col-span-5 rounded-xl bg-[#0A0A0A] border border-white/15 p-5 flex flex-col justify-between">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <h3 className="text-sm font-bold text-white">
-                    Live Overlay Simulation Viewport
-                  </h3>
-                  <p className="text-xs text-neutral-400">
-                    Real-time preview of FOV, Crosshair, ESP & Snaplines
-                  </p>
-                </div>
-                <span className="font-mono text-xs text-neutral-400 tabular-nums">
-                  Target: {config.targetPart}
+        {/* Workspace Grid: Left Core.xyz Window + Right Live Preview */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* Left Column: Core.xyz Interactive Window */}
+          <section
+            aria-label="Core.xyz Control Panel"
+            className="lg:col-span-5 rounded-2xl bg-[#09090B] border border-white/15 overflow-hidden shadow-[0_24px_70px_rgba(0,0,0,0.85)]"
+          >
+            {/* Simulated Roblox Window Titlebar */}
+            <div className="px-5 py-3.5 bg-[#0F0F12] border-b border-white/10 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-white shadow-[0_0_8px_#fff]" />
+                <span className="font-bold text-sm tracking-tight text-white">Core.xyz</span>
+                <span className="text-[11px] font-mono text-neutral-400">
+                  // {activeTab.toUpperCase()}
                 </span>
               </div>
+              <div className="flex items-center gap-1.5">
+                <Sliders className="w-3.5 h-3.5 text-neutral-400" />
+                <span className="text-[11px] font-mono text-neutral-400">RightShift</span>
+              </div>
+            </div>
 
-              {/* Simulated 3D Arena Canvas */}
+            {/* Control Panel Body */}
+            <div className="p-5 space-y-4 max-h-[760px] overflow-y-auto">
+              {activeTab === 'home' && (
+                <div className="space-y-3.5">
+                  {/* Welcome & License Status Card */}
+                  <div className="p-4 rounded-xl bg-[#111115] border border-white/12 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        {/* 3D Character Viewport Thumbnail Preview */}
+                        <div className="w-12 h-14 rounded-lg bg-[#08080B] border border-white/15 flex flex-col items-center justify-center relative overflow-hidden shrink-0">
+                          <div className="w-3.5 h-3.5 rounded-full bg-white/90 mb-0.5 shadow-[0_0_8px_rgba(255,255,255,0.6)]" />
+                          <div className="w-6 h-5 rounded-t bg-white/75" />
+                          <span className="text-[8px] font-mono text-neutral-400 mt-0.5">3D RIG</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-400">
+                            ACTIVE SESSION
+                          </span>
+                          <h3 className="text-sm font-bold text-white mt-0.5">
+                            Welcome to Core.xyz v4.5
+                          </h3>
+                        </div>
+                      </div>
+                      <span className="px-2.5 py-1 rounded-md bg-white/10 border border-white/20 font-mono text-[11px] text-white font-semibold">
+                        {remainingKeyTimeLabel}
+                      </span>
+                    </div>
+
+                    {/* 3 Key Tiers Breakdown */}
+                    <div className="grid grid-cols-3 gap-2 pt-1">
+                      <div className="p-2 rounded-lg bg-black/50 border border-white/10">
+                        <div className="text-[10px] font-bold text-white">FREE TIER</div>
+                        <div className="text-[9px] text-neutral-400 mt-0.5">
+                          24h Access via Linkvertise / Lootlabs
+                        </div>
+                      </div>
+                      <div className="p-2 rounded-lg bg-black/50 border border-white/15">
+                        <div className="text-[10px] font-bold text-white">PREMIUM TIER</div>
+                        <div className="text-[9px] text-neutral-400 mt-0.5">
+                          30d / Lifetime Direct Instant Key
+                        </div>
+                      </div>
+                      <div className="p-2 rounded-lg bg-black/50 border border-white/20">
+                        <div className="text-[10px] font-bold text-white">DEVELOPER TIER</div>
+                        <div className="text-[9px] text-neutral-400 mt-0.5">
+                          500,000h+ Extended Duration
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-white/10">
+                      <span className="text-[11px] text-neutral-400">
+                        Test Key Duration Display:
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setSimulatedExpiryOverride(null)}
+                          className={`px-2 py-1 rounded text-[10px] font-mono border transition-colors cursor-pointer ${
+                            simulatedExpiryOverride === null
+                              ? 'bg-white text-black border-white font-bold'
+                              : 'bg-black/60 text-neutral-300 border-white/15 hover:border-white/30'
+                          }`}
+                        >
+                          24h Key
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSimulatedExpiryOverride(Date.now() + 500000 * 3600 * 1000)
+                          }
+                          className={`px-2 py-1 rounded text-[10px] font-mono border transition-colors cursor-pointer ${
+                            simulatedExpiryOverride !== null && simulatedExpiryOverride > 0
+                              ? 'bg-white text-black border-white font-bold'
+                              : 'bg-black/60 text-neutral-300 border-white/15 hover:border-white/30'
+                          }`}
+                        >
+                          500,000h Dev Key
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSimulatedExpiryOverride(-1)}
+                          className={`px-2 py-1 rounded text-[10px] font-mono border transition-colors cursor-pointer ${
+                            simulatedExpiryOverride === -1
+                              ? 'bg-white text-black border-white font-bold'
+                              : 'bg-black/60 text-neutral-300 border-white/15 hover:border-white/30'
+                          }`}
+                        >
+                          Lifetime
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Quick Actions Card */}
+                  <div className="p-3.5 rounded-xl bg-[#0E0E12] border border-white/10 space-y-2">
+                    <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-400 block">
+                      QUICK NAVIGATION
+                    </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('visuals')}
+                        className="px-3 py-2 rounded-lg bg-[#16161C] hover:bg-[#1E1E26] border border-white/10 text-xs font-semibold text-white flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>Open 8 Visual Suites</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('music')}
+                        className="px-3 py-2 rounded-lg bg-[#16161C] hover:bg-[#1E1E26] border border-white/10 text-xs font-semibold text-white flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Music className="w-3.5 h-3.5" />
+                        <span>Open Music Player</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Live Discord Community Card */}
+                  <div
+                    data-testid="home-discord-card"
+                    className="rounded-xl bg-[#111214] border border-white/15 overflow-hidden shadow-[0_12px_30px_rgba(0,0,0,0.6)]"
+                  >
+                    {/* Top Banner with Animated Monochrome Wave Crest */}
+                    <div
+                      data-testid="discord-wave-banner"
+                      className="h-16 bg-gradient-to-r from-[#09090B] via-[#18181F] to-[#09090B] relative overflow-hidden border-b border-white/10"
+                    >
+                      <svg
+                        viewBox="0 0 400 64"
+                        preserveAspectRatio="none"
+                        className="absolute inset-0 w-full h-full opacity-35"
+                      >
+                        <path
+                          d="M 0 38 Q 100 14 200 38 T 400 38 L 400 64 L 0 64 Z"
+                          fill="rgba(255,255,255,0.16)"
+                        />
+                        <path
+                          d="M 0 46 Q 100 24 200 46 T 400 46 L 400 64 L 0 64 Z"
+                          fill="rgba(255,255,255,0.09)"
+                        />
+                      </svg>
+                      <div className="absolute top-2.5 right-3 flex items-center gap-1.5">
+                        <span className="px-2 py-0.5 rounded bg-black/60 border border-white/15 font-mono text-[10px] text-neutral-300">
+                          discord.gg/{discordStats.inviteCode}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={fetchDiscordCounts}
+                          aria-label="Refresh Discord Server Stats"
+                          className="p-1 rounded bg-black/60 hover:bg-black/80 border border-white/15 text-neutral-300 hover:text-white transition-colors cursor-pointer"
+                        >
+                          <RefreshCw
+                            className={`w-3 h-3 ${isRefreshingDiscord ? 'animate-spin' : ''}`}
+                          />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="p-4 pt-0 relative">
+                      {/* Overlapping Server Avatar */}
+                      <div className="flex items-end justify-between -mt-7 mb-3">
+                        <div className="relative w-14 h-14 rounded-2xl bg-[#1A1A20] border-4 border-[#111214] overflow-hidden flex items-center justify-center shadow-lg">
+                          {!discordIconFailed ? (
+                            <img
+                              src={discordStats.iconUrl}
+                              alt={discordStats.serverName}
+                              onError={() => setDiscordIconFailed(true)}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <span className="text-lg font-black text-white">C</span>
+                          )}
+                          <span className="absolute bottom-0.5 right-0.5 w-3 h-3 rounded-full bg-emerald-400 ring-2 ring-[#111214]" />
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span
+                            data-testid="discord-online-pill"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-[11px] font-mono text-emerald-300"
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            {discordStats.onlineCount} Online
+                          </span>
+                          <span
+                            data-testid="discord-members-pill"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 border border-white/15 text-[11px] font-mono text-neutral-300"
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-neutral-400" />
+                            {discordStats.memberCount} Members
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1 mb-3.5">
+                        <div className="flex items-center gap-2">
+                          <h4
+                            data-testid="discord-server-name"
+                            className="text-base font-bold text-white tracking-tight"
+                          >
+                            {discordStats.serverName}
+                          </h4>
+                          <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-white/10 text-neutral-200">
+                            OFFICIAL
+                          </span>
+                        </div>
+                        <p className="text-xs text-neutral-400">
+                          Official Core.xyz Discord community &bull; Script updates, configs, and community music requests.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => copyText(discordStats.inviteUrl, 'discord')}
+                          className="flex-1 py-2.5 px-3 rounded-lg bg-white text-black hover:bg-neutral-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          {copiedType === 'discord' ? (
+                            <>
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Copied Invite ({discordStats.inviteUrl})</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5" />
+                              <span>Copy Discord Link</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'combat' && (
+                <div className="space-y-3">
+                  <SectionBox title="Silent & Camera Aimbot">
+                    <ToggleRow
+                      label="Enable Aimbot"
+                      checked={config.aimbotEnabled}
+                      onChange={(v) => setConfig({ ...config, aimbotEnabled: v })}
+                      showKeybindBadge
+                    />
+                    <ToggleRow
+                      label="Show FOV Circle"
+                      checked={config.showFOV}
+                      onChange={(v) => setConfig({ ...config, showFOV: v })}
+                    />
+                    <ToggleRow
+                      label="Team Check"
+                      checked={config.teamCheck}
+                      onChange={(v) => setConfig({ ...config, teamCheck: v })}
+                    />
+                    <SliderRow
+                      label="FOV Radius"
+                      value={config.fovRadius}
+                      min={20}
+                      max={240}
+                      step={5}
+                      unit="px"
+                      onChange={(v) => setConfig({ ...config, fovRadius: v })}
+                    />
+                    <SliderRow
+                      label="Smoothness"
+                      value={config.smoothness}
+                      min={0.05}
+                      max={1}
+                      step={0.05}
+                      unit=""
+                      onChange={(v) => setConfig({ ...config, smoothness: v })}
+                    />
+                    <SelectRow
+                      label="Target Hitbox"
+                      value={config.targetPart}
+                      options={['Head', 'HumanoidRootPart', 'UpperTorso', 'LowerTorso']}
+                      onChange={(v) =>
+                        setConfig({
+                          ...config,
+                          targetPart: v as CoreConfigState['targetPart'],
+                        })
+                      }
+                    />
+                  </SectionBox>
+                </div>
+              )}
+
+              {activeTab === 'visuals' && (
+                <div className="space-y-4">
+                  {/* ESP & Crosshair */}
+                  <SectionBox title="ESP & Crosshair">
+                    <ToggleRow
+                      label="Enable Player ESP"
+                      checked={config.espEnabled}
+                      onChange={(v) => setConfig({ ...config, espEnabled: v })}
+                      showKeybindBadge
+                      swatchColor={accentHex}
+                    />
+                    <ToggleRow
+                      label="Enable Snapline Tracers"
+                      checked={config.tracersEnabled}
+                      onChange={(v) => setConfig({ ...config, tracersEnabled: v })}
+                    />
+                    <ToggleRow
+                      label="Custom Crosshair"
+                      checked={config.crosshairEnabled}
+                      onChange={(v) => setConfig({ ...config, crosshairEnabled: v })}
+                    />
+                    <SliderRow
+                      label="Crosshair Size"
+                      value={config.crosshairSize}
+                      min={4}
+                      max={28}
+                      step={1}
+                      unit="px"
+                      onChange={(v) => setConfig({ ...config, crosshairSize: v })}
+                    />
+                    <SelectRow
+                      label="Snapline Origin"
+                      value={config.tracerOrigin}
+                      options={['Bottom', 'Center', 'Top']}
+                      onChange={(v) =>
+                        setConfig({
+                          ...config,
+                          tracerOrigin: v as CoreConfigState['tracerOrigin'],
+                        })
+                      }
+                    />
+                    <SelectRow
+                      label="ESP Accent Color"
+                      value={config.espAccent}
+                      options={['White', 'Silver', 'Crimson', 'Cyan']}
+                      onChange={(v) =>
+                        setConfig({
+                          ...config,
+                          espAccent: v as CoreConfigState['espAccent'],
+                        })
+                      }
+                    />
+                  </SectionBox>
+
+                  {/* Suite 1: Self Chams */}
+                  <SectionBox title="Self Chams">
+                    <ToggleRow
+                      label="Self Chams"
+                      checked={selfChamsEnabled}
+                      onChange={setSelfChamsEnabled}
+                      showKeybindBadge
+                      swatchColor="#FFFFFF"
+                      swatchColor2="#6E5AFF"
+                    />
+                    <SelectRow
+                      label="Chams Material"
+                      value={selfChamsMaterial}
+                      options={[...CHAMS_MATERIALS]}
+                      onChange={setSelfChamsMaterial}
+                    />
+                    <SliderRow
+                      label="Fill Transparency"
+                      value={selfChamsFillTrans}
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      unit=""
+                      onChange={setSelfChamsFillTrans}
+                    />
+                    <SliderRow
+                      label="Outline Transparency"
+                      value={selfChamsOutlineTrans}
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      unit=""
+                      onChange={setSelfChamsOutlineTrans}
+                    />
+                    <ToggleRow
+                      label="Rainbow"
+                      checked={selfChamsRainbow}
+                      onChange={setSelfChamsRainbow}
+                    />
+                    <ToggleRow
+                      label="Pulse"
+                      checked={selfChamsPulse}
+                      onChange={setSelfChamsPulse}
+                    />
+                    <ToggleRow
+                      label="Glow Rim"
+                      checked={selfChamsGlowRim}
+                      onChange={setSelfChamsGlowRim}
+                    />
+                  </SectionBox>
+
+                  {/* Suite 2: Trail */}
+                  <SectionBox title="Trail">
+                    <ToggleRow
+                      label="Trail"
+                      checked={legTrailEnabled}
+                      onChange={setLegTrailEnabled}
+                      showKeybindBadge
+                    />
+                    <ColorSwatchRow label="Left Leg Start" color="#6E5AFF" />
+                    <ColorSwatchRow label="Left Leg End" color="#3CD2FF" />
+                    <ToggleRow
+                      label="Same Colors Both Legs"
+                      checked={legTrailSameColors}
+                      onChange={setLegTrailSameColors}
+                    />
+                    <ColorSwatchRow
+                      label="Right Leg Start"
+                      color={legTrailSameColors ? '#6E5AFF' : '#FF50B4'}
+                    />
+                    <ColorSwatchRow
+                      label="Right Leg End"
+                      color={legTrailSameColors ? '#3CD2FF' : '#FFB946'}
+                    />
+                    <SliderRow
+                      label="Trail Width"
+                      value={legTrailWidth}
+                      min={0.05}
+                      max={2}
+                      step={0.05}
+                      unit=""
+                      onChange={setLegTrailWidth}
+                    />
+                    <SliderRow
+                      label="Trail Length"
+                      value={legTrailLength}
+                      min={0.1}
+                      max={3}
+                      step={0.1}
+                      unit="s"
+                      onChange={setLegTrailLength}
+                    />
+                    <ToggleRow
+                      label="Rainbow Trail"
+                      checked={legTrailRainbow}
+                      onChange={setLegTrailRainbow}
+                    />
+                  </SectionBox>
+
+                  {/* Suite 3: Tool Visuals */}
+                  <SectionBox title="Tool Visuals">
+                    <ToggleRow
+                      label="Tool Visuals"
+                      checked={toolVisualsEnabled}
+                      onChange={setToolVisualsEnabled}
+                      showKeybindBadge
+                      swatchColor="#6E5AFF"
+                    />
+                    <SelectRow
+                      label="Tool Material"
+                      value={toolMaterial}
+                      options={[...TOOL_MATERIALS]}
+                      onChange={setToolMaterial}
+                    />
+                    <SliderRow
+                      label="Tool Transparency"
+                      value={toolTransparency}
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      unit=""
+                      onChange={setToolTransparency}
+                    />
+                    <ToggleRow
+                      label="Rainbow Tool"
+                      checked={toolRainbow}
+                      onChange={setToolRainbow}
+                    />
+                    <SelectRow
+                      label="Skin Texture"
+                      value={toolSkinTexture}
+                      options={[...TOOL_SKINS]}
+                      onChange={setToolSkinTexture}
+                    />
+                    <ToggleRow
+                      label="Tool Chams"
+                      checked={toolChamsEnabled}
+                      onChange={setToolChamsEnabled}
+                      swatchColor="#FFFFFF"
+                    />
+                    <SelectRow
+                      label="Chams Style"
+                      value={toolChamsStyle}
+                      options={[...CHAMS_STYLES]}
+                      onChange={setToolChamsStyle}
+                    />
+                    <ToggleRow
+                      label="Tool Glow"
+                      checked={toolGlowEnabled}
+                      onChange={setToolGlowEnabled}
+                    />
+                    <SliderRow
+                      label="Glow Brightness"
+                      value={toolGlowBrightness}
+                      min={0}
+                      max={10}
+                      step={0.5}
+                      unit=""
+                      onChange={setToolGlowBrightness}
+                    />
+                  </SectionBox>
+
+                  {/* Suite 4: Bloom & Sun Rays */}
+                  <SectionBox title="Bloom & Sun Rays">
+                    <ToggleRow
+                      label="Bloom"
+                      checked={bloomEnabled}
+                      onChange={setBloomEnabled}
+                      showKeybindBadge
+                    />
+                    <SliderRow
+                      label="Bloom Intensity"
+                      value={bloomIntensity}
+                      min={0}
+                      max={3}
+                      step={0.05}
+                      unit=""
+                      onChange={setBloomIntensity}
+                    />
+                    <SliderRow
+                      label="Bloom Size"
+                      value={bloomSize}
+                      min={0}
+                      max={56}
+                      step={1}
+                      unit=""
+                      onChange={setBloomSize}
+                    />
+                    <SliderRow
+                      label="Bloom Threshold"
+                      value={bloomThreshold}
+                      min={0}
+                      max={4}
+                      step={0.05}
+                      unit=""
+                      onChange={setBloomThreshold}
+                    />
+                    <ToggleRow
+                      label="Sun Rays"
+                      checked={sunRaysEnabled}
+                      onChange={setSunRaysEnabled}
+                      showKeybindBadge
+                    />
+                    <SliderRow
+                      label="Rays Intensity"
+                      value={sunRaysIntensity}
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      unit=""
+                      onChange={setSunRaysIntensity}
+                    />
+                    <SliderRow
+                      label="Rays Spread"
+                      value={sunRaysSpread}
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      unit=""
+                      onChange={setSunRaysSpread}
+                    />
+                  </SectionBox>
+
+                  {/* Suite 5: Color Correction */}
+                  <SectionBox title="Color Correction">
+                    <ToggleRow
+                      label="Color Correction"
+                      checked={colorCorrectionEnabled}
+                      onChange={setColorCorrectionEnabled}
+                      swatchColor="#FFFFFF"
+                    />
+                    <SliderRow
+                      label="Saturation"
+                      value={ccSaturation}
+                      min={-1}
+                      max={2}
+                      step={0.05}
+                      unit=""
+                      onChange={setCcSaturation}
+                    />
+                    <SliderRow
+                      label="Contrast"
+                      value={ccContrast}
+                      min={-1}
+                      max={2}
+                      step={0.05}
+                      unit=""
+                      onChange={setCcContrast}
+                    />
+                    <SliderRow
+                      label="Brightness"
+                      value={ccBrightness}
+                      min={-1}
+                      max={1}
+                      step={0.05}
+                      unit=""
+                      onChange={setCcBrightness}
+                    />
+                  </SectionBox>
+
+                  {/* Suite 6: Skybox */}
+                  <SectionBox title="Skybox">
+                    <ToggleRow
+                      label="Skybox"
+                      checked={skyboxEnabled}
+                      onChange={setSkyboxEnabled}
+                    />
+                    <SelectRow
+                      label="Preset"
+                      value={skyboxPreset}
+                      options={[...SKYBOX_PRESETS]}
+                      onChange={(val) => {
+                        setSkyboxPreset(val);
+                        setSkyboxEnabled(true);
+                      }}
+                    />
+                    <ToggleRow
+                      label="Clear Atmosphere"
+                      checked={clearAtmosphere}
+                      onChange={setClearAtmosphere}
+                    />
+                    <div className="px-3.5 py-2.5 rounded-lg bg-[#0E0E11] border border-white/[0.07] space-y-1.5">
+                      <label className="text-xs font-medium text-neutral-300 block">
+                        Custom Sky
+                      </label>
+                      <input
+                        type="text"
+                        aria-label="Custom Sky"
+                        placeholder="Sky name or asset ID..."
+                        value={customSkyInput}
+                        onChange={(e) => setCustomSkyInput(e.target.value)}
+                        className="w-full px-2.5 py-1.5 rounded bg-[#16161B] border border-white/10 text-xs text-white font-mono focus:outline-none focus:border-white/30"
+                      />
+                    </div>
+                    <div className="px-3.5 py-2.5 rounded-lg bg-[#0E0E11] border border-white/[0.07] space-y-2">
+                      <label className="text-xs font-medium text-neutral-300 block">
+                        Search Skyboxes
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          aria-label="Search Skyboxes"
+                          placeholder="e.g. purple, night, anime..."
+                          value={skyboxSearchQuery}
+                          onChange={(e) => setSkyboxSearchQuery(e.target.value)}
+                          className="flex-1 px-2.5 py-1.5 rounded bg-[#16161B] border border-white/10 text-xs text-white font-mono focus:outline-none focus:border-white/30"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleSkyboxSearch}
+                          className="px-3 py-1.5 rounded bg-white text-black hover:bg-neutral-200 text-xs font-bold cursor-pointer shrink-0"
+                        >
+                          Search
+                        </button>
+                      </div>
+                    </div>
+                    <SelectRow
+                      label="Search Results"
+                      value={selectedSearchResult}
+                      options={skyboxSearchResults}
+                      onChange={(val) => {
+                        setSelectedSearchResult(val);
+                        setSkyboxPreset(val);
+                        setSkyboxEnabled(true);
+                      }}
+                    />
+                  </SectionBox>
+
+                  {/* Suite 7: Lighting */}
+                  <SectionBox title="Lighting">
+                    <ToggleRow
+                      label="Ambient"
+                      checked={ambientEnabled}
+                      onChange={setAmbientEnabled}
+                      swatchColor="#A08CFF"
+                    />
+                    <ToggleRow
+                      label="Outdoor Ambient"
+                      checked={outdoorAmbientEnabled}
+                      onChange={setOutdoorAmbientEnabled}
+                      swatchColor="#8C82B4"
+                    />
+                    <ToggleRow
+                      label="Color Shift Bottom"
+                      checked={colorShiftBottomEnabled}
+                      onChange={setColorShiftBottomEnabled}
+                      swatchColor="#000000"
+                    />
+                    <ToggleRow
+                      label="Color Shift Top"
+                      checked={colorShiftTopEnabled}
+                      onChange={setColorShiftTopEnabled}
+                      swatchColor="#000000"
+                    />
+                    <ToggleRow
+                      label="Fog Color"
+                      checked={fogColorEnabled}
+                      onChange={setFogColorEnabled}
+                      swatchColor="#C0C0C0"
+                    />
+                    <ToggleRow
+                      label="Fog End"
+                      checked={fogEndEnabled}
+                      onChange={setFogEndEnabled}
+                    />
+                    <SliderRow
+                      label="Fog End Distance"
+                      value={fogEndDistance}
+                      min={50}
+                      max={10000}
+                      step={50}
+                      unit=""
+                      onChange={setFogEndDistance}
+                    />
+                    <ToggleRow
+                      label="Fog Start"
+                      checked={fogStartEnabled}
+                      onChange={setFogStartEnabled}
+                    />
+                    <SliderRow
+                      label="Fog Start Distance"
+                      value={fogStartDistance}
+                      min={0}
+                      max={5000}
+                      step={25}
+                      unit=""
+                      onChange={setFogStartDistance}
+                    />
+                    <ToggleRow
+                      label="Exposure Compensation"
+                      checked={exposureEnabled}
+                      onChange={setExposureEnabled}
+                    />
+                    <SliderRow
+                      label="Exposure Value"
+                      value={exposureValue}
+                      min={-3}
+                      max={3}
+                      step={0.1}
+                      unit=""
+                      onChange={setExposureValue}
+                    />
+                    <ToggleRow
+                      label="Brightness"
+                      checked={brightnessEnabled}
+                      onChange={setBrightnessEnabled}
+                    />
+                    <SliderRow
+                      label="Brightness Level"
+                      value={brightnessLevel}
+                      min={0}
+                      max={10}
+                      step={0.25}
+                      unit=""
+                      onChange={setBrightnessLevel}
+                    />
+                    <ToggleRow
+                      label="Clock Time"
+                      checked={clockTimeEnabled}
+                      onChange={setClockTimeEnabled}
+                    />
+                    <SliderRow
+                      label="Time of Day"
+                      value={clockTimeHour}
+                      min={0}
+                      max={24}
+                      step={0.5}
+                      unit="h"
+                      onChange={setClockTimeHour}
+                    />
+                    <ToggleRow
+                      label="No Shadows"
+                      checked={noShadowsEnabled}
+                      onChange={setNoShadowsEnabled}
+                    />
+                  </SectionBox>
+
+                  {/* Suite 8: Atmosphere */}
+                  <SectionBox title="Atmosphere">
+                    <ToggleRow
+                      label="Atmosphere"
+                      checked={atmosphereEnabled}
+                      onChange={setAtmosphereEnabled}
+                      swatchColor="#C7D2E6"
+                    />
+                    <ColorSwatchRow label="Decay" color="#6A7080" />
+                    <SliderRow
+                      label="Density"
+                      value={atmosphereDensity}
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      unit=""
+                      onChange={setAtmosphereDensity}
+                    />
+                    <SliderRow
+                      label="Offset"
+                      value={atmosphereOffset}
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      unit=""
+                      onChange={setAtmosphereOffset}
+                    />
+                    <SliderRow
+                      label="Haze"
+                      value={atmosphereHaze}
+                      min={0}
+                      max={10}
+                      step={0.25}
+                      unit=""
+                      onChange={setAtmosphereHaze}
+                    />
+                    <SliderRow
+                      label="Glare"
+                      value={atmosphereGlare}
+                      min={0}
+                      max={10}
+                      step={0.25}
+                      unit=""
+                      onChange={setAtmosphereGlare}
+                    />
+                  </SectionBox>
+
+                  {/* 3D Weather & Roof Occlusion */}
+                  <SectionBox title="Weather & Roof Occlusion">
+                    <SelectRow
+                      label="Weather Preset"
+                      value={config.weatherPreset}
+                      options={[...WEATHER_PRESETS]}
+                      testId="weather-preset-select"
+                      onChange={(v) =>
+                        setConfig({
+                          ...config,
+                          weatherPreset: v as WeatherPresetType,
+                        })
+                      }
+                    />
+                    <ToggleRow
+                      label="Simulate Under Roof (Indoor Raycast Occlusion)"
+                      checked={underRoof}
+                      onChange={setUnderRoof}
+                    />
+                    <ToggleRow
+                      label="Weather Sound FX"
+                      checked={config.weatherSoundEnabled}
+                      onChange={(v) => setConfig({ ...config, weatherSoundEnabled: v })}
+                    />
+                    <SliderRow
+                      label="Weather Volume"
+                      value={config.weatherVolume}
+                      min={0}
+                      max={100}
+                      step={5}
+                      unit="%"
+                      onChange={(v) => setConfig({ ...config, weatherVolume: v })}
+                    />
+                  </SectionBox>
+                </div>
+              )}
+
+              {activeTab === 'movement' && (
+                <div className="space-y-3">
+                  <SectionBox title="Character Movement">
+                    <ToggleRow
+                      label="Custom WalkSpeed"
+                      checked={config.walkSpeedEnabled}
+                      onChange={(v) => setConfig({ ...config, walkSpeedEnabled: v })}
+                    />
+                    <SliderRow
+                      label="WalkSpeed Value"
+                      value={config.walkSpeed}
+                      min={16}
+                      max={120}
+                      step={2}
+                      unit="studs/s"
+                      onChange={(v) => setConfig({ ...config, walkSpeed: v })}
+                    />
+                    <ToggleRow
+                      label="Custom JumpPower"
+                      checked={config.jumpPowerEnabled}
+                      onChange={(v) => setConfig({ ...config, jumpPowerEnabled: v })}
+                    />
+                    <SliderRow
+                      label="JumpPower Value"
+                      value={config.jumpPower}
+                      min={50}
+                      max={200}
+                      step={5}
+                      unit="power"
+                      onChange={(v) => setConfig({ ...config, jumpPower: v })}
+                    />
+                    <ToggleRow
+                      label="Infinite Jump"
+                      checked={config.infJumpEnabled}
+                      onChange={(v) => setConfig({ ...config, infJumpEnabled: v })}
+                    />
+                    <ToggleRow
+                      label="Character NoClip"
+                      checked={config.noClipEnabled}
+                      onChange={(v) => setConfig({ ...config, noClipEnabled: v })}
+                    />
+                  </SectionBox>
+                </div>
+              )}
+
+              {activeTab === 'music' && (
+                <div className="space-y-3.5">
+                  <div
+                    data-testid="music-community-note"
+                    className="p-3.5 rounded-xl bg-[#111116] border border-white/15 space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-300 flex items-center gap-1.5">
+                        <Radio className="w-3.5 h-3.5 text-white" />
+                        COMMUNITY TRACK ROTATION
+                      </span>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/10 text-white">
+                        Discord Handpicked
+                      </span>
+                    </div>
+                    <p className="text-xs text-neutral-400 leading-relaxed">
+                      {COMMUNITY_MUSIC_NOTE}
+                    </p>
+                  </div>
+
+                  <SelectRow
+                    label="Select Track"
+                    value={config.selectedTrack}
+                    options={COMMUNITY_MUSIC_TRACKS.map((t) => t.label)}
+                    testId="music-track-select"
+                    onChange={(v) => {
+                      setTrackUrlIndex(0);
+                      setTrackProgressSec(0);
+                      setConfig({
+                        ...config,
+                        selectedTrack: v,
+                      });
+                    }}
+                  />
+
+                  <ToggleRow
+                    label="Show Music Player"
+                    checked={config.musicPlayerVisible}
+                    onChange={(v) => setConfig({ ...config, musicPlayerVisible: v })}
+                  />
+
+                  <ToggleRow
+                    label="Play Music"
+                    checked={config.musicPlaying}
+                    onChange={(v) => setConfig({ ...config, musicPlaying: v })}
+                  />
+
+                  <SliderRow
+                    label="Music Volume"
+                    value={config.musicVolume}
+                    min={0}
+                    max={100}
+                    step={5}
+                    unit="%"
+                    onChange={(v) => setConfig({ ...config, musicVolume: v })}
+                  />
+
+                  <ToggleRow
+                    label="Loop Track"
+                    checked={config.musicLooped}
+                    onChange={(v) => setConfig({ ...config, musicLooped: v })}
+                  />
+
+                  <ToggleRow
+                    label="Mute Game Audio"
+                    checked={config.muteGameAudio}
+                    onChange={(v) => setConfig({ ...config, muteGameAudio: v })}
+                  />
+
+                  <audio
+                    ref={audioRef}
+                    src={activeTrack.rawUrls[trackUrlIndex]}
+                    preload="metadata"
+                    onTimeUpdate={(e) => {
+                      const el = e.currentTarget;
+                      if (el.currentTime > 0) {
+                        setTrackProgressSec(el.currentTime);
+                      }
+                    }}
+                    onLoadedMetadata={(e) => {
+                      const el = e.currentTarget;
+                      if (Number.isFinite(el.duration) && el.duration > 0) {
+                        setTrackDurationSec(el.duration);
+                      }
+                    }}
+                    onError={() => {
+                      if (trackUrlIndex < activeTrack.rawUrls.length - 1) {
+                        setTrackUrlIndex((idx) => idx + 1);
+                      }
+                    }}
+                  />
+                </div>
+              )}
+
+              {activeTab === 'misc' && (
+                <div className="space-y-3">
+                  <ToggleRow
+                    label="Anti-AFK Protection"
+                    checked={config.antiAFKEnabled}
+                    onChange={(v) => setConfig({ ...config, antiAFKEnabled: v })}
+                  />
+
+                  <div className="p-3.5 rounded-xl bg-black/60 border border-white/10 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-neutral-300 flex items-center gap-1.5">
+                        <KeyRound className="w-3.5 h-3.5 text-white" />
+                        Platoboost Key Gateway
+                      </span>
+                      <span className="text-[11px] font-mono text-neutral-400">
+                        Service #{PLATOBOOST_SERVICE_ID}
+                      </span>
+                    </div>
+                    <p className="text-xs text-neutral-400 leading-relaxed">
+                      In-game key verification uses{' '}
+                      <span className="text-white font-mono">{PLATOBOOST_GATEWAY_URL}</span> with a streamlined 2-button flow (Submit Key &amp; Get Key).
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => copyText(PLATOBOOST_GATEWAY_URL, 'plato')}
+                      className="w-full py-2 px-3 rounded-lg bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-semibold text-white flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      {copiedType === 'plato' ? (
+                        <>
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Copied Gateway Link</span>
+                        </>
+                      ) : (
+                        <>
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>Copy Platoboost Key Link</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={onReplayIntro}
+                      className="py-2.5 px-3 rounded-xl bg-[#141418] hover:bg-[#1C1C22] border border-white/10 text-xs font-semibold text-neutral-200 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Replay Boot Intro</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onLockSession}
+                      className="py-2.5 px-3 rounded-xl bg-[#141418] hover:bg-[#1C1C22] border border-white/10 text-xs font-semibold text-neutral-200 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Lock className="w-3.5 h-3.5" />
+                      <span>Lock &amp; Re-Verify Key</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Right Column: Live Interactive Viewport Simulation + Docked Music Bar + GitHub Setup */}
+          <div className="lg:col-span-7 space-y-6">
+            {/* Simulated Roblox Viewport */}
+            <section
+              aria-label="Live Overlay Viewport Preview"
+              className="rounded-2xl bg-[#09090B] border border-white/15 overflow-hidden shadow-[0_24px_70px_rgba(0,0,0,0.85)]"
+            >
+              <div className="px-5 py-3.5 bg-[#0F0F12] border-b border-white/10 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Eye className="w-4 h-4 text-white" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-white">
+                    Live Roblox Viewport Simulation
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-[11px] font-mono text-neutral-400">
+                  <span>
+                    WalkSpeed: {config.walkSpeedEnabled ? config.walkSpeed : 16}
+                  </span>
+                  <span>&bull;</span>
+                  <span>
+                    JumpPower: {config.jumpPowerEnabled ? config.jumpPower : 50}
+                  </span>
+                </div>
+              </div>
+
               <div
-                className="relative w-full h-[320px] rounded-lg bg-[#050505] border border-white/10 overflow-hidden flex items-center justify-center"
-                data-testid="live-overlay-viewport"
+                data-testid="viewport-preview"
+                style={{
+                  filter: `${
+                    colorCorrectionEnabled
+                      ? `saturate(${1 + ccSaturation}) contrast(${1 + ccContrast}) brightness(${1 + ccBrightness})`
+                      : ''
+                  } ${bloomEnabled ? `drop-shadow(0 0 ${Math.round(bloomSize / 4)}px rgba(255,255,255,${Math.min(0.6, bloomIntensity * 0.25)}))` : ''}`.trim() || undefined,
+                }}
+                className="relative h-80 sm:h-96 bg-[radial-gradient(circle_at_center,#14141A_0%,#060608_100%)] overflow-hidden select-none"
               >
-                {/* Perspective grid lines */}
+                {/* Live Weather Canvas Engine (Rain, Thunderstorm, Snow, Sunny + Roof Occlusion) */}
+                <WeatherCanvasOverlay
+                  preset={config.weatherPreset}
+                  soundEnabled={config.weatherSoundEnabled && !config.muteGameAudio}
+                  volume={config.weatherVolume}
+                  underRoof={underRoof}
+                />
+
+                {/* Overhead Roof Shelter Structure Visual Indicator when underRoof is enabled */}
+                {underRoof && (
+                  <div
+                    data-testid="roof-shelter-indicator"
+                    className="absolute top-0 inset-x-12 h-7 bg-gradient-to-b from-neutral-800/90 to-neutral-900/70 border-b-2 border-x border-white/25 rounded-b-xl z-20 flex items-center justify-center gap-2 shadow-[0_8px_25px_rgba(0,0,0,0.85)]"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-amber-200">
+                      ROOF OVERHEAD DETECTED &bull; INDOOR RAIN OCCLUDED &amp; AUDIO MUFFLED (-18dB)
+                    </span>
+                  </div>
+                )}
+
+                {/* Subtle perspective grid */}
                 <div
                   className="absolute inset-0 opacity-15"
                   style={{
                     backgroundImage:
                       'linear-gradient(to right, rgba(255,255,255,0.12) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.12) 1px, transparent 1px)',
-                    backgroundSize: '32px 32px',
+                    backgroundSize: '36px 36px',
                   }}
                 />
 
-                {/* Weather Atmosphere & Canvas Particle Overlay */}
-                <WeatherCanvasOverlay
-                  preset={config.weatherPreset}
-                  soundEnabled={config.weatherSoundEnabled}
-                  volume={config.weatherVolume}
-                  muteGameAudio={config.muteGameAudio}
-                />
+                {/* FOV Circle */}
+                {config.aimbotEnabled && config.showFOV && (
+                  <div
+                    data-testid="fov-circle"
+                    style={{
+                      width: `${config.fovRadius * 2}px`,
+                      height: `${config.fovRadius * 2}px`,
+                    }}
+                    className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/75 pointer-events-none transition-all duration-150"
+                  />
+                )}
 
-                {/* SVG Snapline Tracers */}
+                {/* Snapline Tracer SVG */}
                 {config.espEnabled && config.tracersEnabled && (
                   <svg className="absolute inset-0 w-full h-full pointer-events-none">
-                    {SIMULATED_PLAYERS.filter(
-                      (p) => !config.teamCheck || p.team !== 'Alpha'
-                    ).map((p) => {
-                      const startY =
+                    <line
+                      x1="50%"
+                      y1={
                         config.tracerOrigin === 'Bottom'
                           ? '100%'
-                          : config.tracerOrigin === 'Top'
-                          ? '0%'
-                          : '50%';
-                      return (
-                        <line
-                          key={p.id}
-                          x1="50%"
-                          y1={startY}
-                          x2={`${p.x}%`}
-                          y2={`${p.y}%`}
-                          stroke={espColorHex}
-                          strokeWidth="1.25"
-                          strokeOpacity="0.75"
-                        />
-                      );
-                    })}
+                          : config.tracerOrigin === 'Center'
+                          ? '50%'
+                          : '0%'
+                      }
+                      x2={`${targetPos.x}%`}
+                      y2={`${targetPos.y}%`}
+                      stroke={accentHex}
+                      strokeWidth="1.5"
+                      strokeOpacity="0.75"
+                    />
                   </svg>
                 )}
 
-                {/* Simulated Players */}
-                {SIMULATED_PLAYERS.map((player) => {
-                  const filteredByTeam = config.teamCheck && player.team === 'Alpha';
-                  const showEsp = config.espEnabled && !filteredByTeam;
-                  const isLockedTarget = config.aimbotEnabled && player.id === 'p2';
-
-                  return (
+                {/* Simulated Target Dummy + Self Chams / Trail / Tool Visuals Preview */}
+                <div
+                  style={{
+                    left: `${targetPos.x}%`,
+                    top: `${targetPos.y}%`,
+                  }}
+                  className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+                >
+                  {/* Leg Movement Trail Ribbons */}
+                  {legTrailEnabled && (
                     <div
-                      key={player.id}
-                      style={{ left: `${player.x}%`, top: `${player.y}%` }}
-                      className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center"
+                      data-testid="preview-leg-trail"
+                      className="absolute -bottom-2 right-full mr-1 flex flex-col gap-1.5 opacity-85"
                     >
-                      {showEsp && (
-                        <span
-                          style={{ color: espColorHex }}
-                          className="mb-1 font-mono text-[10px] font-semibold whitespace-nowrap drop-shadow"
-                        >
-                          {player.name} [{player.dist}m] | {player.hp} HP
-                        </span>
-                      )}
-
                       <div
                         style={{
-                          borderColor: showEsp ? espColorHex : 'rgba(255,255,255,0.2)',
-                          backgroundColor: showEsp
-                            ? `${espColorHex}22`
-                            : 'rgba(255,255,255,0.05)',
+                          width: `${Math.round(28 + legTrailLength * 18)}px`,
+                          height: `${Math.max(2, Math.round(legTrailWidth * 8))}px`,
+                          background: legTrailRainbow
+                            ? 'linear-gradient(90deg, transparent, #22d3ee, #a855f7, #ec4899)'
+                            : 'linear-gradient(90deg, transparent, #3CD2FF, #6E5AFF)',
                         }}
-                        className="w-8 h-14 rounded border flex flex-col items-center justify-start pt-1.5 relative transition-colors"
-                      >
-                        {/* Head */}
-                        <div className="w-3 h-3 rounded-full bg-white/80" />
-                        {/* Torso */}
-                        <div className="w-4 h-5 rounded-xs bg-white/50 mt-1" />
-
-                        {isLockedTarget && (
-                          <div className="absolute -inset-1.5 border border-white rounded animate-pulse pointer-events-none" />
-                        )}
-                      </div>
+                        className="rounded-full blur-[0.5px]"
+                      />
+                      <div
+                        style={{
+                          width: `${Math.round(28 + legTrailLength * 18)}px`,
+                          height: `${Math.max(2, Math.round(legTrailWidth * 8))}px`,
+                          background: legTrailRainbow
+                            ? 'linear-gradient(90deg, transparent, #eab308, #22c55e, #3b82f6)'
+                            : legTrailSameColors
+                            ? 'linear-gradient(90deg, transparent, #3CD2FF, #6E5AFF)'
+                            : 'linear-gradient(90deg, transparent, #FFB946, #FF50B4)',
+                        }}
+                        className="rounded-full blur-[0.5px]"
+                      />
                     </div>
-                  );
-                })}
+                  )}
 
-                {/* FOV Circle */}
-                {config.showFOV && (
+                  {config.espEnabled && (
+                    <div className="mb-1.5 text-center">
+                      <span
+                        style={{ color: accentHex }}
+                        className="px-2 py-0.5 rounded bg-black/80 border border-white/20 font-mono text-[10px] font-bold whitespace-nowrap shadow"
+                      >
+                        TargetDummy [100 HP]
+                      </span>
+                    </div>
+                  )}
                   <div
                     style={{
-                      width: `${config.fovRadius * 1.4}px`,
-                      height: `${config.fovRadius * 1.4}px`,
+                      borderColor: config.espEnabled
+                        ? accentHex
+                        : selfChamsEnabled
+                        ? '#6E5AFF'
+                        : 'rgba(255,255,255,0.2)',
+                      boxShadow: selfChamsEnabled
+                        ? `0 0 ${selfChamsGlowRim ? 24 : 14}px rgba(110,90,255,0.55)`
+                        : config.espEnabled
+                        ? `0 0 20px ${accentHex}33`
+                        : 'none',
                     }}
-                    className="rounded-full border border-white/80 pointer-events-none transition-all duration-75"
-                  />
-                )}
+                    className="w-16 h-24 rounded-md border-2 bg-white/5 flex flex-col items-center justify-center relative"
+                  >
+                    {/* Avatar Silhouette with Self Chams Material Fill */}
+                    <div
+                      style={{
+                        backgroundColor: selfChamsEnabled
+                          ? `rgba(110, 90, 255, ${Math.max(0.15, 1 - selfChamsFillTrans)})`
+                          : 'rgba(255,255,255,0.7)',
+                        boxShadow: selfChamsGlowRim
+                          ? '0 0 10px rgba(255,255,255,0.9)'
+                          : undefined,
+                      }}
+                      className="w-5 h-5 rounded-full mb-1 border border-white/60"
+                    />
+                    <div
+                      style={{
+                        backgroundColor: selfChamsEnabled
+                          ? `rgba(110, 90, 255, ${Math.max(0.15, 1 - selfChamsFillTrans)})`
+                          : 'rgba(255,255,255,0.5)',
+                      }}
+                      className="w-8 h-10 rounded-sm border border-white/50"
+                    />
+
+                    {/* Equipped Tool Visuals Preview */}
+                    {toolVisualsEnabled && (
+                      <div
+                        data-testid="preview-tool-visual"
+                        style={{
+                          opacity: Math.max(0.2, 1 - toolTransparency),
+                          boxShadow: toolGlowEnabled
+                            ? `0 0 ${Math.round(toolGlowBrightness * 3)}px rgba(110,90,255,0.95)`
+                            : undefined,
+                        }}
+                        className="absolute -right-5 top-8 w-6 h-2 rounded-xs bg-gradient-to-r from-indigo-400 to-white border border-white -rotate-25"
+                      />
+                    )}
+
+                    {/* Target Part Indicator */}
+                    {config.aimbotEnabled && (
+                      <div
+                        title={`Target: ${config.targetPart}`}
+                        className={`absolute w-2.5 h-2.5 rounded-full bg-white shadow-[0_0_10px_#fff] ${
+                          config.targetPart === 'Head'
+                            ? 'top-3.5'
+                            : config.targetPart === 'UpperTorso'
+                            ? 'top-9'
+                            : 'top-12'
+                        }`}
+                      />
+                    )}
+                  </div>
+                </div>
 
                 {/* Custom Crosshair */}
                 {config.crosshairEnabled && (
-                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                    <div
-                      style={{ height: `${config.crosshairSize * 2}px` }}
-                      className="w-[1.5px] bg-white absolute"
-                    />
+                  <div
+                    data-testid="custom-crosshair"
+                    className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+                  >
                     <div
                       style={{ width: `${config.crosshairSize * 2}px` }}
-                      className="h-[1.5px] bg-white absolute"
+                      className="h-[1.5px] bg-white shadow-[0_0_6px_#fff] absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+                    />
+                    <div
+                      style={{ height: `${config.crosshairSize * 2}px` }}
+                      className="w-[1.5px] bg-white shadow-[0_0_6px_#fff] absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
                     />
                   </div>
                 )}
-              </div>
 
-              {/* Active Telemetry Readout */}
-              <div className="mt-4 pt-3 border-t border-white/10 flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-400 font-mono tabular-nums">
-                <span>Weather: {config.weatherPreset}</span>
-                <span>·</span>
-                <span>WalkSpeed: {config.walkSpeedEnabled ? config.walkSpeed : 16}</span>
-                <span>·</span>
-                <span>JumpPower: {config.jumpPowerEnabled ? config.jumpPower : 50}</span>
-                <span>·</span>
-                <span>NoClip: {config.noClipEnabled ? 'Stepped' : 'Off'}</span>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {/* SECTION 2: GITHUB REPOSITORY & RAW LOADSTRING BUILDER */}
-        {activeSection === 'github' && (
-          <section className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            <div className="lg:col-span-5 rounded-xl bg-[#0A0A0A] border border-white/15 p-6 space-y-5">
-              <div>
-                <h3 className="text-lg font-bold text-white">
-                  GitHub Repository Configuration
-                </h3>
-                <p className="text-xs text-neutral-400 mt-1">
-                  Set your GitHub details to generate your 1-line raw loader URL.
-                </p>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label
-                    htmlFor="gh-owner"
-                    className="block text-xs font-medium text-neutral-300 mb-1.5"
-                  >
-                    GitHub Username
-                  </label>
-                  <input
-                    id="gh-owner"
-                    type="text"
-                    value={githubConfig.owner}
-                    onChange={(e) =>
-                      setGithubConfig((prev) => ({ ...prev, owner: e.target.value }))
-                    }
-                    className="w-full rounded-lg bg-[#121212] border border-white/15 px-3.5 py-2.5 text-sm font-mono text-white focus:outline-none focus:border-white"
-                  />
+                {/* Bottom Status Overlay */}
+                <div className="absolute bottom-3 left-3 right-3 flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-lg bg-black/75 border border-white/10 backdrop-blur-md text-[11px] font-mono text-neutral-300">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span>
+                      CHAMS:{' '}
+                      <strong className="text-white">
+                        {selfChamsEnabled ? selfChamsMaterial.toUpperCase() : 'OFF'}
+                      </strong>
+                    </span>
+                    <span>
+                      TRAIL:{' '}
+                      <strong className="text-white">
+                        {legTrailEnabled ? `${legTrailLength}s` : 'OFF'}
+                      </strong>
+                    </span>
+                    <span>
+                      TOOL:{' '}
+                      <strong className="text-white">
+                        {toolVisualsEnabled ? toolMaterial.toUpperCase() : 'OFF'}
+                      </strong>
+                    </span>
+                    <span>
+                      WEATHER:{' '}
+                      <strong className="text-white">
+                        {config.weatherPreset.toUpperCase()}
+                        {underRoof ? ' (UNDER ROOF)' : ''}
+                      </strong>
+                    </span>
+                  </div>
+                  <span className="text-neutral-400">
+                    Sky: {skyboxEnabled ? skyboxPreset : 'Default'}
+                  </span>
                 </div>
+              </div>
+            </section>
 
-                <div>
-                  <label
-                    htmlFor="gh-repo"
-                    className="block text-xs font-medium text-neutral-300 mb-1.5"
-                  >
-                    Repository Name
-                  </label>
-                  <input
-                    id="gh-repo"
-                    type="text"
-                    value={githubConfig.repo}
-                    onChange={(e) =>
-                      setGithubConfig((prev) => ({ ...prev, repo: e.target.value }))
-                    }
-                    className="w-full rounded-lg bg-[#121212] border border-white/15 px-3.5 py-2.5 text-sm font-mono text-white focus:outline-none focus:border-white"
-                  />
+            {/* Separate Docked Music Player Bar (Hidden by Default, Toggled from Music Tab) */}
+            <AnimatePresence>
+              {config.musicPlayerVisible && (
+                <motion.section
+                  key="docked-music-player-bar"
+                  data-testid="docked-music-player-bar"
+                  initial={{ opacity: 0, y: -12, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -12, scale: 0.98 }}
+                  transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                  aria-label="Docked Community Music Player Bar"
+                  className="rounded-2xl bg-[#0A0A0D]/95 border border-white/20 p-4 shadow-[0_20px_60px_rgba(0,0,0,0.9)] backdrop-blur-xl space-y-3"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      {/* Pulsing Monochrome Disc Badge */}
+                      <div className="relative w-10 h-10 rounded-xl bg-white text-black flex items-center justify-center shrink-0 shadow-[0_0_20px_rgba(255,255,255,0.35)]">
+                        <Music
+                          className={`w-5 h-5 ${
+                            config.musicPlaying ? 'animate-pulse' : ''
+                          }`}
+                        />
+                        <span
+                          className={`absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-[#0A0A0D] ${
+                            config.musicPlaying ? 'bg-emerald-400' : 'bg-neutral-500'
+                          }`}
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-white truncate">
+                            {activeTrack.title}
+                          </span>
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-neutral-300 shrink-0">
+                            {activeTrack.artist}
+                          </span>
+                        </div>
+                        <p className="text-[11px] font-mono text-neutral-400 truncate">
+                          Discord Community Rotation &bull; {activeTrack.fileName}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Transport Controls */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        aria-label={config.musicPlaying ? 'Pause Track' : 'Play Track'}
+                        onClick={() =>
+                          setConfig({ ...config, musicPlaying: !config.musicPlaying })
+                        }
+                        className="px-3 py-1.5 rounded-lg bg-white text-black hover:bg-neutral-200 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        {config.musicPlaying ? (
+                          <>
+                            <Pause className="w-3.5 h-3.5" />
+                            <span>Pause</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-3.5 h-3.5" />
+                            <span>Play</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        aria-label="Toggle Loop Track"
+                        onClick={() =>
+                          setConfig({ ...config, musicLooped: !config.musicLooped })
+                        }
+                        className={`p-2 rounded-lg border text-xs transition-colors cursor-pointer ${
+                          config.musicLooped
+                            ? 'bg-white/15 border-white/30 text-white'
+                            : 'bg-[#121217] border-white/10 text-neutral-400 hover:text-white'
+                        }`}
+                      >
+                        <Repeat className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        aria-label="Toggle Mute Game Audio"
+                        onClick={() =>
+                          setConfig({ ...config, muteGameAudio: !config.muteGameAudio })
+                        }
+                        className={`p-2 rounded-lg border text-xs transition-colors cursor-pointer ${
+                          config.muteGameAudio
+                            ? 'bg-white/15 border-white/30 text-white'
+                            : 'bg-[#121217] border-white/10 text-neutral-400 hover:text-white'
+                        }`}
+                      >
+                        {config.muteGameAudio ? (
+                          <VolumeX className="w-3.5 h-3.5" />
+                        ) : (
+                          <Volume2 className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Interactive Ocean-Wave Progress Scrubber */}
+                  <div className="space-y-1.5">
+                    <div
+                      data-testid="ocean-wave-progress-scrubber"
+                      onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const ratio = Math.max(
+                          0,
+                          Math.min(1, (e.clientX - rect.left) / Math.max(1, rect.width))
+                        );
+                        const nextSec = ratio * trackDurationSec;
+                        setTrackProgressSec(nextSec);
+                        if (audioRef.current) {
+                          try {
+                            audioRef.current.currentTime = nextSec;
+                          } catch {
+                            // Ignore seek error if remote stream isn't loaded
+                          }
+                        }
+                      }}
+                      className="relative h-12 rounded-xl bg-[#060608] border border-white/12 overflow-hidden cursor-pointer select-none px-2 flex items-center"
+                    >
+                      {/* Background Multi-Harmonic SVG Ocean Swell */}
+                      {(() => {
+                        const primaryWave = buildOceanWaveSvgPath(
+                          480,
+                          44,
+                          wavePhase,
+                          config.musicPlaying,
+                          0
+                        );
+                        const secondaryWave = buildOceanWaveSvgPath(
+                          480,
+                          44,
+                          wavePhase * 1.25,
+                          config.musicPlaying,
+                          1.3
+                        );
+                        return (
+                          <svg
+                            viewBox="0 0 480 44"
+                            preserveAspectRatio="none"
+                            className="absolute inset-0 w-full h-full pointer-events-none opacity-45"
+                          >
+                            <path
+                              d={secondaryWave.areaPath}
+                              fill="rgba(255,255,255,0.08)"
+                            />
+                            <path
+                              d={primaryWave.areaPath}
+                              fill="rgba(255,255,255,0.14)"
+                            />
+                            <path
+                              d={primaryWave.linePath}
+                              fill="none"
+                              stroke="rgba(255,255,255,0.45)"
+                              strokeWidth="1.5"
+                            />
+                          </svg>
+                        );
+                      })()}
+
+                      {/* 38 Articulated Ocean-Wave Crest Nodes */}
+                      <div className="relative z-10 w-full flex items-center justify-between gap-0.5 px-1">
+                        {Array.from({ length: 38 }).map((_, idx) => {
+                          const normX = idx / 37;
+                          const progressRatio = Math.max(
+                            0,
+                            Math.min(1, trackProgressSec / Math.max(1, trackDurationSec))
+                          );
+                          const isPlayed = normX <= progressRatio;
+                          const metrics = computeOceanWaveCrestMetrics(
+                            normX,
+                            wavePhase,
+                            config.musicPlaying
+                          );
+                          return (
+                            <span
+                              key={idx}
+                              style={{
+                                height: `${metrics.barHeightPx}px`,
+                                transform: `translateY(${metrics.displacementPx.toFixed(
+                                  1
+                                )}px) rotate(${metrics.tiltDeg.toFixed(1)}deg)`,
+                              }}
+                              className={`w-1 rounded-full transition-colors duration-75 ${
+                                isPlayed
+                                  ? 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.85)]'
+                                  : 'bg-white/20'
+                              }`}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] font-mono text-neutral-400 px-1">
+                      <span>{formatTrackTimestamp(trackProgressSec)}</span>
+                      <span className="text-neutral-300">
+                        Wavy Ocean Timeline &bull; Click anywhere to scrub
+                      </span>
+                      <span>{formatTrackTimestamp(trackDurationSec)}</span>
+                    </div>
+                  </div>
+                </motion.section>
+              )}
+            </AnimatePresence>
+
+            {/* GitHub Raw Loadstring & Generated Lua Script */}
+            <section
+              aria-label="GitHub Repository and Lua Script Generator"
+              className="rounded-2xl bg-[#09090B] border border-white/15 overflow-hidden shadow-[0_24px_70px_rgba(0,0,0,0.85)]"
+            >
+              <div className="px-5 py-3.5 bg-[#0F0F12] border-b border-white/10 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Github className="w-4 h-4 text-white" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-white">
+                    GitHub &amp; Cloudflare Private Gateway Loaders
+                  </span>
                 </div>
+                <span className="text-[11px] font-mono text-neutral-400 truncate max-w-xs sm:max-w-md">
+                  {rawUrl}
+                </span>
+              </div>
 
-                <div className="grid grid-cols-2 gap-3">
+              <div className="p-5 space-y-4">
+                {/* GitHub Repo Fields */}
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label
+                      htmlFor="gh-owner"
+                      className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 mb-1"
+                    >
+                      GitHub Owner
+                    </label>
+                    <input
+                      id="gh-owner"
+                      type="text"
+                      value={githubConfig.owner}
+                      onChange={(e) =>
+                        setGithubConfig({ ...githubConfig, owner: e.target.value })
+                      }
+                      className="w-full px-3 py-2 rounded-lg bg-black border border-white/15 text-xs font-mono text-white focus:outline-none focus:border-white"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="gh-repo"
+                      className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 mb-1"
+                    >
+                      Repository Name
+                    </label>
+                    <input
+                      id="gh-repo"
+                      type="text"
+                      value={githubConfig.repo}
+                      onChange={(e) =>
+                        setGithubConfig({ ...githubConfig, repo: e.target.value })
+                      }
+                      className="w-full px-3 py-2 rounded-lg bg-black border border-white/15 text-xs font-mono text-white focus:outline-none focus:border-white"
+                    />
+                  </div>
                   <div>
                     <label
                       htmlFor="gh-branch"
-                      className="block text-xs font-medium text-neutral-300 mb-1.5"
+                      className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 mb-1"
                     >
                       Branch
                     </label>
@@ -1691,176 +2201,152 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
                       type="text"
                       value={githubConfig.branch}
                       onChange={(e) =>
-                        setGithubConfig((prev) => ({ ...prev, branch: e.target.value }))
+                        setGithubConfig({ ...githubConfig, branch: e.target.value })
                       }
-                      className="w-full rounded-lg bg-[#121212] border border-white/15 px-3.5 py-2.5 text-sm font-mono text-white focus:outline-none focus:border-white"
+                      className="w-full px-3 py-2 rounded-lg bg-black border border-white/15 text-xs font-mono text-white focus:outline-none focus:border-white"
                     />
                   </div>
-
                   <div>
                     <label
-                      htmlFor="gh-filepath"
-                      className="block text-xs font-medium text-neutral-300 mb-1.5"
+                      htmlFor="gh-file"
+                      className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 mb-1"
                     >
                       Script Filename
                     </label>
                     <input
-                      id="gh-filepath"
+                      id="gh-file"
                       type="text"
                       value={githubConfig.filePath}
                       onChange={(e) =>
-                        setGithubConfig((prev) => ({ ...prev, filePath: e.target.value }))
+                        setGithubConfig({ ...githubConfig, filePath: e.target.value })
                       }
-                      className="w-full rounded-lg bg-[#121212] border border-white/15 px-3.5 py-2.5 text-sm font-mono text-white focus:outline-none focus:border-white"
+                      className="w-full px-3 py-2 rounded-lg bg-black border border-white/15 text-xs font-mono text-white focus:outline-none focus:border-white"
                     />
                   </div>
                 </div>
-              </div>
 
-              <div className="pt-3 border-t border-white/10 space-y-2 text-xs text-neutral-400">
-                <div className="font-semibold text-white">3-Step GitHub Workflow:</div>
-                <p>1. Click &ldquo;Download loader.lua&rdquo; to save your configured Luau file.</p>
-                <p>
-                  2. Upload <code className="text-white">{githubConfig.filePath}</code> to{' '}
-                  <code className="text-white">
-                    github.com/{githubConfig.owner}/{githubConfig.repo}
+                {/* Cache-Busting & Cloudflare Worker Loadstrings */}
+                <div className="p-3.5 rounded-xl bg-black/60 border border-white/10 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-white">
+                      GitHub Instant Cache-Busting Loadstring (Always Pulls Latest Commit)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => copyText(GITHUB_CACHE_BUST_LOADSTRING, 'cachebust')}
+                      className="px-2.5 py-1 rounded bg-white text-black hover:bg-neutral-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      {copiedType === 'cachebust' ? (
+                        <>
+                          <Check className="w-3 h-3" />
+                          <span>Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3" />
+                          <span>Copy Cache-Bust Loadstring</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <code className="block px-3 py-2 rounded-lg bg-[#050507] border border-white/10 font-mono text-[11px] text-neutral-300 overflow-x-auto whitespace-nowrap">
+                    {GITHUB_CACHE_BUST_LOADSTRING}
                   </code>
-                  .
-                </p>
-                <p>3. Execute using the 1-line loadstring above.</p>
-              </div>
-            </div>
-
-            <div className="lg:col-span-7 rounded-xl bg-[#0A0A0A] border border-white/15 p-6 flex flex-col justify-between space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-lg font-bold text-white">
-                    Generated {githubConfig.filePath} (Ready for GitHub)
-                  </h3>
-                  <p className="text-xs text-neutral-400 font-mono truncate max-w-md">
-                    {rawUrl}
-                  </p>
                 </div>
 
-                <div className="flex items-center gap-2.5">
-                  <button
-                    type="button"
-                    onClick={handleCopyFullLua}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold bg-[#161616] text-white hover:bg-[#222222] border border-white/15 transition-colors cursor-pointer"
-                  >
-                    <Code2 className="w-3.5 h-3.5" />
-                    <span>{copiedLua ? 'Copied Luau Code' : 'Copy Full Luau'}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleDownloadLuaFile}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold bg-white text-black hover:bg-neutral-200 transition-colors cursor-pointer"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Download {githubConfig.filePath}</span>
-                  </button>
+                {/* Lua Source Preview & Copy */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Code2 className="w-4 h-4 text-neutral-400" />
+                      <span className="text-xs font-semibold text-neutral-300">
+                        Generated <code className="font-mono text-white">Core.xyz.lua</code> Source
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => copyText(luaScript, 'script')}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-semibold text-white transition-colors cursor-pointer"
+                    >
+                      {copiedType === 'script' ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Copied Full Lua Script</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Copy Full Lua Script</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  <pre className="p-4 rounded-xl bg-black border border-white/10 font-mono text-[11px] text-neutral-300 max-h-56 overflow-y-auto leading-relaxed select-all">
+                    {luaScript}
+                  </pre>
                 </div>
               </div>
-
-              <pre className="w-full h-[340px] overflow-auto rounded-lg bg-[#050505] border border-white/10 p-4 text-xs font-mono text-neutral-300 leading-relaxed">
-                <code>{generatedLua}</code>
-              </pre>
-            </div>
-          </section>
-        )}
-
-        {/* SECTION 3: ARCHITECTURAL IMPROVEMENTS SUMMARY */}
-        {activeSection === 'improvements' && (
-          <section className="rounded-xl bg-[#0A0A0A] border border-white/15 p-6 space-y-6">
-            <div>
-              <h3 className="text-lg font-bold text-white">
-                Applied Code Review Upgrades in Core.xyz
-              </h3>
-              <p className="text-sm text-neutral-400 mt-1">
-                Every fix from the Luau architecture review is baked into the generated GitHub script.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              <div className="p-5 rounded-lg bg-[#101010] border border-white/10 space-y-2">
-                <h4 className="text-sm font-bold text-white">
-                  01. Platoboost Key System &amp; 6-Step Loader
-                </h4>
-                <p className="text-xs text-neutral-400 leading-relaxed">
-                  Sleek 6-step SaaS boot sequence transitioning into a 2-button Platoboost Key System (
-                  <code className="text-white">Submit</code> + <code className="text-white">Get Key</code>)
-                  with SHA-256 nonce verification and live countdown timer.
-                </p>
-              </div>
-
-              <div className="p-5 rounded-lg bg-[#101010] border border-white/10 space-y-2">
-                <h4 className="text-sm font-bold text-white">
-                  02. DeltaTime Frame-Independent Lerp
-                </h4>
-                <p className="text-xs text-neutral-400 leading-relaxed">
-                  Replaced fixed-frame CFrame Lerp with exponential <code className="text-white">deltaTime</code>{' '}
-                  smoothing so camera lock speed stays identical at 60 FPS and 240 FPS.
-                </p>
-              </div>
-
-              <div className="p-5 rounded-lg bg-[#101010] border border-white/10 space-y-2">
-                <h4 className="text-sm font-bold text-white">
-                  03. R6 & R15 Rig Target Fallback
-                </h4>
-                <p className="text-xs text-neutral-400 leading-relaxed">
-                  Automatically falls back from <code className="text-white">UpperTorso</code> /{' '}
-                  <code className="text-white">LowerTorso</code> to <code className="text-white">Torso</code> or{' '}
-                  <code className="text-white">HumanoidRootPart</code> in R6 games.
-                </p>
-              </div>
-
-              <div className="p-5 rounded-lg bg-[#101010] border border-white/10 space-y-2">
-                <h4 className="text-sm font-bold text-white">
-                  04. 31-Highlight Engine Limit Guard
-                </h4>
-                <p className="text-xs text-neutral-400 leading-relaxed">
-                  Tracks active Highlight instances in a dedicated folder and caps allocation at 30
-                  while keeping BillboardGui name/health tags active for all players.
-                </p>
-              </div>
-
-              <div className="p-5 rounded-lg bg-[#101010] border border-white/10 space-y-2">
-                <h4 className="text-sm font-bold text-white">
-                  05. RunService.Stepped NoClip & Restore
-                </h4>
-                <p className="text-xs text-neutral-400 leading-relaxed">
-                  Moved collision suppression to <code className="text-white">RunService.Stepped</code> and caches
-                  original <code className="text-white">CanCollide</code> states so disabling NoClip restores collisions.
-                </p>
-              </div>
-
-              <div className="p-5 rounded-lg bg-[#101010] border border-white/10 space-y-2">
-                <h4 className="text-sm font-bold text-white">
-                  06. Scoped Locals & Modern Raycast API
-                </h4>
-                <p className="text-xs text-neutral-400 leading-relaxed">
-                  Uses <code className="text-white">Enum.RaycastFilterType.Exclude</code>, reuses a single{' '}
-                  <code className="text-white">RaycastParams</code> object, sets <code className="text-white">UseJumpPower = true</code>, and cleans up on <code className="text-white">PlayerRemoving</code>.
-                </p>
-              </div>
-            </div>
-          </section>
-        )}
+            </section>
+          </div>
+        </div>
       </main>
     </div>
   );
 };
 
+interface SectionBoxProps {
+  title: string;
+  children: React.ReactNode;
+}
+
+const SectionBox: React.FC<SectionBoxProps> = ({ title, children }) => (
+  <div
+    className="relative mt-3 pt-4 pb-3 px-3 rounded-lg bg-[#0B0B0E] border border-white/15 space-y-2.5"
+    data-testid={`section-box-${title}`}
+  >
+    <span className="absolute -top-2.5 left-3 px-1.5 bg-[#09090B] text-[11px] font-semibold text-neutral-300 tracking-tight">
+      {title}
+    </span>
+    {children}
+  </div>
+);
+
+interface ColorSwatchRowProps {
+  label: string;
+  color: string;
+}
+
+const ColorSwatchRow: React.FC<ColorSwatchRowProps> = ({ label, color }) => (
+  <div className="flex items-center justify-between px-3.5 py-2 rounded-lg bg-[#0E0E11] border border-white/[0.07]">
+    <span className="text-xs font-medium text-neutral-300">{label}</span>
+    <span
+      style={{ backgroundColor: color }}
+      className="w-5 h-3.5 rounded-xs border border-white/30 shadow-xs"
+    />
+  </div>
+);
+
 interface ToggleRowProps {
   label: string;
   checked: boolean;
   onChange: (next: boolean) => void;
+  showKeybindBadge?: boolean;
+  swatchColor?: string;
+  swatchColor2?: string;
 }
 
-const ToggleRow: React.FC<ToggleRowProps> = ({ label, checked, onChange }) => (
+const ToggleRow: React.FC<ToggleRowProps> = ({
+  label,
+  checked,
+  onChange,
+  showKeybindBadge,
+  swatchColor,
+  swatchColor2,
+}) => (
   <div
     onClick={() => onChange(!checked)}
-    className={`group relative flex items-center justify-between gap-4 px-3.5 py-2.5 rounded-lg border transition-all duration-150 cursor-pointer select-none ${
+    className={`group relative flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-lg border transition-all duration-150 cursor-pointer select-none ${
       checked
         ? 'bg-[#141418] border-white/20 shadow-[0_4px_16px_rgba(0,0,0,0.4)]'
         : 'bg-[#0E0E11] border-white/[0.07] hover:bg-[#131317] hover:border-white/15'
@@ -1868,7 +2354,7 @@ const ToggleRow: React.FC<ToggleRowProps> = ({ label, checked, onChange }) => (
   >
     {/* Left Active Status Accent Bar */}
     <span
-      className={` w-1 rounded-full transition-all duration-200 ${
+      className={`w-1 rounded-full transition-all duration-200 ${
         checked
           ? 'h-4 bg-white shadow-[0_0_8px_rgba(255,255,255,0.85)]'
           : 'h-2.5 bg-white/15 group-hover:bg-white/30'
@@ -1881,29 +2367,48 @@ const ToggleRow: React.FC<ToggleRowProps> = ({ label, checked, onChange }) => (
     >
       {label}
     </span>
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={(e) => {
-        e.stopPropagation();
-        onChange(!checked);
-      }}
-      className={`relative w-10 h-5 rounded-full p-0.5 flex items-center transition-colors cursor-pointer shrink-0 ${
-        checked
-          ? 'bg-white justify-end shadow-[0_0_14px_rgba(255,255,255,0.35)]'
-          : 'bg-[#1D1D22] border border-white/15 justify-start'
-      }`}
-    >
-      <motion.span
-        layout
-        transition={{ type: 'spring', stiffness: 540, damping: 32 }}
-        className={`block w-3.5 h-3.5 rounded-full ${
-          checked ? 'bg-black' : 'bg-neutral-400 group-hover:bg-neutral-200'
+    <div className="flex items-center gap-1.5 shrink-0">
+      {showKeybindBadge && (
+        <span className="px-1.5 py-0.5 rounded bg-[#18181E] border border-white/10 font-mono text-[10px] text-neutral-400">
+          [...]
+        </span>
+      )}
+      {swatchColor && (
+        <span
+          style={{ backgroundColor: swatchColor }}
+          className="w-4 h-3 rounded-xs border border-white/35"
+        />
+      )}
+      {swatchColor2 && (
+        <span
+          style={{ backgroundColor: swatchColor2 }}
+          className="w-4 h-3 rounded-xs border border-white/35"
+        />
+      )}
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        onClick={(e) => {
+          e.stopPropagation();
+          onChange(!checked);
+        }}
+        className={`relative w-10 h-5 rounded-full p-0.5 flex items-center transition-colors cursor-pointer shrink-0 ${
+          checked
+            ? 'bg-white justify-end shadow-[0_0_14px_rgba(255,255,255,0.35)]'
+            : 'bg-[#1D1D22] border border-white/15 justify-start'
         }`}
-      />
-    </button>
+      >
+        <motion.span
+          layout
+          transition={{ type: 'spring', stiffness: 540, damping: 32 }}
+          className={`block w-3.5 h-3.5 rounded-full ${
+            checked ? 'bg-black' : 'bg-neutral-400 group-hover:bg-neutral-200'
+          }`}
+        />
+      </button>
+    </div>
   </div>
 );
 
@@ -1927,6 +2432,10 @@ const SliderRow: React.FC<SliderRowProps> = ({
   onChange,
 }) => {
   const ratio = Math.max(0, Math.min(100, ((value - min) / Math.max(0.0001, max - min)) * 100));
+  const stepValue = (dir: -1 | 1) => {
+    const next = Math.max(min, Math.min(max, Number((value + dir * step).toFixed(2))));
+    onChange(next);
+  };
   return (
     <div className="px-3.5 py-2.5 rounded-lg bg-[#0E0E11] hover:bg-[#131317] border border-white/[0.07] hover:border-white/15 transition-colors space-y-2">
       <div className="flex items-center justify-between text-xs">
@@ -1936,24 +2445,71 @@ const SliderRow: React.FC<SliderRowProps> = ({
           {unit}
         </span>
       </div>
-      <div className="relative flex items-center h-4">
-        <div className="pointer-events-none absolute inset-x-0 h-1.5 rounded-full bg-[#1C1C22] overflow-hidden">
-          <div
-            style={{ width: `${ratio}%` }}
-            className="h-full rounded-full bg-gradient-to-r from-neutral-300 to-white shadow-[0_0_10px_rgba(255,255,255,0.6)]"
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          aria-label={`Decrease ${label}`}
+          data-testid="slider-minus-btn"
+          onClick={() => stepValue(-1)}
+          className="w-5 h-5 rounded bg-[#18181E] hover:bg-[#24242D] border border-white/10 text-xs font-mono text-neutral-300 hover:text-white flex items-center justify-center shrink-0 cursor-pointer"
+        >
+          -
+        </button>
+        <div className="relative flex-1 flex items-center h-4">
+          <div className="pointer-events-none absolute inset-x-0 h-1.5 rounded-full bg-[#1C1C22] overflow-hidden">
+            <div
+              style={{ width: `${ratio}%` }}
+              className="h-full rounded-full bg-gradient-to-r from-neutral-300 to-white shadow-[0_0_10px_rgba(255,255,255,0.6)]"
+            />
+          </div>
+          <input
+            type="range"
+            aria-label={label}
+            min={min}
+            max={max}
+            step={step}
+            value={value}
+            onChange={(e) => onChange(Number(e.target.value))}
+            className="relative z-10 w-full accent-white bg-transparent h-4 cursor-pointer"
           />
         </div>
-        <input
-          type="range"
-          aria-label={label}
-          min={min}
-          max={max}
-          step={step}
-          value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
-          className="relative z-10 w-full accent-white bg-transparent h-4 cursor-pointer"
-        />
+        <button
+          type="button"
+          aria-label={`Increase ${label}`}
+          data-testid="slider-plus-btn"
+          onClick={() => stepValue(1)}
+          className="w-5 h-5 rounded bg-[#18181E] hover:bg-[#24242D] border border-white/10 text-xs font-mono text-neutral-300 hover:text-white flex items-center justify-center shrink-0 cursor-pointer"
+        >
+          +
+        </button>
       </div>
     </div>
   );
 };
+
+interface SelectRowProps {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (next: string) => void;
+  testId?: string;
+}
+
+const SelectRow: React.FC<SelectRowProps> = ({ label, value, options, onChange, testId }) => (
+  <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-lg bg-[#0E0E11] hover:bg-[#131317] border border-white/[0.07] hover:border-white/15 transition-colors">
+    <label className="text-xs font-medium text-neutral-200">{label}</label>
+    <select
+      aria-label={label}
+      data-testid={testId}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="px-2.5 py-1.5 rounded-md bg-[#16161B] hover:bg-[#1D1D24] border border-white/15 text-xs font-mono text-white focus:outline-none focus:border-white cursor-pointer transition-colors"
+    >
+      {options.map((opt) => (
+        <option key={opt} value={opt} className="bg-[#0D0D10] text-white">
+          {opt}
+        </option>
+      ))}
+    </select>
+  </div>
+);

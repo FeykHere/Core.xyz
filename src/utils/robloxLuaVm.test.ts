@@ -257,8 +257,11 @@ ColorSequence = {
 NumberRange = {
     new = function(minV, maxV) return { Min = minV, Max = maxV or minV } end
 }
+NumberSequenceKeypoint = {
+    new = function(t, v) return { Time = t, Value = v } end
+}
 NumberSequence = {
-    new = function(v) return { Value = v } end
+    new = function(v, v2) return { Value = v, Value2 = v2 } end
 }
 
 CFrame = {}
@@ -362,7 +365,18 @@ Enum = {
     HumanoidStateType = { Jumping = "Jumping", Swimming = "Swimming", Ragdoll = "Ragdoll" },
     CameraType = { Custom = "Custom", Scriptable = "Scriptable" },
     DevCameraOcclusionMode = { Zoom = "Zoom", Invisicam = "Invisicam" },
-    Material = { SmoothPlastic = "SmoothPlastic", Plastic = "Plastic" },
+    Material = {
+        SmoothPlastic = "SmoothPlastic",
+        Plastic = "Plastic",
+        Neon = "Neon",
+        Glass = "Glass",
+        Foil = "Foil",
+        ForceField = "ForceField",
+        Ice = "Ice",
+        Granite = "Granite",
+        CrackedLava = "CrackedLava",
+        Fabric = "Fabric",
+    },
     QualityLevel = { Level01 = "Level01" },
     ScaleType = { Fit = "Fit", Crop = "Crop", Stretch = "Stretch" },
     RenderPriority = { Camera = { Value = 200 }, Character = { Value = 300 }, First = { Value = 0 }, Last = { Value = 2000 } },
@@ -604,6 +618,24 @@ local RightUpperLeg = createInstance("MeshPart")
 RightUpperLeg.Name = "RightUpperLeg"
 RightUpperLeg.Transparency = 0
 RightUpperLeg.Parent = LocalChar
+local LeftFoot = createInstance("MeshPart")
+LeftFoot.Name = "LeftFoot"
+LeftFoot.Transparency = 0
+LeftFoot.Parent = LocalChar
+
+local EquippedTool = createInstance("Tool")
+EquippedTool.Name = "KatanaTool"
+EquippedTool.Parent = LocalChar
+local ToolHandle = createInstance("Part")
+ToolHandle.Name = "Handle"
+ToolHandle.Material = Enum.Material.Plastic
+ToolHandle.Color = Color3.fromRGB(120, 120, 120)
+ToolHandle.Transparency = 0
+ToolHandle.Parent = EquippedTool
+local ToolSpecialMesh = createInstance("SpecialMesh")
+ToolSpecialMesh.Name = "ToolMesh"
+ToolSpecialMesh.TextureId = ""
+ToolSpecialMesh.Parent = ToolHandle
 
 local LocalHum = createInstance("Humanoid")
 LocalHum.Name = "Humanoid"
@@ -872,7 +904,14 @@ GameBgSound.Volume = 0.8
 GameBgSound.IsPlaying = true
 GameBgSound.Parent = WorkspaceObj
 
+_G.__ROOF_PART = nil
 function WorkspaceObj:Raycast(origin, direction, params)
+    if direction and direction.Y and direction.Y > 20 then
+        if _G.__ROOF_PART then
+            return { Instance = _G.__ROOF_PART, Position = Vector3.new(origin.X, origin.Y + 12, origin.Z) }
+        end
+        return nil
+    end
     -- Return whichever enemy is along the ray
     for i = 2, #allPlayers do
         local ep = allPlayers[i]
@@ -1398,6 +1437,7 @@ end
 assert(res1280x1024Btn ~= nil and res1728x1080Btn ~= nil, "Resolution Preset options (1280x960, 1440x1080, 1280x1024, 1728x1080) must exist")
 assert(weatherRainBtn ~= nil and weatherStormBtn ~= nil and weatherSnowBtn ~= nil and weatherSunnyBtn ~= nil, "Weather Preset options (Default, Rain, Thunderstorm, Snow, Sunny) must exist in Visuals_Page")
 
+do
 -- Test 100% 3D In-World Volumetric Weather Engine (3D Sky Canopy Volume + 3D Ground Splash Plane + 3D Jagged Lightning Pool + SoundService Audio — Zero Flat 2D Screen Overlay!)
 local weatherPart = workspace:FindFirstChild("CoreXyz_WeatherEmitterPart")
 local weatherEmitter = weatherPart and weatherPart:FindFirstChild("CoreXyz_WeatherEmitter")
@@ -1432,8 +1472,29 @@ assert(_G.__LAST_RAIN_ASSET_SCRIPT ~= nil and _G.__LAST_RAIN_ASSET_SCRIPT.Parent
 
 weatherRainBtn.MouseButton1Click:Fire()
 assert(weatherEmitter.Enabled == true and weatherEmitter.Rate == 620 and streakEmitter.Enabled == true and mistEmitter.Enabled == true and groundSplashEmitter.Enabled == true and groundSplashEmitter.Rate == 380 and harvestedRain1.Enabled == true and harvestedRain1.Rate == 640 and harvestedSplash1.Enabled == true and harvestedSplash1.Rate == 410 and ambienceSound.IsPlaying == true and patterSound.IsPlaying == true, "Selecting Rain must enable 3D volumetric rain canopy, harvested rbxassetid://1250626578 emitters, 3D ground splash emitter (380 rate), 3D mist, and multi-layer rain audio")
+assert(weatherEmitter.Squash.Value <= 1.5 and streakEmitter.Squash.Value <= 1.5 and harvestedRain1.Squash.Value <= 1.5, "Rain emitters must use soft, natural raindrop Squash (<= 1.5) instead of spiky needle Squash (3.0-4.0)")
+assert(groundSplashEmitter.Squash.Value <= 0.2 and harvestedSplash1.Squash.Value <= 0.2, "Ground splash emitters must use horizontal expanding ripple Squash (<= 0.2)")
 game:GetService("RunService").RenderStepped:Fire(0.1)
 assert(groundSplashPart.Position.Y > -100, "3D Ground Splash Part must position itself on the world surface beneath the player via raycast")
+
+-- Test Roof / Ceiling Raycast Rain Occlusion: When under a solid roof (_G.__ROOF_PART), indoor rain & ground splashes must stop and rain audio must muffle!
+local roofSlab = _G.__createInstance("Part")
+roofSlab.Name = "BuildingRoofSlab"
+roofSlab.CanCollide = true
+roofSlab.Transparency = 0
+roofSlab.Position = Vector3.new(10, 18, 20)
+roofSlab.Parent = workspace
+_G.__ROOF_PART = roofSlab
+game:GetService("RunService").RenderStepped:Fire(0.1)
+local patterEq = patterSound:FindFirstChild("CoreXyz_WeatherPatterEQ")
+assert(weatherEmitter.Enabled == false and streakEmitter.Enabled == false and groundSplashEmitter.Enabled == false and harvestedRain1.Enabled == false and harvestedSplash1.Enabled == false, "Overhead roof raycast hit must suppress indoor rain canopy and ground splash emitters under the roof")
+assert(patterEq ~= nil and patterEq.HighGain == -18, "Being under a roof must muffle rain patter audio via EqualizerSoundEffect (HighGain = -18)")
+
+-- Step back outdoors (remove _G.__ROOF_PART) -> rain & ground splashes immediately resume!
+_G.__ROOF_PART = nil
+roofSlab:Destroy()
+game:GetService("RunService").RenderStepped:Fire(0.1)
+assert(weatherEmitter.Enabled == true and streakEmitter.Enabled == true and groundSplashEmitter.Enabled == true and harvestedRain1.Enabled == true and harvestedSplash1.Enabled == true and patterEq.HighGain > -10, "Stepping back outdoors from under a roof must immediately restore 3D rain emitters, splashes, and crisp rain audio")
 
 weatherStormBtn.MouseButton1Click:Fire()
 assert(weatherEmitter.Enabled == true and weatherEmitter.Rate == 850 and streakEmitter.Enabled == true and mistEmitter.Enabled == true and groundSplashEmitter.Enabled == true and groundSplashEmitter.Rate == 580 and harvestedRain1.Enabled == true and harvestedRain1.Rate == math.floor(640 * 1.35) and harvestedSplash1.Enabled == true and harvestedSplash1.Rate == math.floor(410 * 1.35) and ambienceSound.IsPlaying == true and patterSound.IsPlaying == true and rumblerSound.IsPlaying == true, "Selecting Thunderstorm must enable 850-rate 3D storm canopy, 1.35x boosted rbxassetid://1250626578 emitters, 580-rate 3D ground splash plane, and multi-layer storm audio")
@@ -1446,6 +1507,85 @@ assert(weatherEmitter.Enabled == true and weatherEmitter.Rate == 580 and streakE
 
 weatherSunnyBtn.MouseButton1Click:Fire()
 assert(weatherEmitter.Enabled == false and streakEmitter.Enabled == false and mistEmitter.Enabled == false and groundSplashEmitter.Enabled == false and harvestedRain1.Enabled == false and harvestedSplash1.Enabled == false and weatherSunRays.Enabled == true and ambienceSound.IsPlaying == true, "Selecting Sunny must disable 3D precipitation emitters and harvested rain asset emitters, enable SunRaysEffect, and play sunny ambience")
+end
+
+do
+-- Test All 8 New Visual Feature Suites & UI Upgrades (Section Boxes, +/- Slider Steppers, Color Swatches, Self Chams, Trail, Tool Visuals, Bloom & Sun Rays, Color Correction, Skybox + Search, Lighting, Atmosphere)
+local selfChamsSec = visualsPage:FindFirstChild("SectionBox_Self Chams")
+local trailSec = visualsPage:FindFirstChild("SectionBox_Trail")
+local toolSec = visualsPage:FindFirstChild("SectionBox_Tool Visuals")
+local bloomSec = visualsPage:FindFirstChild("SectionBox_Bloom & Sun Rays")
+local ccSec = visualsPage:FindFirstChild("SectionBox_Color Correction")
+local skyboxSec = visualsPage:FindFirstChild("SectionBox_Skybox")
+local lightSec = visualsPage:FindFirstChild("SectionBox_Lighting")
+local atmosSec = visualsPage:FindFirstChild("SectionBox_Atmosphere")
+assert(selfChamsSec ~= nil and trailSec ~= nil and toolSec ~= nil and bloomSec ~= nil and ccSec ~= nil and skyboxSec ~= nil and lightSec ~= nil and atmosSec ~= nil, "All 8 framed Section Group Boxes (Self Chams, Trail, Tool Visuals, Bloom & Sun Rays, Color Correction, Skybox, Lighting, Atmosphere) must exist in Visuals_Page")
+
+-- Verify Self Chams Highlight, Material Preset Selection (21 materials), Swatch Cycler, and Slider +/- Step Buttons
+local hlFolder = screenGui:FindFirstChild("Highlights")
+local selfChamsHL = hlFolder and hlFolder:FindFirstChild("CoreXyz_SelfChamsHighlight")
+assert(selfChamsHL ~= nil and selfChamsHL.Enabled == true and selfChamsHL.Adornee == localChar, "CoreXyz_SelfChamsHighlight must be enabled and adorneed to LocalPlayer.Character when Self Chams is active")
+local diamondMatBtn, chromeMatBtn
+local fillMinusBtn, fillPlusBtn
+for _, desc in ipairs(selfChamsSec:GetDescendants()) do
+    if desc.ClassName == "TextButton" and desc.Text == "Diamond" then diamondMatBtn = desc end
+    if desc.ClassName == "TextButton" and desc.Text == "Chrome" then chromeMatBtn = desc end
+    if desc.Name == "SliderMinusBtn" and not fillMinusBtn then fillMinusBtn = desc end
+    if desc.Name == "SliderPlusBtn" and not fillPlusBtn then fillPlusBtn = desc end
+end
+assert(diamondMatBtn ~= nil and chromeMatBtn ~= nil and fillMinusBtn ~= nil and fillPlusBtn ~= nil, "Self Chams 21 material options and Slider -/+ step buttons must exist")
+diamondMatBtn.MouseButton1Click:Fire()
+assert(localChar:FindFirstChild("Head").Material == Enum.Material.Glass, "Selecting Diamond Chams Material must set character part Material to Glass")
+local fillBeforeStep = selfChamsHL.FillTransparency
+fillPlusBtn.MouseButton1Click:Fire()
+assert(selfChamsHL.FillTransparency ~= fillBeforeStep, "Clicking SliderPlusBtn (+) must step Fill Transparency")
+fillMinusBtn.MouseButton1Click:Fire()
+
+-- Verify Leg Trails (Left & Right Foot Trails + Color Swatches)
+local leftFootPart = localChar:FindFirstChild("LeftFoot")
+local rightFootPart = localChar:FindFirstChild("RightFoot")
+local leftTrail = leftFootPart and leftFootPart:FindFirstChild("CoreXyz_LeftLegTrail")
+local rightTrail = rightFootPart and rightFootPart:FindFirstChild("CoreXyz_RightLegTrail")
+assert(leftTrail ~= nil and leftTrail.Enabled == true and rightTrail ~= nil and rightTrail.Enabled == true, "CoreXyz_LeftLegTrail and CoreXyz_RightLegTrail must be parented to LeftFoot/RightFoot and enabled when Trail is active")
+
+-- Verify Tool Visuals (Material, Skin Texture, Tool Chams Highlight, Tool Glow PointLight)
+local toolChamsHL = hlFolder and hlFolder:FindFirstChild("CoreXyz_ToolChamsHighlight")
+local equippedTool = localChar:FindFirstChild("KatanaTool")
+local toolHandle = equippedTool and equippedTool:FindFirstChild("Handle")
+local toolMesh = toolHandle and toolHandle:FindFirstChild("ToolMesh")
+local toolLight = toolHandle and toolHandle:FindFirstChild("CoreXyz_ToolPointLight")
+assert(toolChamsHL ~= nil and toolChamsHL.Enabled == true and toolChamsHL.Adornee == equippedTool, "CoreXyz_ToolChamsHighlight must be enabled on equipped Tool")
+assert(toolLight ~= nil and toolLight.Enabled == true, "CoreXyz_ToolPointLight must be parented to Tool Handle and enabled when Tool Glow is active")
+local neonToolMatBtn, auroraSkinBtn, softFillStyleBtn
+for _, desc in ipairs(toolSec:GetDescendants()) do
+    if desc.ClassName == "TextButton" and desc.Text == "Neon" then neonToolMatBtn = desc end
+    if desc.ClassName == "TextButton" and desc.Text == "Aurora" then auroraSkinBtn = desc end
+    if desc.ClassName == "TextButton" and desc.Text == "Soft Fill" then softFillStyleBtn = desc end
+end
+assert(neonToolMatBtn ~= nil and auroraSkinBtn ~= nil and softFillStyleBtn ~= nil, "Tool Material, Skin Texture, and Chams Style dropdown options must exist")
+neonToolMatBtn.MouseButton1Click:Fire()
+auroraSkinBtn.MouseButton1Click:Fire()
+softFillStyleBtn.MouseButton1Click:Fire()
+assert(toolHandle.Material == Enum.Material.Neon and toolMesh.TextureId ~= "" and math.abs(toolChamsHL.FillTransparency - 0.55) < 0.02, "Selecting Neon tool material, Aurora skin texture, and Soft Fill chams style must update Tool Handle, SpecialMesh, and ToolChamsHighlight")
+
+-- Verify Custom Bloom, Sun Rays, Color Correction, Skybox + Search, Lighting Controller, and Atmosphere Controller
+local customBloom = game:GetService("Lighting"):FindFirstChild("CoreXyz_CustomBloom")
+local customSunRays = game:GetService("Lighting"):FindFirstChild("CoreXyz_CustomSunRays")
+local customColorCorr = game:GetService("Lighting"):FindFirstChild("CoreXyz_CustomColorCorrection")
+local customSky = game:GetService("Lighting"):FindFirstChild("CoreXyz_CustomSky")
+local customAtmos = game:GetService("Lighting"):FindFirstChild("CoreXyz_CustomAtmosphere")
+assert(customBloom ~= nil and customBloom.Enabled == true and customSunRays ~= nil and customSunRays.Enabled == true, "CoreXyz_CustomBloom and CoreXyz_CustomSunRays must be enabled in Lighting")
+assert(customColorCorr ~= nil and customColorCorr.Enabled == true, "CoreXyz_CustomColorCorrection must be enabled in Lighting")
+assert(customSky ~= nil and customAtmos ~= nil, "CoreXyz_CustomSky and CoreXyz_CustomAtmosphere must be parented to Lighting when Skybox and Atmosphere suites are enabled")
+
+local searchSkyBtn
+for _, desc in ipairs(skyboxSec:GetDescendants()) do
+    if desc.ClassName == "TextButton" and desc.Text == "Search" then searchSkyBtn = desc end
+end
+assert(searchSkyBtn ~= nil, "Skybox Search button must exist in Skybox_SectionBox")
+searchSkyBtn.MouseButton1Click:Fire()
+assert(string.find(tostring(customSky.SkyboxBk), "rbxassetid://") ~= nil, "Clicking Skybox Search must populate results and apply valid rbxassetid:// skybox faces")
+end
 
 -- Test Community Music System, Track Auto-Downloader, Connected Wavy Ocean Player UI & Mute Game Audio
 local musicTabBtn, musicPage

@@ -242,26 +242,66 @@ UDim2 = {
     end,
 }
 
-Color3 = {
-    fromRGB = function(r, g, b) return { R = r, G = g, B = b } end,
-    fromHSV = function(h, s, v) return { R = h or 1, G = s or 1, B = v or 1 } end,
-    new = function(r, g, b) return { R = r, G = g, B = b } end,
-}
+Color3 = {}
+Color3.__index = Color3
+function Color3.__eq(a, b)
+    return type(a) == "table" and type(b) == "table" and a.R == b.R and a.G == b.G and a.B == b.B
+end
+function Color3.fromRGB(r, g, b)
+    return setmetatable({ __type = "Color3", R = r or 0, G = g or 0, B = b or 0 }, Color3)
+end
+function Color3.fromHSV(h, s, v)
+    return setmetatable({ __type = "Color3", R = math.floor((h or 1) * 255), G = math.floor((s or 1) * 255), B = math.floor((v or 1) * 255) }, Color3)
+end
+function Color3.new(r, g, b)
+    return setmetatable({ __type = "Color3", R = (r or 0) * 255, G = (g or 0) * 255, B = (b or 0) * 255 }, Color3)
+end
 
 ColorSequenceKeypoint = {
-    new = function(t, c) return { Time = t, Value = c } end
+    new = function(t, c)
+        if c == nil then
+            error("ColorSequenceKeypoint.new expected Color3 at argument #2, got nil")
+        end
+        return { Time = t, Value = c }
+    end
 }
 ColorSequence = {
-    new = function(kps) return { Keypoints = kps } end
+    new = function(a, b)
+        if a == nil then
+            error("ColorSequence.new expected table or Color3, got nil")
+        end
+        if b ~= nil then
+            return { Keypoints = { { Time = 0, Value = a }, { Time = 1, Value = b } } }
+        end
+        if type(a) == "table" and a.__type == "Color3" then
+            return { Keypoints = { { Time = 0, Value = a }, { Time = 1, Value = a } } }
+        end
+        return { Keypoints = a }
+    end
 }
 NumberRange = {
-    new = function(minV, maxV) return { Min = minV, Max = maxV or minV } end
+    new = function(minV, maxV)
+        if minV == nil then
+            error("NumberRange.new expected number, got nil")
+        end
+        return { Min = minV, Max = maxV or minV }
+    end
 }
 NumberSequenceKeypoint = {
-    new = function(t, v) return { Time = t, Value = v } end
+    new = function(t, v)
+        if v == nil then
+            error("NumberSequenceKeypoint.new expected number at argument #2, got nil")
+        end
+        return { Time = t, Value = v }
+    end
 }
 NumberSequence = {
-    new = function(v, v2) return { Value = v, Value2 = v2 } end
+    new = function(v, v2)
+        if v == nil then
+            error("NumberSequence.new expected number or table, got nil")
+        end
+        return { Value = v, Value2 = v2 }
+    end
 }
 
 CFrame = {}
@@ -511,11 +551,11 @@ local function createInstance(className)
 
     function props:Clone()
         local cloned = createInstance(props.ClassName)
-        cloned.Name = props.Name
-        cloned.CFrame = props.CFrame
-        cloned.Rate = props.Rate
-        cloned.Texture = props.Texture
-        cloned.SoundId = props.SoundId
+        if props.Name ~= nil then cloned.Name = props.Name end
+        if props.CFrame ~= nil then cloned.CFrame = props.CFrame end
+        if props.Rate ~= nil then cloned.Rate = props.Rate end
+        if props.Texture ~= nil then cloned.Texture = props.Texture end
+        if props.SoundId ~= nil then cloned.SoundId = props.SoundId end
         for _, child in ipairs(children) do
             if child.Clone then
                 local cc = child:Clone()
@@ -538,11 +578,41 @@ local function createInstance(className)
         props.Parent = nil
     end
 
+    local NON_NULLABLE_PROPS = {
+        FillColor = true, OutlineColor = true, Color = true, TintColor = true, Decay = true,
+        Ambient = true, OutdoorAmbient = true, ColorShift_Bottom = true, ColorShift_Top = true,
+        FogColor = true, BackgroundColor3 = true, TextColor3 = true, PlaceholderColor3 = true,
+        ImageColor3 = true, ScrollBarImageColor3 = true, LightColor = true,
+        FillTransparency = true, OutlineTransparency = true, BackgroundTransparency = true,
+        TextTransparency = true, TextStrokeTransparency = true, ImageTransparency = true,
+        Transparency = true, Brightness = true, Range = true, Intensity = true, Spread = true,
+        Threshold = true, Saturation = true, Contrast = true, Density = true, Offset = true,
+        Haze = true, Glare = true, Lifetime = true, LightEmission = true, Reflectance = true,
+        HoldDuration = true, WalkSpeed = true, JumpPower = true, Health = true, MaxHealth = true,
+        TimePosition = true, Volume = true, PlaybackSpeed = true, Rotation = true, ZIndex = true,
+        LayoutOrder = true, TextSize = true, BorderSizePixel = true, Thickness = true, Scale = true,
+        FieldOfView = true, ClockTime = true, FogEnd = true, FogStart = true,
+        ExposureCompensation = true, Rate = true, Visible = true, Enabled = true, Active = true,
+        Looped = true, Anchored = true, CanCollide = true, CastShadow = true,
+        Name = true, Text = true, PlaceholderText = true, Image = true, Texture = true,
+        TextureId = true, SoundId = true, SkyboxBk = true, SkyboxDn = true, SkyboxFt = true,
+        SkyboxLf = true, SkyboxRt = true, SkyboxUp = true, Size = true, Position = true,
+    }
+
     local mt = {
         __index = function(_, k)
+            if props.ClassName == "Part" and (k == "TextureID" or k == "MeshId") then
+                error(tostring(k) .. " is not a valid member of Part")
+            end
             return props[k]
         end,
         __newindex = function(_, k, v)
+            if props.ClassName == "Part" and (k == "TextureID" or k == "MeshId") then
+                error(tostring(k) .. " is not a valid member of Part")
+            end
+            if v == nil and NON_NULLABLE_PROPS[k] then
+                error("Unable to assign property " .. tostring(k) .. ". Value expected, got nil")
+            end
             if k == "Parent" then
                 local oldParent = props.Parent
                 if oldParent and oldParent.__rawChildren then
@@ -1527,15 +1597,21 @@ local selfChamsHL = hlFolder and hlFolder:FindFirstChild("CoreXyz_SelfChamsHighl
 assert(selfChamsHL ~= nil and selfChamsHL.Enabled == true and selfChamsHL.Adornee == localChar, "CoreXyz_SelfChamsHighlight must be enabled and adorneed to LocalPlayer.Character when Self Chams is active")
 local diamondMatBtn, chromeMatBtn
 local fillMinusBtn, fillPlusBtn
+local selfChamsSw1, selfChamsSw2
 for _, desc in ipairs(selfChamsSec:GetDescendants()) do
     if desc.ClassName == "TextButton" and desc.Text == "Diamond" then diamondMatBtn = desc end
     if desc.ClassName == "TextButton" and desc.Text == "Chrome" then chromeMatBtn = desc end
     if desc.Name == "SliderMinusBtn" and not fillMinusBtn then fillMinusBtn = desc end
     if desc.Name == "SliderPlusBtn" and not fillPlusBtn then fillPlusBtn = desc end
+    if desc.Name == "ColorSwatch_Self Chams" then selfChamsSw1 = desc end
+    if desc.Name == "ColorSwatch2_Self Chams" then selfChamsSw2 = desc end
 end
-assert(diamondMatBtn ~= nil and chromeMatBtn ~= nil and fillMinusBtn ~= nil and fillPlusBtn ~= nil, "Self Chams 21 material options and Slider -/+ step buttons must exist")
+assert(diamondMatBtn ~= nil and chromeMatBtn ~= nil and fillMinusBtn ~= nil and fillPlusBtn ~= nil and selfChamsSw1 ~= nil and selfChamsSw2 ~= nil, "Self Chams 21 material options, dual Color Swatches, and Slider -/+ step buttons must exist")
 diamondMatBtn.MouseButton1Click:Fire()
 assert(localChar:FindFirstChild("Head").Material == Enum.Material.Glass, "Selecting Diamond Chams Material must set character part Material to Glass")
+selfChamsSw1.MouseButton1Click:Fire()
+selfChamsSw2.MouseButton1Click:Fire()
+assert(type(selfChamsHL.FillColor) == "table" and type(selfChamsHL.OutlineColor) == "table", "Clicking both Self Chams color swatches must update FillColor and OutlineColor with valid Color3 values")
 local fillBeforeStep = selfChamsHL.FillTransparency
 fillPlusBtn.MouseButton1Click:Fire()
 assert(selfChamsHL.FillTransparency ~= fillBeforeStep, "Clicking SliderPlusBtn (+) must step Fill Transparency")
@@ -1920,6 +1996,7 @@ configNameBox.Text = "MyProConfig"
 saveCfgBtn.MouseButton1Click:Fire()
 assert(_G.__FILES["CoreXYZ_Data/Config_MyProConfig.json"] ~= nil, "Saving config with valid name must write file")
 loadCfgBtn.MouseButton1Click:Fire()
+RunService.RenderStepped:Fire(0.05)
 
 _G.__TEST_PASSED = true
 `;

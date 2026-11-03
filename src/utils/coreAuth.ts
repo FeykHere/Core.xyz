@@ -191,7 +191,9 @@ export interface CoreConfigState {
   showFOV: boolean;
   fovRadius: number;
   smoothness: number;
+  wallCheck: boolean;
   teamCheck: boolean;
+  whitelistCheck: boolean;
   targetPart: 'Head' | 'HumanoidRootPart' | 'UpperTorso' | 'LowerTorso';
   espEnabled: boolean;
   tracersEnabled: boolean;
@@ -229,7 +231,9 @@ export const DEFAULT_CORE_CONFIG: CoreConfigState = {
   showFOV: true,
   fovRadius: 95,
   smoothness: 0.25,
-  teamCheck: true,
+  wallCheck: false,
+  teamCheck: false,
+  whitelistCheck: false,
   targetPart: 'Head',
   espEnabled: true,
   tracersEnabled: true,

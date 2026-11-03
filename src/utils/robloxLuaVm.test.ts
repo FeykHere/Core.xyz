@@ -1462,7 +1462,19 @@ assert(idxTeamCheck < idxHitboxExpander, "Team Check toggle must be above Hitbox
 assert(idxWhitelistCheck < idxHitboxExpander, "Whitelist Check toggle must be above Hitbox Expander")
 assert(idxWhitelistDropdown < idxHitboxExpander, "Whitelist Players dropdown must be above Hitbox Expander")
 
--- Enable Combat, Visuals, and Movement toggles (skipping toggles that already default to true)
+-- Verify Wall Check, Team Check, and Whitelist Check toggles are OFF by default!
+for _, ctrl in ipairs(combatPage:GetDescendants()) do
+    if ctrl.ClassName == "TextButton" and ctrl.Text == "" then
+        local rowLabel = ctrl:FindFirstChildOfClass("TextLabel")
+        local lText = rowLabel and rowLabel.Text or ""
+        if lText == "Wall Check" or lText == "Team Check" or lText == "Whitelist Check" then
+            local statusBar = ctrl:FindFirstChildOfClass("Frame")
+            assert(statusBar ~= nil and statusBar.Size.Y.Offset == 0, lText .. " toggle must be OFF by default (statusBar height == 0)")
+        end
+    end
+end
+
+-- Enable Combat, Visuals, and Movement toggles (skipping toggles that already default to true or should stay off)
 for _, pageName in ipairs({ "Combat_Page", "Visuals_Page", "Movement_Page" }) do
     for _, desc in ipairs(mainWindow:GetDescendants()) do
         if desc.Name == pageName then
@@ -1471,8 +1483,6 @@ for _, pageName in ipairs({ "Combat_Page", "Visuals_Page", "Movement_Page" }) do
                     local rowLabel = ctrl:FindFirstChildOfClass("TextLabel")
                     local lText = rowLabel and rowLabel.Text or ""
                     if lText ~= ""
-                        and lText ~= "Team Check"
-                        and lText ~= "Whitelist Check"
                         and lText ~= "Wall Check"
                         and lText ~= "Crosshair Center Dot"
                         and lText ~= "Weather Sound Effects"

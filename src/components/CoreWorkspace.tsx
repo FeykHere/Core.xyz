@@ -842,9 +842,19 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
                       onChange={(v) => setConfig({ ...config, showFOV: v })}
                     />
                     <ToggleRow
+                      label="Wall Check"
+                      checked={config.wallCheck}
+                      onChange={(v) => setConfig({ ...config, wallCheck: v })}
+                    />
+                    <ToggleRow
                       label="Team Check"
                       checked={config.teamCheck}
                       onChange={(v) => setConfig({ ...config, teamCheck: v })}
+                    />
+                    <ToggleRow
+                      label="Whitelist Check"
+                      checked={config.whitelistCheck}
+                      onChange={(v) => setConfig({ ...config, whitelistCheck: v })}
                     />
                     <SliderRow
                       label="FOV Radius"

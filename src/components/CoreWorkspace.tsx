@@ -49,7 +49,7 @@ import {
   COMMUNITY_MUSIC_NOTE,
   COMMUNITY_MUSIC_TRACKS,
   formatTrackTimestamp,
-  computeOceanWaveCrestMetrics,
+  computeOceanWaveDisplacement,
   buildOceanWaveSvgPath,
   formatRemainingKeyTime,
   buildGithubRawUrl,
@@ -304,7 +304,17 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
   const [trackDurationSec, setTrackDurationSec] = useState(
     COMMUNITY_MUSIC_TRACKS[0].durationSec
   );
-  const [wavePhase, setWavePhase] = useState(0);
+  const wavePhaseRef = useRef<number>(0);
+  const unplayedWavePathRef = useRef<SVGPathElement | null>(null);
+  const playedWaveAreaRef = useRef<SVGPathElement | null>(null);
+  const playedWaveLineRef = useRef<SVGPathElement | null>(null);
+  const playheadOrbRef = useRef<SVGCircleElement | null>(null);
+  const playheadHaloRef = useRef<SVGCircleElement | null>(null);
+  const progressRatioRef = useRef<number>(0);
+  progressRatioRef.current = Math.max(
+    0,
+    Math.min(1, trackProgressSec / Math.max(1, trackDurationSec))
+  );
 
   const activeTrack = useMemo(() => {
     return (
@@ -313,14 +323,45 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
     );
   }, [config.selectedTrack]);
 
-  // Animate wavy ocean timeline phase smoothly
+  // 60FPS Single Long Smooth Wave SVG Animation (Zero React Re-Renders)
   useEffect(() => {
-    if (!config.musicPlayerVisible && activeTab !== 'music') return;
-    const interval = window.setInterval(() => {
-      setWavePhase((prev) => prev + (config.musicPlaying ? 0.24 : 0.06));
-    }, 50);
-    return () => window.clearInterval(interval);
-  }, [config.musicPlayerVisible, config.musicPlaying, activeTab]);
+    if (!config.musicPlayerVisible) return;
+    let rafId = 0;
+    let lastTime = performance.now();
+    const tick = (now: number) => {
+      const dt = Math.min(0.05, Math.max(0.001, (now - lastTime) / 1000));
+      lastTime = now;
+      wavePhaseRef.current += dt * (config.musicPlaying ? 3.2 : 0.95);
+      const phase = wavePhaseRef.current;
+      const singleWave = buildOceanWaveSvgPath(480, 44, phase, config.musicPlaying, 0);
+      if (unplayedWavePathRef.current) {
+        unplayedWavePathRef.current.setAttribute('d', singleWave.linePath);
+      }
+      if (playedWaveAreaRef.current) {
+        playedWaveAreaRef.current.setAttribute('d', singleWave.areaPath);
+      }
+      if (playedWaveLineRef.current) {
+        playedWaveLineRef.current.setAttribute('d', singleWave.linePath);
+      }
+      const ratio = progressRatioRef.current;
+      const orbX = Math.max(6, Math.min(474, ratio * 480));
+      const orbY = Math.max(
+        5,
+        Math.min(39, 22 + computeOceanWaveDisplacement(ratio, phase, config.musicPlaying))
+      );
+      if (playheadOrbRef.current) {
+        playheadOrbRef.current.setAttribute('cx', orbX.toFixed(1));
+        playheadOrbRef.current.setAttribute('cy', orbY.toFixed(1));
+      }
+      if (playheadHaloRef.current) {
+        playheadHaloRef.current.setAttribute('cx', orbX.toFixed(1));
+        playheadHaloRef.current.setAttribute('cy', orbY.toFixed(1));
+      }
+      rafId = window.requestAnimationFrame(tick);
+    };
+    rafId = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(rafId);
+  }, [config.musicPlayerVisible, config.musicPlaying]);
 
   // Sync HTMLAudioElement playback & fallback progreso
   useEffect(() => {
@@ -2155,11 +2196,11 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
                     </div>
                   </div>
 
-                  {/* Interactive Ocean-Wave Progress Scrubber */}
+                  {/* Interactive Single Long Smooth Wave Progress Scrubber */}
                   <div className="space-y-1.5">
                     <div
                       data-testid="ocean-wave-progress-scrubber"
-                      onClick={(e) => {
+                      onPointerDown={(e) => {
                         const rect = e.currentTarget.getBoundingClientRect();
                         const ratio = Math.max(
                           0,
@@ -2175,86 +2216,120 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
                           }
                         }
                       }}
-                      className="relative h-12 rounded-xl bg-[#060608] border border-white/12 overflow-hidden cursor-pointer select-none px-2 flex items-center"
+                      className="relative h-12 rounded-xl bg-[#060608] border border-white/15 overflow-hidden cursor-pointer select-none flex items-center"
                     >
-                      {/* Background Multi-Harmonic SVG Ocean Swell */}
                       {(() => {
-                        const primaryWave = buildOceanWaveSvgPath(
+                        const progressRatio = Math.max(
+                          0,
+                          Math.min(1, trackProgressSec / Math.max(1, trackDurationSec))
+                        );
+                        const phase = wavePhaseRef.current;
+                        const singleWave = buildOceanWaveSvgPath(
                           480,
                           44,
-                          wavePhase,
+                          phase,
                           config.musicPlaying,
                           0
                         );
-                        const secondaryWave = buildOceanWaveSvgPath(
-                          480,
-                          44,
-                          wavePhase * 1.25,
-                          config.musicPlaying,
-                          1.3
+                        const playheadX = Math.max(6, Math.min(474, progressRatio * 480));
+                        const playheadY = Math.max(
+                          5,
+                          Math.min(
+                            39,
+                            22 +
+                              computeOceanWaveDisplacement(
+                                progressRatio,
+                                phase,
+                                config.musicPlaying
+                              )
+                          )
                         );
                         return (
                           <svg
                             viewBox="0 0 480 44"
                             preserveAspectRatio="none"
-                            className="absolute inset-0 w-full h-full pointer-events-none opacity-45"
+                            className="w-full h-full pointer-events-none"
                           >
+                            <defs>
+                              <linearGradient
+                                id="singleWaveAreaGrad"
+                                x1="0%"
+                                y1="0%"
+                                x2="0%"
+                                y2="100%"
+                              >
+                                <stop offset="0%" stopColor="rgba(255,255,255,0.28)" />
+                                <stop offset="100%" stopColor="rgba(255,255,255,0.02)" />
+                              </linearGradient>
+                              <clipPath id="singleWavePlayedClip">
+                                <rect
+                                  x="0"
+                                  y="0"
+                                  width={Math.max(4, progressRatio * 480)}
+                                  height="44"
+                                />
+                              </clipPath>
+                            </defs>
+
+                            {/* Unplayed portion of the single continuous long wave */}
                             <path
-                              d={secondaryWave.areaPath}
-                              fill="rgba(255,255,255,0.08)"
-                            />
-                            <path
-                              d={primaryWave.areaPath}
-                              fill="rgba(255,255,255,0.14)"
-                            />
-                            <path
-                              d={primaryWave.linePath}
+                              ref={unplayedWavePathRef}
+                              data-testid="single-smooth-wave-unplayed"
+                              d={singleWave.linePath}
                               fill="none"
-                              stroke="rgba(255,255,255,0.45)"
+                              stroke="rgba(255,255,255,0.22)"
+                              strokeWidth="2.4"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+
+                            {/* Played portion of the exact same single continuous long wave */}
+                            <g clipPath="url(#singleWavePlayedClip)">
+                              <path
+                                ref={playedWaveAreaRef}
+                                data-testid="single-smooth-wave-area"
+                                d={singleWave.areaPath}
+                                fill="url(#singleWaveAreaGrad)"
+                              />
+                              <path
+                                ref={playedWaveLineRef}
+                                data-testid="single-smooth-wave-line"
+                                d={singleWave.linePath}
+                                fill="none"
+                                stroke="#FFFFFF"
+                                strokeWidth="2.8"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </g>
+
+                            {/* Buoyant Playhead Orb Riding on the Single Smooth Wave */}
+                            <circle
+                              ref={playheadHaloRef}
+                              cx={playheadX.toFixed(1)}
+                              cy={playheadY.toFixed(1)}
+                              r="8"
+                              fill="rgba(255,255,255,0.22)"
+                            />
+                            <circle
+                              ref={playheadOrbRef}
+                              data-testid="single-smooth-wave-playhead"
+                              cx={playheadX.toFixed(1)}
+                              cy={playheadY.toFixed(1)}
+                              r="4.5"
+                              fill="#FFFFFF"
+                              stroke="#050507"
                               strokeWidth="1.5"
                             />
                           </svg>
                         );
                       })()}
-
-                      {/* 38 Articulated Ocean-Wave Crest Nodes */}
-                      <div className="relative z-10 w-full flex items-center justify-between gap-0.5 px-1">
-                        {Array.from({ length: 38 }).map((_, idx) => {
-                          const normX = idx / 37;
-                          const progressRatio = Math.max(
-                            0,
-                            Math.min(1, trackProgressSec / Math.max(1, trackDurationSec))
-                          );
-                          const isPlayed = normX <= progressRatio;
-                          const metrics = computeOceanWaveCrestMetrics(
-                            normX,
-                            wavePhase,
-                            config.musicPlaying
-                          );
-                          return (
-                            <span
-                              key={idx}
-                              style={{
-                                height: `${metrics.barHeightPx}px`,
-                                transform: `translateY(${metrics.displacementPx.toFixed(
-                                  1
-                                )}px) rotate(${metrics.tiltDeg.toFixed(1)}deg)`,
-                              }}
-                              className={`w-1 rounded-full transition-colors duration-75 ${
-                                isPlayed
-                                  ? 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.85)]'
-                                  : 'bg-white/20'
-                              }`}
-                            />
-                          );
-                        })}
-                      </div>
                     </div>
 
                     <div className="flex items-center justify-between text-[11px] font-mono text-neutral-400 px-1">
                       <span>{formatTrackTimestamp(trackProgressSec)}</span>
                       <span className="text-neutral-300">
-                        Wavy Ocean Timeline &bull; Click anywhere to scrub
+                        Single Smooth Wave Timeline &bull; Click anywhere to scrub
                       </span>
                       <span>{formatTrackTimestamp(trackDurationSec)}</span>
                     </div>

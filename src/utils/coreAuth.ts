@@ -128,12 +128,11 @@ export function computeOceanWaveDisplacement(
   isPlaying: boolean
 ): number {
   const clampedX = Math.max(0, Math.min(1, normX));
-  const primary = Math.sin(clampedX * Math.PI * 3.8 - phase);
-  const secondary = Math.cos(clampedX * Math.PI * 6.4 - phase * 1.38) * 0.46;
-  const capillary = Math.sin(clampedX * Math.PI * 9.5 + phase * 1.85) * 0.22;
-  const swell = Math.sin(clampedX * Math.PI * 1.75 + phase * 0.62) * 0.28;
-  const amplitude = isPlaying ? 4.4 : 1.45;
-  return (primary * 0.62 + secondary + capillary + swell) * amplitude;
+  // Single long-wavelength continuous sine swell with gentle breathing envelope
+  const longWave = Math.sin(clampedX * Math.PI * 2.2 - phase);
+  const gentleSwell = Math.sin(clampedX * Math.PI * 1.1 - phase * 0.5) * 0.18;
+  const amplitude = isPlaying ? 7.2 : 2.4;
+  return (longWave * 0.85 + gentleSwell) * amplitude;
 }
 
 export function computeOceanWaveCrestMetrics(
@@ -142,17 +141,12 @@ export function computeOceanWaveCrestMetrics(
   isPlaying: boolean
 ): OceanWaveCrestMetrics {
   const clampedX = Math.max(0, Math.min(1, normX));
-  const wave1 = Math.sin(clampedX * Math.PI * 3.8 - phase);
-  const wave2 = Math.cos(clampedX * Math.PI * 6.4 - phase * 1.38);
-  const wave3 = Math.sin(clampedX * Math.PI * 9.5 + phase * 1.85);
-  const combined = wave1 * 0.56 + wave2 * 0.29 + wave3 * 0.15;
-  const crestFactor = Math.max(0, Math.min(1, (combined + 1) * 0.5));
+  const longWave = Math.sin(clampedX * Math.PI * 2.2 - phase);
+  const crestFactor = Math.max(0, Math.min(1, (longWave + 1) * 0.5));
   const displacementPx = computeOceanWaveDisplacement(clampedX, phase, isPlaying);
-  const slopeDerivative =
-    Math.cos(clampedX * Math.PI * 3.8 - phase) * 0.65 -
-    Math.sin(clampedX * Math.PI * 6.4 - phase * 1.38) * 0.35;
-  const tiltDeg = slopeDerivative * (isPlaying ? 12.5 : 4.2);
-  const barHeightPx = Math.round(5 + crestFactor * (isPlaying ? 9 : 4));
+  const slopeDerivative = Math.cos(clampedX * Math.PI * 2.2 - phase);
+  const tiltDeg = slopeDerivative * (isPlaying ? 9.5 : 3.2);
+  const barHeightPx = Math.round(4 + crestFactor * (isPlaying ? 6 : 3));
   return {
     displacementPx,
     tiltDeg,
@@ -168,14 +162,14 @@ export function buildOceanWaveSvgPath(
   isPlaying: boolean,
   harmonicShift: number = 0
 ): { linePath: string; areaPath: string } {
-  const steps = 36;
-  const midY = height * 0.52;
+  const steps = 96;
+  const midY = height * 0.5;
   const points: Array<{ x: number; y: number }> = [];
   for (let i = 0; i <= steps; i++) {
     const normX = i / steps;
     const x = normX * width;
     const disp = computeOceanWaveDisplacement(normX, phase + harmonicShift, isPlaying);
-    const y = Math.max(2, Math.min(height - 2, midY + disp));
+    const y = Math.max(3, Math.min(height - 3, midY + disp));
     points.push({ x, y });
   }
   const lineParts = points.map((pt, idx) =>

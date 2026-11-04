@@ -217,6 +217,7 @@ export interface CoreConfigState {
   musicVolume: number;
   musicLooped: boolean;
   muteGameAudio: boolean;
+  rememberKey: boolean;
 }
 
 export interface GithubRepoConfig {
@@ -257,7 +258,167 @@ export const DEFAULT_CORE_CONFIG: CoreConfigState = {
   musicVolume: 75,
   musicLooped: true,
   muteGameAudio: false,
+  rememberKey: true,
 };
+
+export interface ChangelogReleaseNote {
+  version: string;
+  date: string;
+  title: string;
+  removed: string[];
+  added: string[];
+  fixed: string[];
+}
+
+export const CHANGELOG_V44_DATA: ChangelogReleaseNote = {
+  version: 'v4.4',
+  date: 'Nov 3, 2026',
+  title: 'Changelog v4.4  ·  Nov 3, 2026',
+  removed: [
+    '[-] Experimental Custom Rig Hitpart Auto-Scanner (reverted to rock-solid R6/R15 targeting for 100% stability)',
+    '[-] Legacy flat 1-stop Key System flash overlay & non-draggable color swatch cycler',
+  ],
+  added: [
+    '[+] Save-Key Toggle & Auto-Expiry Router (persists key in CoreXYZ_Data/SavedKey.json; auto-loads hub if valid or notifies on expiry)',
+    '[+] One-Time Per-Update Changelog Popup (v4.4) with [×] close button & version memory',
+    '[+] Full Interactive 2D HSV + Hue + Alpha Color Picker with live touch/mouse drag & 10 quick preset swatches',
+    '[+] Luxury Multi-Stop Emerald-Jade & Crimson-Garnet Key System Gradients with inner bevel highlights',
+  ],
+  fixed: [
+    '[*] Fixed Color Picker popup touch/drag tracking and prevented swatch clicks from mutating colors prematurely',
+    '[*] Fixed rough UI borders, header seam corners, and section divider contrast across all tabs',
+    '[*] Fixed Save-Key state synchronization between the Key System card and Settings tab',
+  ],
+};
+
+export interface SavedKeyRecord {
+  key: string;
+  savedAtMs: number;
+  expiresAtMs: number;
+  rememberKey: boolean;
+}
+
+export interface SavedKeyEvaluation {
+  status: 'valid' | 'expired' | 'missing';
+  record: SavedKeyRecord | null;
+  notificationMessage: string | null;
+}
+
+export function evaluateSavedKeySession(
+  record: SavedKeyRecord | null | undefined,
+  nowMs: number = Date.now()
+): SavedKeyEvaluation {
+  if (!record || !record.rememberKey || !record.key || !record.key.trim()) {
+    return {
+      status: 'missing',
+      record: null,
+      notificationMessage: null,
+    };
+  }
+  const validation = validateAccessKey(record.key, nowMs);
+  if (!validation.valid) {
+    return {
+      status: 'expired',
+      record,
+      notificationMessage: 'Your saved key has expired! Please obtain a new key to continue.',
+    };
+  }
+  if (record.expiresAtMs !== -1 && record.expiresAtMs <= nowMs) {
+    return {
+      status: 'expired',
+      record,
+      notificationMessage: 'Your saved key has expired! Please obtain a new key to continue.',
+    };
+  }
+  return {
+    status: 'valid',
+    record,
+    notificationMessage: null,
+  };
+}
+
+export function hsvToHex(h: number, s: number, v: number): string {
+  const cleanH = ((h % 1) + 1) % 1;
+  const cleanS = Math.max(0, Math.min(1, s));
+  const cleanV = Math.max(0, Math.min(1, v));
+  const i = Math.floor(cleanH * 6);
+  const f = cleanH * 6 - i;
+  const p = cleanV * (1 - cleanS);
+  const q = cleanV * (1 - f * cleanS);
+  const t = cleanV * (1 - (1 - f) * cleanS);
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  switch (i % 6) {
+    case 0:
+      r = cleanV;
+      g = t;
+      b = p;
+      break;
+    case 1:
+      r = q;
+      g = cleanV;
+      b = p;
+      break;
+    case 2:
+      r = p;
+      g = cleanV;
+      b = t;
+      break;
+    case 3:
+      r = p;
+      g = q;
+      b = cleanV;
+      break;
+    case 4:
+      r = t;
+      g = p;
+      b = cleanV;
+      break;
+    case 5:
+      r = cleanV;
+      g = p;
+      b = q;
+      break;
+  }
+  const toHex = (n: number) =>
+    Math.round(Math.max(0, Math.min(255, n * 255)))
+      .toString(16)
+      .padStart(2, '0')
+      .toUpperCase();
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+export function hexToHsv(hex: string): { h: number; s: number; v: number } {
+  const cleaned = hex.replace(/^#/, '').trim();
+  if (!/^[0-9A-Fa-f]{6}$/.test(cleaned)) {
+    return { h: 0, s: 0, v: 1 };
+  }
+  const r = parseInt(cleaned.slice(0, 2), 16) / 255;
+  const g = parseInt(cleaned.slice(2, 4), 16) / 255;
+  const b = parseInt(cleaned.slice(4, 6), 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  let h = 0;
+  const s = max === 0 ? 0 : d / max;
+  const v = max;
+  if (max !== min) {
+    switch (max) {
+      case r:
+        h = (g - b) / d + (g < b ? 6 : 0);
+        break;
+      case g:
+        h = (b - r) / d + 2;
+        break;
+      case b:
+        h = (r - g) / d + 4;
+        break;
+    }
+    h /= 6;
+  }
+  return { h, s, v };
+}
 
 export const DEFAULT_GITHUB_CONFIG: GithubRepoConfig = {
   owner: 'FeykHere',

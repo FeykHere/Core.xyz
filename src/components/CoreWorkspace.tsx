@@ -60,11 +60,26 @@ import {
   generateCoreLuaScript,
 } from '../utils/coreAuth';
 import { WeatherCanvasOverlay } from './WeatherCanvasOverlay';
+import { ChangelogModal } from './ChangelogModal';
+import { InteractiveColorPickerModal } from './InteractiveColorPickerModal';
+
+interface ColorPickerContextValue {
+  colors: Record<string, string>;
+  openPicker: (key: string, label: string, defaultColor: string) => void;
+}
+
+const ColorPickerContext = React.createContext<ColorPickerContextValue>({
+  colors: {},
+  openPicker: () => {},
+});
 
 interface CoreWorkspaceProps {
   keyExpiresAtMs: number;
+  rememberKey?: boolean;
+  onToggleRememberKey?: (next: boolean) => void;
   onReplayIntro: () => void;
   onLockSession: () => void;
+  onSimulateExpiredKey?: () => void;
 }
 
 type ActiveTab = 'home' | 'combat' | 'visuals' | 'movement' | 'music' | 'misc';
@@ -138,8 +153,11 @@ const SKYBOX_PRESETS = [
 
 export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
   keyExpiresAtMs,
+  rememberKey = true,
+  onToggleRememberKey,
   onReplayIntro,
   onLockSession,
+  onSimulateExpiredKey,
 }) => {
   const [config, setConfig] = useState<CoreConfigState>(DEFAULT_CORE_CONFIG);
   const [githubConfig, setGithubConfig] = useState<GithubRepoConfig>(DEFAULT_GITHUB_CONFIG);
@@ -154,6 +172,36 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
   const [targetPos, setTargetPos] = useState<{ x: number; y: number }>({ x: 52, y: 44 });
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [simulatedExpiryOverride, setSimulatedExpiryOverride] = useState<number | null>(null);
+
+  // One-Time Per-Update Changelog v4.4 Modal State
+  const [changelogOpen, setChangelogOpen] = useState<boolean>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('autostart') === '1') {
+        return false;
+      }
+      return window.localStorage.getItem('core_xyz_seen_changelog_version') !== 'v4.4';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleCloseChangelog = () => {
+    setChangelogOpen(false);
+    try {
+      window.localStorage.setItem('core_xyz_seen_changelog_version', 'v4.4');
+    } catch {
+      // Ignore storage errors
+    }
+  };
+
+  // Interactive 2D HSV + Hue + Alpha Color Picker State
+  const [customColors, setCustomColors] = useState<Record<string, string>>({});
+  const [activeColorPicker, setActiveColorPicker] = useState<{
+    key: string;
+    label: string;
+    defaultColor: string;
+  } | null>(null);
 
   // Under Roof (Indoor Rain & Sound Occlusion) simulation state
   const [underRoof, setUnderRoof] = useState<boolean>(false);
@@ -349,12 +397,12 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
   // Subtle autonomous target drift in preview canvas
   useEffect(() => {
     const interval = window.setInterval(() => {
-      const t = Date.now() / 1200;
+      const t = Date.now() / 1800;
       setTargetPos({
-        x: 50 + Math.sin(t) * 18,
-        y: 46 + Math.cos(t * 1.3) * 12,
+        x: 50 + Math.sin(t) * 14,
+        y: 46 + Math.cos(t * 1.3) * 10,
       });
-    }, 40);
+    }, 1800);
     return () => window.clearInterval(interval);
   }, []);
 
@@ -414,7 +462,7 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
     setSkyboxEnabled(true);
   };
 
-  const accentHex =
+  const baseAccentHex =
     config.espAccent === 'Crimson'
       ? '#EF4444'
       : config.espAccent === 'Cyan'
@@ -423,27 +471,55 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
       ? '#A3A3A3'
       : '#FFFFFF';
 
+  const accentHex = customColors['Toggle:Enable Player ESP:1'] || baseAccentHex;
+
   return (
-    <div className="min-h-screen bg-[#050505] text-white flex flex-col selection:bg-white selection:text-black">
-      {/* Top Bar */}
-      <header className="sticky top-0 z-30 border-b border-white/10 bg-[#050505]/90 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-white text-black flex items-center justify-center font-black text-base tracking-tighter shadow-[0_0_20px_rgba(255,255,255,0.3)]">
-              C
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold tracking-tight text-white text-base">Core.xyz</span>
-                <span className="text-[10px] font-mono uppercase tracking-widest px-2 py-0.5 rounded bg-white/10 text-neutral-200 border border-white/15">
-                  v4.5 Visual Suite
-                </span>
+    <ColorPickerContext.Provider
+      value={{
+        colors: customColors,
+        openPicker: (key, label, defaultColor) =>
+          setActiveColorPicker({ key, label, defaultColor }),
+      }}
+    >
+      <div className="min-h-screen bg-[#050505] text-white flex flex-col selection:bg-white selection:text-black">
+        <ChangelogModal open={changelogOpen} onClose={handleCloseChangelog} />
+        <InteractiveColorPickerModal
+          open={Boolean(activeColorPicker)}
+          label={activeColorPicker?.label ?? 'Color Picker'}
+          color={
+            activeColorPicker
+              ? customColors[activeColorPicker.key] ?? activeColorPicker.defaultColor
+              : '#FFFFFF'
+          }
+          onChange={(nextHex) => {
+            if (!activeColorPicker) return;
+            setCustomColors((prev) => ({
+              ...prev,
+              [activeColorPicker.key]: nextHex,
+            }));
+          }}
+          onClose={() => setActiveColorPicker(null)}
+        />
+
+        {/* Top Bar */}
+        <header className="sticky top-0 z-30 border-b border-white/10 bg-[#050505]/90 backdrop-blur-xl">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-white text-black flex items-center justify-center font-black text-base tracking-tighter shadow-[0_0_20px_rgba(255,255,255,0.3)]">
+                C
               </div>
-              <p className="text-xs text-neutral-400 hidden sm:block">
-                Universal Roblox Script Hub &bull; Realistic Weather + 8 Visual Feature Suites
-              </p>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold tracking-tight text-white text-base">Core.xyz</span>
+                  <span className="text-[10px] font-mono uppercase tracking-widest px-2 py-0.5 rounded bg-white/10 text-neutral-200 border border-white/15">
+                    v4.4 Release Ready
+                  </span>
+                </div>
+                <p className="text-xs text-neutral-400 hidden sm:block">
+                  Universal Roblox Script Hub &bull; Save-Key Auto-Login + 2D Color Picker + 8 Visual Suites
+                </p>
+              </div>
             </div>
-          </div>
 
           {/* Navigation Tabs */}
           <nav
@@ -482,6 +558,15 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
 
           {/* Header Actions */}
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              data-testid="open-changelog-btn"
+              onClick={() => setChangelogOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#14141A] hover:bg-[#1E1E26] text-white border border-white/15 text-xs font-semibold transition-colors cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-neutral-300" />
+              <span>Changelog v4.4</span>
+            </button>
             <button
               type="button"
               onClick={() => copyText(loadstringSnippet, 'loadstring')}
@@ -610,7 +695,7 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
                             ACTIVE SESSION
                           </span>
                           <h3 className="text-sm font-bold text-white mt-0.5">
-                            Welcome to Core.xyz v4.5
+                            Welcome to Core.xyz v4.4
                           </h3>
                         </div>
                       </div>
@@ -1611,11 +1696,20 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
                     onChange={(v) => setConfig({ ...config, antiAFKEnabled: v })}
                   />
 
+                  <ToggleRow
+                    label="Save Key (Auto-Login Until Expired)"
+                    checked={rememberKey}
+                    onChange={(v) => {
+                      setConfig({ ...config, rememberKey: v });
+                      onToggleRememberKey?.(v);
+                    }}
+                  />
+
                   <div className="p-3.5 rounded-xl bg-black/60 border border-white/10 space-y-2.5">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold text-neutral-300 flex items-center gap-1.5">
                         <KeyRound className="w-3.5 h-3.5 text-white" />
-                        Platoboost Key Gateway
+                        Platoboost Key Gateway &amp; Auto-Expiry Check
                       </span>
                       <span className="text-[11px] font-mono text-neutral-400">
                         Service #{PLATOBOOST_SERVICE_ID}
@@ -1623,25 +1717,41 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
                     </div>
                     <p className="text-xs text-neutral-400 leading-relaxed">
                       In-game key verification uses{' '}
-                      <span className="text-white font-mono">{PLATOBOOST_GATEWAY_URL}</span> with a streamlined 2-button flow (Submit Key &amp; Get Key).
+                      <span className="text-white font-mono">{PLATOBOOST_GATEWAY_URL}</span> with{' '}
+                      <span className="text-white font-mono">CoreXYZ_Data/SavedKey.json</span>{' '}
+                      persistence. Valid keys bypass the gate directly; expired keys show the Key System with an expiry alert.
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => copyText(PLATOBOOST_GATEWAY_URL, 'plato')}
-                      className="w-full py-2 px-3 rounded-lg bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-semibold text-white flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                    >
-                      {copiedType === 'plato' ? (
-                        <>
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Copied Gateway Link</span>
-                        </>
-                      ) : (
-                        <>
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          <span>Copy Platoboost Key Link</span>
-                        </>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => copyText(PLATOBOOST_GATEWAY_URL, 'plato')}
+                        className="py-2 px-3 rounded-lg bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-semibold text-white flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        {copiedType === 'plato' ? (
+                          <>
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Copied Gateway Link</span>
+                          </>
+                        ) : (
+                          <>
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>Copy Key Link</span>
+                          </>
+                        )}
+                      </button>
+
+                      {onSimulateExpiredKey && (
+                        <button
+                          type="button"
+                          data-testid="simulate-expired-key-btn"
+                          onClick={onSimulateExpiredKey}
+                          className="py-2 px-3 rounded-lg bg-red-500/15 hover:bg-red-500/25 border border-red-400/35 text-xs font-semibold text-red-200 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <Lock className="w-3.5 h-3.5" />
+                          <span>Simulate Expired Key</span>
+                        </button>
                       )}
-                    </button>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 pt-2">
@@ -1662,6 +1772,16 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
                       <span>Lock &amp; Re-Verify Key</span>
                     </button>
                   </div>
+
+                  <button
+                    type="button"
+                    data-testid="misc-open-changelog-btn"
+                    onClick={() => setChangelogOpen(true)}
+                    className="w-full py-2.5 px-3 rounded-xl bg-[#14141A] hover:bg-[#1D1D26] border border-white/15 text-xs font-semibold text-white flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-neutral-300" />
+                    <span>View Changelog (v4.4 · Nov 3, 2026)</span>
+                  </button>
                 </div>
               )}
             </div>
@@ -1695,11 +1815,9 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
               <div
                 data-testid="viewport-preview"
                 style={{
-                  filter: `${
-                    colorCorrectionEnabled
-                      ? `saturate(${1 + ccSaturation}) contrast(${1 + ccContrast}) brightness(${1 + ccBrightness})`
-                      : ''
-                  } ${bloomEnabled ? `drop-shadow(0 0 ${Math.round(bloomSize / 4)}px rgba(255,255,255,${Math.min(0.6, bloomIntensity * 0.25)}))` : ''}`.trim() || undefined,
+                  filter: colorCorrectionEnabled
+                    ? `saturate(${1 + ccSaturation}) contrast(${1 + ccContrast}) brightness(${1 + ccBrightness})`
+                    : undefined,
                 }}
                 className="relative h-80 sm:h-96 bg-[radial-gradient(circle_at_center,#14141A_0%,#060608_100%)] overflow-hidden select-none"
               >
@@ -2301,7 +2419,8 @@ export const CoreWorkspace: React.FC<CoreWorkspaceProps> = ({
           </div>
         </div>
       </main>
-    </div>
+      </div>
+    </ColorPickerContext.Provider>
   );
 };
 
@@ -2312,10 +2431,10 @@ interface SectionBoxProps {
 
 const SectionBox: React.FC<SectionBoxProps> = ({ title, children }) => (
   <div
-    className="relative mt-3 pt-4 pb-3 px-3 rounded-lg bg-[#0B0B0E] border border-white/15 space-y-2.5"
+    className="relative mt-3 pt-4 pb-3 px-3 rounded-xl bg-[#0B0B0E] border border-white/15 space-y-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
     data-testid={`section-box-${title}`}
   >
-    <span className="absolute -top-2.5 left-3 px-1.5 bg-[#09090B] text-[11px] font-semibold text-neutral-300 tracking-tight">
+    <span className="absolute -top-2.5 left-3 px-1.5 bg-[#09090B] text-[11px] font-semibold text-neutral-200 tracking-tight">
       {title}
     </span>
     {children}
@@ -2327,15 +2446,24 @@ interface ColorSwatchRowProps {
   color: string;
 }
 
-const ColorSwatchRow: React.FC<ColorSwatchRowProps> = ({ label, color }) => (
-  <div className="flex items-center justify-between px-3.5 py-2 rounded-lg bg-[#0E0E11] border border-white/[0.07]">
-    <span className="text-xs font-medium text-neutral-300">{label}</span>
-    <span
-      style={{ backgroundColor: color }}
-      className="w-5 h-3.5 rounded-xs border border-white/30 shadow-xs"
-    />
-  </div>
-);
+const ColorSwatchRow: React.FC<ColorSwatchRowProps> = ({ label, color }) => {
+  const { colors, openPicker } = React.useContext(ColorPickerContext);
+  const pickerKey = `Swatch:${label}`;
+  const resolvedColor = colors[pickerKey] ?? color;
+  return (
+    <div className="flex items-center justify-between px-3.5 py-2 rounded-lg bg-[#0E0E11] hover:bg-[#131317] border border-white/[0.08] hover:border-white/15 transition-colors">
+      <span className="text-xs font-medium text-neutral-300">{label}</span>
+      <button
+        type="button"
+        aria-label={`Choose color for ${label}`}
+        data-testid={`color-swatch-${label.replace(/\s+/g, '-').toLowerCase()}`}
+        onClick={() => openPicker(pickerKey, label, resolvedColor)}
+        style={{ backgroundColor: resolvedColor }}
+        className="w-6 h-4 rounded border border-white/40 shadow-xs hover:scale-105 transition-transform cursor-pointer"
+      />
+    </div>
+  );
+};
 
 interface ToggleRowProps {
   label: string;
@@ -2353,74 +2481,96 @@ const ToggleRow: React.FC<ToggleRowProps> = ({
   showKeybindBadge,
   swatchColor,
   swatchColor2,
-}) => (
-  <div
-    onClick={() => onChange(!checked)}
-    className={`group relative flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-lg border transition-all duration-150 cursor-pointer select-none ${
-      checked
-        ? 'bg-[#141418] border-white/20 shadow-[0_4px_16px_rgba(0,0,0,0.4)]'
-        : 'bg-[#0E0E11] border-white/[0.07] hover:bg-[#131317] hover:border-white/15'
-    }`}
-  >
-    {/* Left Active Status Accent Bar */}
-    <span
-      className={`w-1 rounded-full transition-all duration-200 ${
+}) => {
+  const { colors, openPicker } = React.useContext(ColorPickerContext);
+  const key1 = `Toggle:${label}:1`;
+  const key2 = `Toggle:${label}:2`;
+  const resolvedSwatch1 = swatchColor ? colors[key1] ?? swatchColor : undefined;
+  const resolvedSwatch2 = swatchColor2 ? colors[key2] ?? swatchColor2 : undefined;
+
+  return (
+    <div
+      onClick={() => onChange(!checked)}
+      className={`group relative flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-lg border transition-all duration-150 cursor-pointer select-none ${
         checked
-          ? 'h-4 bg-white shadow-[0_0_8px_rgba(255,255,255,0.85)]'
-          : 'h-2.5 bg-white/15 group-hover:bg-white/30'
-      }`}
-    />
-    <span
-      className={`flex-1 text-xs font-medium transition-colors ${
-        checked ? 'text-white font-semibold' : 'text-neutral-300 group-hover:text-white'
+          ? 'bg-[#141418] border-white/20 shadow-[0_4px_16px_rgba(0,0,0,0.4)]'
+          : 'bg-[#0E0E11] border-white/[0.08] hover:bg-[#131317] hover:border-white/15'
       }`}
     >
-      {label}
-    </span>
-    <div className="flex items-center gap-1.5 shrink-0">
-      {showKeybindBadge && (
-        <span className="px-1.5 py-0.5 rounded bg-[#18181E] border border-white/10 font-mono text-[10px] text-neutral-400">
-          [...]
-        </span>
-      )}
-      {swatchColor && (
-        <span
-          style={{ backgroundColor: swatchColor }}
-          className="w-4 h-3 rounded-xs border border-white/35"
-        />
-      )}
-      {swatchColor2 && (
-        <span
-          style={{ backgroundColor: swatchColor2 }}
-          className="w-4 h-3 rounded-xs border border-white/35"
-        />
-      )}
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        aria-label={label}
-        onClick={(e) => {
-          e.stopPropagation();
-          onChange(!checked);
-        }}
-        className={`relative w-10 h-5 rounded-full p-0.5 flex items-center transition-colors cursor-pointer shrink-0 ${
+      {/* Left Active Status Accent Bar */}
+      <span
+        className={`w-1 rounded-full transition-all duration-200 ${
           checked
-            ? 'bg-white justify-end shadow-[0_0_14px_rgba(255,255,255,0.35)]'
-            : 'bg-[#1D1D22] border border-white/15 justify-start'
+            ? 'h-4 bg-white shadow-[0_0_8px_rgba(255,255,255,0.85)]'
+            : 'h-2.5 bg-white/15 group-hover:bg-white/30'
+        }`}
+      />
+      <span
+        className={`flex-1 text-xs font-medium transition-colors ${
+          checked ? 'text-white font-semibold' : 'text-neutral-300 group-hover:text-white'
         }`}
       >
-        <motion.span
-          layout
-          transition={{ type: 'spring', stiffness: 540, damping: 32 }}
-          className={`block w-3.5 h-3.5 rounded-full ${
-            checked ? 'bg-black' : 'bg-neutral-400 group-hover:bg-neutral-200'
+        {label}
+      </span>
+      <div className="flex items-center gap-1.5 shrink-0">
+        {showKeybindBadge && (
+          <span className="px-1.5 py-0.5 rounded bg-[#18181E] border border-white/10 font-mono text-[10px] text-neutral-400">
+            [...]
+          </span>
+        )}
+        {resolvedSwatch1 && (
+          <button
+            type="button"
+            aria-label={`Choose primary color for ${label}`}
+            data-testid={`color-swatch-${label.replace(/\s+/g, '-').toLowerCase()}-1`}
+            onClick={(e) => {
+              e.stopPropagation();
+              openPicker(key1, `${label} Color`, resolvedSwatch1);
+            }}
+            style={{ backgroundColor: resolvedSwatch1 }}
+            className="w-5 h-3.5 rounded border border-white/40 hover:scale-110 transition-transform cursor-pointer"
+          />
+        )}
+        {resolvedSwatch2 && (
+          <button
+            type="button"
+            aria-label={`Choose secondary color for ${label}`}
+            data-testid={`color-swatch-${label.replace(/\s+/g, '-').toLowerCase()}-2`}
+            onClick={(e) => {
+              e.stopPropagation();
+              openPicker(key2, `${label} Accent`, resolvedSwatch2);
+            }}
+            style={{ backgroundColor: resolvedSwatch2 }}
+            className="w-5 h-3.5 rounded border border-white/40 hover:scale-110 transition-transform cursor-pointer"
+          />
+        )}
+        <button
+          type="button"
+          role="switch"
+          aria-checked={checked}
+          aria-label={label}
+          onClick={(e) => {
+            e.stopPropagation();
+            onChange(!checked);
+          }}
+          className={`relative w-10 h-5 rounded-full p-0.5 flex items-center transition-colors cursor-pointer shrink-0 ${
+            checked
+              ? 'bg-white justify-end shadow-[0_0_14px_rgba(255,255,255,0.35)]'
+              : 'bg-[#1D1D22] border border-white/15 justify-start'
           }`}
-        />
-      </button>
+        >
+          <motion.span
+            layout
+            transition={{ type: 'spring', stiffness: 540, damping: 32 }}
+            className={`block w-3.5 h-3.5 rounded-full ${
+              checked ? 'bg-black' : 'bg-neutral-400 group-hover:bg-neutral-200'
+            }`}
+          />
+        </button>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 interface SliderRowProps {
   label: string;

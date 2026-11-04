@@ -196,6 +196,57 @@ test('Community Music System defines Discord track submission note, default hidd
   );
 });
 
+test('v4.4 Changelog data, Save-Key session evaluator, and 2D HSV color picker math work accurately', async () => {
+  const {
+    CHANGELOG_V44_DATA,
+    evaluateSavedKeySession,
+    hsvToHex,
+    hexToHsv,
+  } = await import('./coreAuth');
+
+  assert.equal(CHANGELOG_V44_DATA.version, 'v4.4');
+  assert.equal(CHANGELOG_V44_DATA.date, 'Nov 3, 2026');
+  assert.ok(CHANGELOG_V44_DATA.removed.every((line) => line.startsWith('[-]')));
+  assert.ok(CHANGELOG_V44_DATA.added.every((line) => line.startsWith('[+]')));
+  assert.ok(CHANGELOG_V44_DATA.fixed.every((line) => line.startsWith('[*]')));
+
+  const now = 1_750_000_000_000;
+  const missingEval = evaluateSavedKeySession(null, now);
+  assert.equal(missingEval.status, 'missing');
+
+  const validEval = evaluateSavedKeySession(
+    {
+      key: 'KEY_PLATOBOOST_VALID_2026',
+      savedAtMs: now - 3600_000,
+      expiresAtMs: now + 20 * 3600_000,
+      rememberKey: true,
+    },
+    now
+  );
+  assert.equal(validEval.status, 'valid');
+  assert.equal(validEval.notificationMessage, null);
+
+  const expiredEval = evaluateSavedKeySession(
+    {
+      key: 'KEY_PLATOBOOST_EXPIRED_2026',
+      savedAtMs: now - 48 * 3600_000,
+      expiresAtMs: now - 1000,
+      rememberKey: true,
+    },
+    now
+  );
+  assert.equal(expiredEval.status, 'expired');
+  assert.ok(expiredEval.notificationMessage?.includes('expired'));
+
+  assert.equal(hsvToHex(0, 1, 1), '#FF0000');
+  assert.equal(hsvToHex(0, 0, 1), '#FFFFFF');
+  const parsedRed = hexToHsv('#FF0000');
+  assert.equal(parsedRed.h, 0);
+  assert.equal(parsedRed.s, 1);
+  assert.equal(parsedRed.v, 1);
+});
+
+
 
 
 

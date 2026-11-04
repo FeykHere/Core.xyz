@@ -930,6 +930,18 @@ local HttpService = {
                 }
             }
         end
+        if string.find(str, '"rememberKey"') or string.find(str, '"expiresAt"') then
+            local k = string.match(str, '"key"%s*:%s*"([^"]*)"')
+            local sAt = tonumber(string.match(str, '"savedAt"%s*:%s*([%-%d%.]+)'))
+            local eAt = tonumber(string.match(str, '"expiresAt"%s*:%s*([%-%d%.]+)'))
+            local remStr = string.match(str, '"rememberKey"%s*:%s*(%a+)')
+            return {
+                key = k or "",
+                savedAt = sAt or 0,
+                expiresAt = eAt or 0,
+                rememberKey = (remStr ~= "false"),
+            }
+        end
         return {}
     end
 }
@@ -1116,16 +1128,42 @@ for _, desc in ipairs(loaderCard:GetDescendants()) do
 end
 assert(loaderStatusFound == true, "LoaderCard must finish on the 6th step: 'Finalizing workspace...'")
 
--- Verify KeyCard has the 2 polished buttons (1. Submit, 2. Get Key) and NO Remember Key checkbox
-local keyInputBox, unlockBtn, copyKeyBtn, rememberKeyBtn
+-- Verify KeyCard has the 2 polished buttons (1. Submit, 2. Get Key) + SaveKeyToggle
+local keyInputBox, unlockBtn, copyKeyBtn
 for _, desc in ipairs(keyCard:GetDescendants()) do
     if desc.ClassName == "TextBox" then keyInputBox = desc end
     if desc.ClassName == "TextButton" and desc.Text == "Submit" then unlockBtn = desc end
     if desc.ClassName == "TextButton" and desc.Text == "Get Key" then copyKeyBtn = desc end
-    if desc.ClassName == "TextButton" and string.find(desc.Text or "", "Remember Key") then rememberKeyBtn = desc end
 end
+local saveKeyToggle = keyCard:FindFirstChild("SaveKeyToggle")
 assert(keyInputBox ~= nil and unlockBtn ~= nil and copyKeyBtn ~= nil, "KeyCard must contain KeyInputBox, 'Submit' button, and 'Get Key' button")
-assert(rememberKeyBtn == nil, "Remember Key checkbox must be removed from KeyCard")
+assert(saveKeyToggle ~= nil and saveKeyToggle:FindFirstChild("SaveKeyPill") ~= nil, "KeyCard must include interactive SaveKeyToggle row")
+
+-- Toggle SaveKeyToggle off and back on to verify interactive state
+saveKeyToggle.MouseButton1Click:Fire()
+saveKeyToggle.MouseButton1Click:Fire()
+
+-- Verify One-Time Changelog v4.4 Modal (CoreChangelogModal) with top-right '×' close button & [-] / [+] / [*] sections
+local changelogModal = screenGui:FindFirstChild("CoreChangelogModal")
+assert(changelogModal ~= nil, "CoreChangelogModal must exist in ScreenGui")
+assert(changelogModal.Visible == true, "CoreChangelogModal must appear automatically on first execution of v4.4")
+assert(_G.__FILES["CoreXYZ_Data/SeenChangelogVersion.txt"] == "v4.4", "SeenChangelogVersion.txt must persist 'v4.4' once shown")
+
+local changelogCloseBtn, changelogVerBadge, groupRemoved, groupAdded, groupFixed
+for _, desc in ipairs(changelogModal:GetDescendants()) do
+    if desc.Name == "ChangelogCloseBtn" then changelogCloseBtn = desc end
+    if desc.Name == "ChangelogTitle" then changelogVerBadge = desc end
+    if desc.Name == "ChangelogGroup_1" then groupRemoved = desc end
+    if desc.Name == "ChangelogGroup_2" then groupAdded = desc end
+    if desc.Name == "ChangelogGroup_3" then groupFixed = desc end
+end
+assert(changelogCloseBtn ~= nil and changelogCloseBtn.Text == "×", "CoreChangelogModal must have top-right '×' close button (ChangelogCloseBtn)")
+assert(changelogVerBadge ~= nil and string.find(changelogVerBadge.Text, "v4.4") ~= nil and string.find(changelogVerBadge.Text, "Nov 3, 2026") ~= nil, "ChangelogTitle must display v4.4 and date Nov 3, 2026")
+assert(groupRemoved ~= nil and groupAdded ~= nil and groupFixed ~= nil, "CoreChangelogModal must include [-] Removed Features, [+] Added Features, and [*] Fixed sections")
+
+-- Click '×' in top-right corner to dismiss Changelog Modal
+changelogCloseBtn.MouseButton1Click:Fire()
+assert(changelogModal.Visible == false, "Clicking ChangelogCloseBtn ('×') must close CoreChangelogModal")
 
 -- 1) Click 'Get Key' -> must copy Platoboost service 36271 link to clipboard
 copyKeyBtn.MouseButton1Click:Fire()
@@ -1159,7 +1197,7 @@ assert(keyCard.Visible == true and mainWindow.Visible == false, "Layer 2 Canary 
 request = legitimateRequest
 http_request = legitimateRequest
 
--- 3) Submit valid Platoboost key -> verifies SHA-256 nonce hash + passes Canary Trap, seals Session Entanglement, hides KeyCard, launches MainHub!
+-- 3) Submit valid Platoboost key -> verifies SHA-256 nonce hash + passes Canary Trap, seals Session Entanglement, saves SavedKey.json, hides KeyCard, launches MainHub!
 keyInputBox.Text = "KEY_PLATOBOOST_LIVE_2026"
 unlockBtn.MouseButton1Click:Fire()
 
@@ -1167,6 +1205,8 @@ assert(keyCard.Visible == false, "KeyCard must hide after valid Platoboost key v
 assert(floatingToggle.Visible == true, "FloatingToggle must be visible")
 assert(mainWindow.Visible == true, "MainWindow must be visible")
 assert(_G.__FILES["CoreXYZ_Data/PlatoKeyMeta.json"] ~= nil, "Platoboost key expiry metadata must be recorded in PlatoKeyMeta.json")
+assert(_G.__FILES["CoreXYZ_Data/SavedKey.json"] ~= nil and string.find(_G.__FILES["CoreXYZ_Data/SavedKey.json"], "KEY_PLATOBOOST_LIVE_2026") ~= nil, "Valid key must be saved to CoreXYZ_Data/SavedKey.json when Save Key toggle is enabled")
+
 
 -- 0. Test Home Tab 3D Avatar Box + Side Profile Info (User, Executor, User ID, Accurate Live Key Time Left) & Verify Testing Keys Dropdown is Removed!
 local homePage
@@ -2048,32 +2088,76 @@ assert(_G.__FILES["CoreXYZ_Data/Config_MyProConfig.json"] ~= nil, "Saving config
 loadCfgBtn.MouseButton1Click:Fire()
 RunService.RenderStepped:Fire(0.05)
 
--- 8. Test Interactive Floating Color Picker Popup Panel (CoreColorPickerPopup)
+-- 8. Test Interactive Floating Color Picker Popup Panel (CoreColorPickerPopup) with Touch & Mouse Drag + Presets
 do
     local colorPickerPopup = screenGui:FindFirstChild("CoreColorPickerPopup")
     assert(colorPickerPopup ~= nil, "CoreColorPickerPopup floating panel must exist in ScreenGui")
     local svSquare = colorPickerPopup:FindFirstChild("SVSquare")
     local svHitbox = svSquare and svSquare:FindFirstChild("ColorPickerSVHitbox")
+    local svCursor = svSquare and svSquare:FindFirstChild("SVCursor")
     local hueBar = colorPickerPopup:FindFirstChild("HueBar")
     local hueHitbox = hueBar and hueBar:FindFirstChild("ColorPickerHueHitbox")
     local alphaBar = colorPickerPopup:FindFirstChild("AlphaBar")
     local alphaHitbox = alphaBar and alphaBar:FindFirstChild("ColorPickerAlphaHitbox")
+    local quickPresetRow = colorPickerPopup:FindFirstChild("QuickPresetRow")
+    local quickSwatch2 = quickPresetRow and quickPresetRow:FindFirstChild("QuickSwatch_2")
     local rgbaBox = colorPickerPopup:FindFirstChild("ColorPickerRGBABox")
     local previewSwatch = colorPickerPopup:FindFirstChild("ColorPickerPreviewSwatch")
-    assert(svHitbox ~= nil and hueHitbox ~= nil and alphaHitbox ~= nil and rgbaBox ~= nil and previewSwatch ~= nil, "CoreColorPickerPopup must contain SVSquare, HueBar, AlphaBar, ColorPickerRGBABox, and ColorPickerPreviewSwatch")
+    assert(svHitbox ~= nil and svCursor ~= nil and hueHitbox ~= nil and alphaHitbox ~= nil and quickSwatch2 ~= nil and rgbaBox ~= nil and previewSwatch ~= nil, "CoreColorPickerPopup must contain SVSquare, SVCursor, HueBar, AlphaBar, QuickPresetRow, ColorPickerRGBABox, and ColorPickerPreviewSwatch")
 
-    -- Click a color swatch to open CoreColorPickerPopup
+    -- Click a color swatch to open CoreColorPickerPopup (verify it does NOT cycle/corrupt color on click)
     local selfChamsSec = visualsPage:FindFirstChild("SectionBox_Self Chams")
     local selfChamsSw1
     for _, desc in ipairs(selfChamsSec:GetDescendants()) do
         if desc.Name == "ColorSwatch_Self Chams" then selfChamsSw1 = desc end
     end
+    local colorBeforeOpen = selfChamsSw1.BackgroundColor3
     if not colorPickerPopup.Visible then
         selfChamsSw1.MouseButton1Click:Fire()
     end
     assert(colorPickerPopup.Visible == true, "Clicking a color swatch must open CoreColorPickerPopup")
+    assert(selfChamsSw1.BackgroundColor3 == colorBeforeOpen, "Opening CoreColorPickerPopup must preserve the swatch's current color without cycling")
 
-    -- Navigate Hue, SV, Alpha, and custom RGBA input
+    -- Test real Touch & Mouse pointer drag on HueBar, SVSquare, and AlphaBar
+    hueHitbox.InputBegan:Fire({
+        UserInputType = Enum.UserInputType.Touch,
+        Position = Vector3.new(100, 180, 0),
+    })
+    hueHitbox.InputChanged:Fire({
+        UserInputType = Enum.UserInputType.Touch,
+        Position = Vector3.new(140, 180, 0),
+    })
+    hueHitbox.InputEnded:Fire({
+        UserInputType = Enum.UserInputType.Touch,
+        Position = Vector3.new(140, 180, 0),
+    })
+
+    svHitbox.InputBegan:Fire({
+        UserInputType = Enum.UserInputType.MouseButton1,
+        Position = Vector3.new(90, 90, 0),
+    })
+    game:GetService("UserInputService").InputChanged:Fire({
+        UserInputType = Enum.UserInputType.MouseMovement,
+        Position = Vector3.new(150, 75, 0),
+    })
+    game:GetService("UserInputService").InputEnded:Fire({
+        UserInputType = Enum.UserInputType.MouseButton1,
+        Position = Vector3.new(150, 75, 0),
+    })
+
+    alphaHitbox.InputBegan:Fire({
+        UserInputType = Enum.UserInputType.Touch,
+        Position = Vector3.new(120, 200, 0),
+    })
+    alphaHitbox.InputEnded:Fire({
+        UserInputType = Enum.UserInputType.Touch,
+        Position = Vector3.new(120, 200, 0),
+    })
+
+    -- Test quick preset swatch click inside CoreColorPickerPopup
+    quickSwatch2.MouseButton1Click:Fire()
+
+    -- Also test synthetic fallback clicks & custom RGBA input
     hueHitbox.MouseButton1Click:Fire()
     svHitbox.MouseButton1Click:Fire()
     alphaHitbox.MouseButton1Click:Fire()
@@ -2108,6 +2192,7 @@ do
     -- Press Q again -> must toggle Aimbot via the bound PC keybind!
     game:GetService("UserInputService").InputBegan:Fire({
         KeyCode = Enum.KeyCode.Q,
+        KeyCodeName = "Q",
         UserInputType = Enum.UserInputType.Keyboard,
     }, false)
     -- Press Q once more to restore Aimbot state
@@ -2301,7 +2386,7 @@ do
     headerSearchClearBtn.MouseButton1Click:Fire()
     assert(headerSearchBox.Text == "" and perfSec.Visible == true and serverSec.Visible == true, "Clicking HeaderSearchClearBtn must clear filter text and restore visibility of all section boxes")
 
-    -- Verify Upgraded Loader (LoaderStageBadge, LoaderSubDetail) & Polished KeySystem (NO KeyStepsBar, has KeyGradientOverlay, KeyCardGradient, KeyClearBtn, KeyStatusDot)
+    -- Verify Upgraded Loader (LoaderStageBadge, LoaderSubDetail) & Polished KeySystem (NO KeyStepsBar, has KeyGradientOverlay, KeyCardGradient, KeyInnerBevel, KeyClearBtn, KeyStatusDot)
     local loaderStageBadge = loaderCard:FindFirstChild("LoaderStageBadge")
     local loaderSubDetail = loaderCard:FindFirstChild("LoaderSubDetail")
     assert(loaderStageBadge ~= nil and loaderSubDetail ~= nil, "CoreLoader must include LoaderStageBadge and LoaderSubDetail for comfortable 6-stage loading feedback")
@@ -2309,13 +2394,27 @@ do
     local keyStepsBar = keyCard:FindFirstChild("KeyStepsBar")
     local keyGradOverlay = keyCard:FindFirstChild("KeyGradientOverlay")
     local keyCardGrad = keyCard:FindFirstChild("KeyCardGradient")
+    local keyInnerBevel = keyCard:FindFirstChild("KeyInnerBevel")
     local keyClearBtn, keyStatusDot
     for _, desc in ipairs(keyCard:GetDescendants()) do
         if desc.Name == "KeyClearBtn" then keyClearBtn = desc end
         if desc.Name == "KeyStatusDot" then keyStatusDot = desc end
     end
     assert(keyStepsBar == nil, "3-step verification guide (KeyStepsBar) must be removed from CoreKeySystem")
-    assert(keyGradOverlay ~= nil and keyCardGrad ~= nil and keyClearBtn ~= nil and keyStatusDot ~= nil, "CoreKeySystem must include KeyGradientOverlay, KeyCardGradient, KeyClearBtn, and KeyStatusDot")
+    assert(keyGradOverlay ~= nil and keyCardGrad ~= nil and keyInnerBevel ~= nil and keyClearBtn ~= nil and keyStatusDot ~= nil, "CoreKeySystem must include KeyGradientOverlay, KeyCardGradient, KeyInnerBevel, KeyClearBtn, and KeyStatusDot")
+
+    -- Test 'View Changelog (v4.4)' button in Settings_Page & close it again
+    local viewChangelogBtn
+    for _, desc in ipairs(settingsPage:GetDescendants()) do
+        if desc.ClassName == "TextButton" and string.find(desc.Text or "", "View Changelog") then
+            viewChangelogBtn = desc
+        end
+    end
+    assert(viewChangelogBtn ~= nil, "View Changelog button must exist in Settings_Page")
+    viewChangelogBtn.MouseButton1Click:Fire()
+    assert(changelogModal.Visible == true, "Clicking View Changelog button in Settings_Page must force-open CoreChangelogModal")
+    changelogCloseBtn.MouseButton1Click:Fire()
+    assert(changelogModal.Visible == false, "Clicking ChangelogCloseBtn ('×') must close CoreChangelogModal")
 
     -- Verify Pill & FOV Circle Gradient Animations Continue Rotating When MainWindow is Closed!
     local fovCircle = overlays:FindFirstChild("FOVCircle")
@@ -2334,81 +2433,6 @@ do
     RunService.RenderStepped:Fire(0.08)
     assert(pillGrad.Rotation ~= pillRotBefore and fovGrad.Rotation ~= fovRotBefore, "Pill and FOV Circle UIGradient animations must continue rotating smoothly even when MainWindow is closed!")
     mainWindow.Visible = true
-
-    -- Verify Universal Custom-Rig Detection Engine & Dynamic Hitpart Dropdown Population!
-    local customRigPlr = _G.__ALL_PLAYERS[5] -- Enemy_4
-    local customChar = _G.__createInstance("Model")
-    customChar.Name = "CustomMechRig_Enemy4"
-    local customHum = _G.__createInstance("Humanoid")
-    customHum.Health = 100
-    customHum.MaxHealth = 100
-    customHum.Parent = customChar
-
-    local mechCore = _G.__createInstance("Part")
-    mechCore.Name = "MechCore"
-    mechCore.Size = Vector3.new(2, 2, 2)
-    mechCore.CFrame = CFrame.new(Vector3.new(8, 6, -16))
-    mechCore.Parent = customChar
-    customHum.RootPart = mechCore
-    customChar.PrimaryPart = mechCore
-
-    local cyberSkull = _G.__createInstance("Part")
-    cyberSkull.Name = "CyberSkull"
-    cyberSkull.Size = Vector3.new(1.5, 1.5, 1.5)
-    cyberSkull.CFrame = CFrame.new(Vector3.new(8, 9, -16))
-    cyberSkull.Parent = customChar
-
-    local plasmaWing = _G.__createInstance("Part")
-    plasmaWing.Name = "PlasmaWing"
-    plasmaWing.Size = Vector3.new(1, 3, 1)
-    plasmaWing.CFrame = CFrame.new(Vector3.new(11, 7, -16))
-    plasmaWing.Parent = customChar
-
-    local mJoint1 = _G.__createInstance("Motor6D")
-    mJoint1.Name = "CoreToSkullJoint"
-    mJoint1.Part0 = mechCore
-    mJoint1.Part1 = cyberSkull
-    mJoint1.Parent = mechCore
-
-    local mJoint2 = _G.__createInstance("Motor6D")
-    mJoint2.Name = "CoreToWingJoint"
-    mJoint2.Part0 = mechCore
-    mJoint2.Part1 = plasmaWing
-    mJoint2.Parent = mechCore
-
-    customRigPlr.Character = customChar
-    RunService.RenderStepped:Fire(0.016)
-    RunService.Stepped:Fire(0, 0.45)
-
-    -- 1) Verify CyberSkull, MechCore, and PlasmaWing automatically appeared in the Hitpart dropdown in Combat_Page!
-    local cyberSkullOptBtn, mechCoreOptBtn, plasmaWingOptBtn
-    for _, desc in ipairs(combatPage:GetDescendants()) do
-        if desc.ClassName == "TextButton" then
-            if desc.Text == "CyberSkull" then cyberSkullOptBtn = desc end
-            if desc.Text == "MechCore" then mechCoreOptBtn = desc end
-            if desc.Text == "PlasmaWing" then plasmaWingOptBtn = desc end
-        end
-    end
-    assert(cyberSkullOptBtn ~= nil and mechCoreOptBtn ~= nil and plasmaWingOptBtn ~= nil, "Custom rig parts (CyberSkull, MechCore, PlasmaWing) must automatically populate in the Hitpart dropdown!")
-
-    -- 2) Select 'CyberSkull' in Hitpart dropdown and prioritize Enemy_4 -> verify Aimbot locks onto CyberSkull!
-    cyberSkullOptBtn.MouseButton1Click:Fire()
-    assert(mechCore.Size.X == 10, "Hitbox Expander must automatically resolve and expand custom rig root part (MechCore) even when HumanoidRootPart is absent!")
-    local customOverlayTag, customOverlayFolder
-    for _, child in ipairs(overlays:GetChildren()) do
-        if child.Name == "Box3DOverlay" then
-            local st = child:FindFirstChild("ScreenNameTag")
-            if st and string.find(st.Text or "", "Enemy_4") then
-                customOverlayTag = st
-                customOverlayFolder = child
-            end
-        end
-    end
-    assert(customOverlayTag ~= nil and customOverlayTag.Visible == true and customOverlayFolder ~= nil, "Custom Rig Enemy_4 must render full 3D ESP & NameTag without HumanoidRootPart")
-    local customBone1 = customOverlayFolder:FindFirstChild("Bone_1")
-    local customHeadCir = customOverlayFolder:FindFirstChild("HeadCircleFrame")
-    assert(customBone1 ~= nil and customBone1.Visible == true, "Custom Rig Motor6D joints must automatically render Skeleton ESP bones")
-    assert(customHeadCir ~= nil and customHeadCir.Visible == true, "Custom Rig fuzzy/spatial head resolver (CyberSkull) must render Head Circle")
 end
 
 _G.__TEST_PASSED = true
@@ -2438,9 +2462,61 @@ test('Core.xyz.lua v4.4 Stealth & Object-Pooled Edition executes Home 3D Avatar 
   runLuaChunk(L, coreLuaCode, 'Core.xyz.lua');
   runLuaChunk(L, ROBLOX_ASSERTIONS_POSTLUDE, 'ROBLOX_ASSERTIONS_POSTLUDE');
 
+  // Verify 2nd Execution with Valid Non-Expired SavedKey.json -> Directly loads MainWindow (skips KeyCard) and does NOT re-show Changelog v4.4!
+  runLuaChunk(L, coreLuaCode, 'Core.xyz.lua (2nd execution - valid saved key)');
+  runLuaChunk(
+    L,
+    `
+    local gui2 = gethui():FindFirstChild("CoreXYZ_Universal")
+    local keyCard2 = gui2:FindFirstChild("CoreKeySystem")
+    local mainWin2 = gui2:FindFirstChild("CoreMainWindow")
+    local changelog2 = gui2:FindFirstChild("CoreChangelogModal")
+    assert(keyCard2.Visible == false and mainWin2.Visible == true, "2nd execution with non-expired SavedKey.json must bypass KeySystem and directly launch MainWindow!")
+    assert(changelog2.Visible == false, "2nd execution on same version v4.4 must NOT re-open CoreChangelogModal once seen!")
+    `,
+    'ASSERT_VALID_SAVED_KEY_AUTOLOGIN',
+  );
+
+  // Verify 3rd Execution with EXPIRED SavedKey.json -> Shows KeyCard with Red Error Gradient + Notification that key is expired!
+  runLuaChunk(
+    L,
+    `
+    _G.__FILES["CoreXYZ_Data/SavedKey.json"] = '{"key":"KEY_PLATOBOOST_LIVE_2026","savedAt":1000,"expiresAt":2000,"rememberKey":true}'
+    `,
+    'SET_EXPIRED_SAVED_KEY',
+  );
+  runLuaChunk(L, coreLuaCode, 'Core.xyz.lua (3rd execution - expired saved key)');
+  runLuaChunk(
+    L,
+    `
+    local gui3 = gethui():FindFirstChild("CoreXYZ_Universal")
+    local keyCard3 = gui3:FindFirstChild("CoreKeySystem")
+    local mainWin3 = gui3:FindFirstChild("CoreMainWindow")
+    assert(keyCard3.Visible == true and mainWin3.Visible == false, "Execution with expired SavedKey.json must show KeyCard and NOT launch MainWindow!")
+    assert(_G.__FILES["CoreXYZ_Data/SavedKey.json"] == "", "Expired SavedKey.json must be cleared on detection")
+    local foundExpiredStatus = false
+    for _, desc in ipairs(keyCard3:GetDescendants()) do
+        if desc.ClassName == "TextLabel" and string.find(string.lower(desc.Text or ""), "expired") then
+            foundExpiredStatus = true
+        end
+    end
+    assert(foundExpiredStatus == true, "KeyCard must display expired key status message")
+    local foundExpiredNotif = false
+    for _, desc in ipairs(gui3:GetDescendants()) do
+        if desc.ClassName == "TextLabel" and string.find(string.lower(desc.Text or ""), "saved key has expired") and string.find(string.lower(desc.Text or ""), "continue") then
+            foundExpiredNotif = true
+        end
+    end
+    assert(foundExpiredNotif == true, "Execution with expired SavedKey.json must fire a notification that the saved key has expired!")
+    `,
+    'ASSERT_EXPIRED_SAVED_KEY_NOTIFICATION',
+  );
+
   lua.lua_getglobal(L, fengari.to_luastring('__TEST_PASSED'));
   const passed = lua.lua_toboolean(L, -1);
   assert.equal(passed, true, 'Expected __TEST_PASSED to be true');
 });
+
+
 
 

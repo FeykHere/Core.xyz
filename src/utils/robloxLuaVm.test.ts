@@ -2334,6 +2334,81 @@ do
     RunService.RenderStepped:Fire(0.08)
     assert(pillGrad.Rotation ~= pillRotBefore and fovGrad.Rotation ~= fovRotBefore, "Pill and FOV Circle UIGradient animations must continue rotating smoothly even when MainWindow is closed!")
     mainWindow.Visible = true
+
+    -- Verify Universal Custom-Rig Detection Engine & Dynamic Hitpart Dropdown Population!
+    local customRigPlr = _G.__ALL_PLAYERS[5] -- Enemy_4
+    local customChar = _G.__createInstance("Model")
+    customChar.Name = "CustomMechRig_Enemy4"
+    local customHum = _G.__createInstance("Humanoid")
+    customHum.Health = 100
+    customHum.MaxHealth = 100
+    customHum.Parent = customChar
+
+    local mechCore = _G.__createInstance("Part")
+    mechCore.Name = "MechCore"
+    mechCore.Size = Vector3.new(2, 2, 2)
+    mechCore.CFrame = CFrame.new(Vector3.new(8, 6, -16))
+    mechCore.Parent = customChar
+    customHum.RootPart = mechCore
+    customChar.PrimaryPart = mechCore
+
+    local cyberSkull = _G.__createInstance("Part")
+    cyberSkull.Name = "CyberSkull"
+    cyberSkull.Size = Vector3.new(1.5, 1.5, 1.5)
+    cyberSkull.CFrame = CFrame.new(Vector3.new(8, 9, -16))
+    cyberSkull.Parent = customChar
+
+    local plasmaWing = _G.__createInstance("Part")
+    plasmaWing.Name = "PlasmaWing"
+    plasmaWing.Size = Vector3.new(1, 3, 1)
+    plasmaWing.CFrame = CFrame.new(Vector3.new(11, 7, -16))
+    plasmaWing.Parent = customChar
+
+    local mJoint1 = _G.__createInstance("Motor6D")
+    mJoint1.Name = "CoreToSkullJoint"
+    mJoint1.Part0 = mechCore
+    mJoint1.Part1 = cyberSkull
+    mJoint1.Parent = mechCore
+
+    local mJoint2 = _G.__createInstance("Motor6D")
+    mJoint2.Name = "CoreToWingJoint"
+    mJoint2.Part0 = mechCore
+    mJoint2.Part1 = plasmaWing
+    mJoint2.Parent = mechCore
+
+    customRigPlr.Character = customChar
+    RunService.RenderStepped:Fire(0.016)
+    RunService.Stepped:Fire(0, 0.45)
+
+    -- 1) Verify CyberSkull, MechCore, and PlasmaWing automatically appeared in the Hitpart dropdown in Combat_Page!
+    local cyberSkullOptBtn, mechCoreOptBtn, plasmaWingOptBtn
+    for _, desc in ipairs(combatPage:GetDescendants()) do
+        if desc.ClassName == "TextButton" then
+            if desc.Text == "CyberSkull" then cyberSkullOptBtn = desc end
+            if desc.Text == "MechCore" then mechCoreOptBtn = desc end
+            if desc.Text == "PlasmaWing" then plasmaWingOptBtn = desc end
+        end
+    end
+    assert(cyberSkullOptBtn ~= nil and mechCoreOptBtn ~= nil and plasmaWingOptBtn ~= nil, "Custom rig parts (CyberSkull, MechCore, PlasmaWing) must automatically populate in the Hitpart dropdown!")
+
+    -- 2) Select 'CyberSkull' in Hitpart dropdown and prioritize Enemy_4 -> verify Aimbot locks onto CyberSkull!
+    cyberSkullOptBtn.MouseButton1Click:Fire()
+    assert(mechCore.Size.X == 10, "Hitbox Expander must automatically resolve and expand custom rig root part (MechCore) even when HumanoidRootPart is absent!")
+    local customOverlayTag, customOverlayFolder
+    for _, child in ipairs(overlays:GetChildren()) do
+        if child.Name == "Box3DOverlay" then
+            local st = child:FindFirstChild("ScreenNameTag")
+            if st and string.find(st.Text or "", "Enemy_4") then
+                customOverlayTag = st
+                customOverlayFolder = child
+            end
+        end
+    end
+    assert(customOverlayTag ~= nil and customOverlayTag.Visible == true and customOverlayFolder ~= nil, "Custom Rig Enemy_4 must render full 3D ESP & NameTag without HumanoidRootPart")
+    local customBone1 = customOverlayFolder:FindFirstChild("Bone_1")
+    local customHeadCir = customOverlayFolder:FindFirstChild("HeadCircleFrame")
+    assert(customBone1 ~= nil and customBone1.Visible == true, "Custom Rig Motor6D joints must automatically render Skeleton ESP bones")
+    assert(customHeadCir ~= nil and customHeadCir.Visible == true, "Custom Rig fuzzy/spatial head resolver (CyberSkull) must render Head Circle")
 end
 
 _G.__TEST_PASSED = true
